@@ -231,6 +231,7 @@ exports.getReporteCaja = async (req, res, next) => {
         sedeId: querySedeId,
         fecha: queryFecha
       },
+      order: [['createdAt', 'DESC']],
       include: [
         { model: EgresoCaja, as: 'egresos', include: [{ model: CategoriaEgreso, as: 'categoria', attributes: ['nombre'] }] }
       ]
