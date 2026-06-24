@@ -1,0 +1,243 @@
+/* Custom Styles for ERP TechStore Colombia */
+
+:root {
+  --sidebar-width: 240px;
+  --accent-color: #2563eb;
+  --accent-dark: #3b82f6;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--tblr-bg-surface-secondary, #f8fafc);
+  color: var(--tblr-body-color, #1e293b);
+}
+
+/* Sidebar overrides */
+.navbar-vertical.navbar-expand-lg {
+  width: var(--sidebar-width) !important;
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.03) !important;
+  border-right: 1px solid rgba(0, 0, 0, 0.06) !important;
+}
+
+[data-bs-theme="dark"] .navbar-vertical.navbar-expand-lg {
+  border-right: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+@media (min-width: 992px) {
+  .page-wrapper {
+    margin-left: var(--sidebar-width) !important;
+  }
+}
+
+/* Brand header styling inside Sidebar */
+.navbar-brand {
+  padding: 1.5rem 1rem !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  margin-bottom: 1rem !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+[data-bs-theme="dark"] .navbar-brand {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Sidebar Logo */
+.sidebar-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--accent-color);
+  box-shadow: 0 4px 6px rgba(37, 99, 235, 0.15);
+  transition: transform 0.3s ease, border-color 0.3s ease;
+}
+
+[data-bs-theme="dark"] .sidebar-logo {
+  border-color: var(--accent-dark);
+  box-shadow: 0 4px 6px rgba(59, 130, 246, 0.25);
+}
+
+.sidebar-logo:hover {
+  transform: scale(1.08) rotate(5deg);
+}
+
+/* Premium Sidebar Menu Items */
+.navbar-vertical .navbar-nav .nav-item {
+  margin: 0.15rem 0.75rem !important;
+}
+
+.navbar-vertical .navbar-nav .nav-link {
+  border-radius: 8px !important;
+  padding: 0.65rem 0.85rem !important;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  font-weight: 550 !important;
+  color: var(--tblr-body-color, #4a5568) !important;
+}
+
+.navbar-vertical .navbar-nav .nav-link-icon {
+  margin-right: 0.75rem !important;
+  color: var(--tblr-secondary, #718096) !important;
+  transition: color 0.25s ease !important;
+}
+
+/* Active and Hover States */
+.navbar-vertical .navbar-nav .nav-item.active .nav-link,
+.navbar-vertical .navbar-nav .nav-link:hover {
+  background-color: rgba(37, 99, 235, 0.07) !important;
+  color: var(--accent-color) !important;
+  transform: translateX(3px);
+}
+
+.navbar-vertical .navbar-nav .nav-item.active .nav-link-icon,
+.navbar-vertical .navbar-nav .nav-link:hover .nav-link-icon {
+  color: var(--accent-color) !important;
+}
+
+[data-bs-theme="dark"] .navbar-vertical .navbar-nav .nav-item.active .nav-link,
+[data-bs-theme="dark"] .navbar-vertical .navbar-nav .nav-link:hover {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+  color: var(--accent-dark) !important;
+}
+
+[data-bs-theme="dark"] .navbar-vertical .navbar-nav .nav-item.active .nav-link-icon,
+[data-bs-theme="dark"] .navbar-vertical .navbar-nav .nav-link:hover .nav-link-icon {
+  color: var(--accent-dark) !important;
+}
+
+/* Custom stats cards hover effect */
+.card-kpi {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-kpi:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* State Badges */
+.badge-recibido { background-color: #3b82f6; color: #fff; }
+.badge-diagnostico { background-color: #f59e0b; color: #fff; }
+.badge-reparacion { background-color: #8b5cf6; color: #fff; }
+.badge-listo { background-color: #10b981; color: #fff; }
+.badge-entregado { background-color: #1e293b; color: #fff; }
+.badge-cancelado { background-color: #ef4444; color: #fff; }
+
+/* Traffic light colors for Stock alerts */
+.stock-ok { color: #10b981; }
+.stock-warning { color: #f59e0b; }
+.stock-danger { color: #ef4444; }
+
+/* Spinner Page Center */
+.page-center {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.container-spinner {
+  max-width: 300px;
+}
+
+/* Premium Login Page Design */
+.login-bg {
+  background: linear-gradient(135deg, #0b0f19 0%, #1e1b4b 60%, #111827 100%);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  width: 100vw;
+}
+
+/* Background animated glow circles */
+.login-bg::before, .login-bg::after {
+  content: '';
+  position: absolute;
+  width: 35rem;
+  height: 35rem;
+  border-radius: 50%;
+  filter: blur(150px);
+  z-index: 0;
+  opacity: 0.35;
+}
+
+.login-bg::before {
+  background: #2563eb;
+  top: -10%;
+  left: -5%;
+  animation: floatCircle 20s infinite alternate ease-in-out;
+}
+
+.login-bg::after {
+  background: #7c3aed;
+  bottom: -10%;
+  right: -5%;
+  animation: floatCircle 25s infinite alternate-reverse ease-in-out;
+}
+
+@keyframes floatCircle {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(60px, 60px) scale(1.15); }
+}
+
+.login-card {
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 3rem 2.5rem;
+  width: 100%;
+  max-width: 450px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  z-index: 10;
+  color: #ffffff;
+  transition: all 0.3s ease;
+  margin: 1.5rem;
+}
+
+.login-card .form-control {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+  border-radius: 10px !important;
+  padding: 0.75rem 1rem !important;
+  transition: all 0.2s ease !important;
+}
+
+.login-card .form-control:focus {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25) !important;
+  color: #ffffff !important;
+}
+
+.login-card .form-label {
+  color: rgba(255, 255, 255, 0.8) !important;
+  font-weight: 600 !important;
+  font-size: 0.85rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.login-card .btn-primary {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+  border: none !important;
+  border-radius: 10px !important;
+  padding: 0.8rem !important;
+  font-weight: 600 !important;
+  box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3) !important;
+  transition: all 0.2s ease !important;
+}
+
+.login-card .btn-primary:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 15px 25px -5px rgba(37, 99, 235, 0.4) !important;
+}
+
+.login-card .btn-primary:active {
+  transform: translateY(0) !important;
+}
