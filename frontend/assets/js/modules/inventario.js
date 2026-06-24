@@ -116,6 +116,10 @@ export async function initInventario(container) {
                 <label class="form-label">Descripción</label>
                 <textarea id="prod-descripcion" class="form-control" rows="3" placeholder="Detalle técnico del equipo..."></textarea>
               </div>
+              <div class="mb-3">
+                <label class="form-label">URL de la Imagen (Foto del Producto)</label>
+                <input type="url" id="prod-imagen-url" class="form-control" placeholder="Ej: https://ejemplo.com/foto.jpg">
+              </div>
               <div class="row">
                 <div class="col-lg-4">
                   <div class="mb-3">
@@ -329,10 +333,19 @@ export async function initInventario(container) {
           statusBadge = '<span class="badge bg-green-lt">Excelente</span>';
         }
 
+        const imgHtml = prod.imagenUrl 
+          ? `<img src="${prod.imagenUrl}" class="avatar avatar-sm me-2 rounded" style="object-fit: cover;" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'24\\' height=\\'24\\' fill=\\'none\\' stroke=\\'%23ccc\\' stroke-width=\\'2\\'><rect width=\\'20\\' height=\\'20\\' x=\\'2\\' y=\\'2\\' rx=\\'2\\'/><circle cx=\\'9\\' cy=\\'9\\' r=\\'2\\'/><path d=\\'m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\\'/></svg>';">` 
+          : `<span class="avatar avatar-sm me-2 rounded bg-secondary-lt fw-bold">${prod.nombre.charAt(0).toUpperCase()}</span>`;
+
         return `
           <tr>
             <td><code class="text-secondary">${prod.codigoBarras}</code></td>
-            <td class="fw-semibold">${prod.nombre}</td>
+            <td class="fw-semibold">
+              <div class="d-flex align-items-center">
+                ${imgHtml}
+                <div>${prod.nombre}</div>
+              </div>
+            </td>
             <td>${prod.categoria ? prod.categoria.nombre : 'General'}</td>
             <td>${formatter.format(prod.precioCosto)}</td>
             <td>${formatter.format(prod.precioVenta)}</td>
@@ -368,6 +381,7 @@ export async function initInventario(container) {
             document.getElementById('prod-categoria').value = item.producto.categoriaId;
             document.getElementById('prod-serie').checked = item.producto.tieneNumeroSerie;
             document.getElementById('prod-reacondicionado').checked = item.producto.esReacondicionado;
+            document.getElementById('prod-imagen-url').value = item.producto.imagenUrl || '';
             
             document.getElementById('modal-producto-title').textContent = 'Editar Producto';
             modalProd.show();
@@ -422,7 +436,8 @@ export async function initInventario(container) {
         categoriaId: document.getElementById('prod-categoria').value,
         tieneNumeroSerie: document.getElementById('prod-serie').checked,
         tieneIVA: document.getElementById('prod-iva').checked,
-        esReacondicionado: document.getElementById('prod-reacondicionado').checked
+        esReacondicionado: document.getElementById('prod-reacondicionado').checked,
+        imagenUrl: document.getElementById('prod-imagen-url').value.trim() || null
       };
 
       try {

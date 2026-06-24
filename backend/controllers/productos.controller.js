@@ -44,7 +44,8 @@ exports.createProducto = async (req, res, next) => {
       stockMinimo,
       tieneNumeroSerie,
       esReacondicionado,
-      categoriaId
+      categoriaId,
+      imagenUrl
     } = req.body;
 
     // Verificar código duplicado
@@ -63,7 +64,8 @@ exports.createProducto = async (req, res, next) => {
       stockMinimo,
       tieneNumeroSerie,
       esReacondicionado,
-      categoriaId
+      categoriaId,
+      imagenUrl
     }, { transaction });
 
     // Inicializar el StockSede en 0 para todas las sedes de forma predeterminada
@@ -256,7 +258,8 @@ exports.importarCSV = async (req, res, next) => {
         stockMinimo: parseInt(row.stockMinimo || 0),
         tieneNumeroSerie: row.tieneNumeroSerie === 'true' || row.tieneNumeroSerie === '1',
         esReacondicionado: row.esReacondicionado === 'true' || row.esReacondicionado === '1',
-        categoriaId: categoria.id
+        categoriaId: categoria.id,
+        imagenUrl: row.imagenUrl || null
       }, { transaction });
 
       // Inicializar Stock en 0 para todas las sedes

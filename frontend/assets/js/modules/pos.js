@@ -367,19 +367,28 @@ export async function initPos(container) {
 
       resultsContainer.innerHTML = `
         <div class="list-group list-group-flush">
-          ${filtered.map(item => `
-            <button class="list-group-item list-group-item-action py-3 btn-add-prod" data-id="${item.productoId}">
-              <div class="row align-items-center">
-                <div class="col">
-                  <div class="font-weight-semibold text-dark text-start">${item.producto.nombre}</div>
-                  <div class="text-secondary small text-start">Código: ${item.producto.codigoBarras} | Stock: <strong class="${item.cantidad <= item.producto.stockMinimo ? 'text-danger' : 'text-success'}">${item.cantidad}</strong></div>
+          ${filtered.map(item => {
+            const imgHtml = item.producto.imagenUrl 
+              ? `<img src="${item.producto.imagenUrl}" class="avatar avatar-md me-3 rounded" style="object-fit: cover;" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'24\\' height=\\'24\\' fill=\\'none\\' stroke=\\'%23ccc\\' stroke-width=\\'2\\'><rect width=\\'20\\' height=\\'20\\' x=\\'2\\' y=\\'2\\' rx=\\'2\\'/><circle cx=\\'9\\' cy=\\'9\\' r=\\'2\\'/><path d=\\'m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\\'/></svg>';">` 
+              : `<span class="avatar avatar-md me-3 rounded bg-secondary-lt fw-bold">${item.producto.nombre.charAt(0).toUpperCase()}</span>`;
+
+            return `
+              <button class="list-group-item list-group-item-action py-3 btn-add-prod" data-id="${item.productoId}">
+                <div class="row align-items-center">
+                  <div class="col-auto">
+                    ${imgHtml}
+                  </div>
+                  <div class="col">
+                    <div class="font-weight-semibold text-dark text-start">${item.producto.nombre}</div>
+                    <div class="text-secondary small text-start">Código: ${item.producto.codigoBarras} | Stock: <strong class="${item.cantidad <= item.producto.stockMinimo ? 'text-danger' : 'text-success'}">${item.cantidad}</strong></div>
+                  </div>
+                  <div class="col-auto text-primary font-weight-bold">
+                    $ ${new Intl.NumberFormat('es-CO').format(item.producto.precioVenta)}
+                  </div>
                 </div>
-                <div class="col-auto text-primary font-weight-bold">
-                  $ ${new Intl.NumberFormat('es-CO').format(item.producto.precioVenta)}
-                </div>
-              </div>
-            </button>
-          `).join('')}
+              </button>
+            `;
+          }).join('')}
         </div>
       `;
 

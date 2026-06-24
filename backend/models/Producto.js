@@ -50,6 +50,11 @@ const Producto = sequelize.define('Producto', {
     type: DataTypes.UUID,
     allowNull: false
   },
+  imagenUrl: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    defaultValue: null
+  },
   activo: {
     type: DataTypes.BOOLEAN,
     defaultValue: true
