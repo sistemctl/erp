@@ -383,9 +383,9 @@ export async function initCotizaciones(container) {
                 <button class="btn btn-outline-primary btn-sm btn-view-cot" data-id="${c.id}">
                   <i class="ti ti-eye me-1"></i>Ver
                 </button>
-                <a href="/api/cotizaciones/${c.id}/pdf" target="_blank" class="btn btn-outline-secondary btn-sm">
+                <button class="btn btn-outline-secondary btn-sm btn-pdf-cot" data-id="${c.id}" data-num="${c.numeroCotizacion}">
                   <i class="ti ti-file-text me-1"></i>PDF
-                </a>
+                </button>
               </div>
             </td>
           </tr>
@@ -394,6 +394,36 @@ export async function initCotizaciones(container) {
 
       document.querySelectorAll('.btn-view-cot').forEach(btn => {
         btn.addEventListener('click', () => openDetalleCot(btn.dataset.id));
+      });
+
+      document.querySelectorAll('.btn-pdf-cot').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.id;
+          const num = btn.dataset.num || id;
+          try {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="ti ti-loader-2 me-1"></i>Generando…';
+            const token = localStorage.getItem('token');
+            const response = await fetch(`/api/cotizaciones/${id}/pdf`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!response.ok) throw new Error('No se pudo generar el PDF de la cotización.');
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `cotizacion_${num}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+          } catch (e) {
+            alert(e.message);
+          } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="ti ti-file-text me-1"></i>PDF';
+          }
+        });
       });
 
     } catch (e) {

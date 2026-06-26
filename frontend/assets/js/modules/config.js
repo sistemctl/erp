@@ -239,9 +239,9 @@ export async function initConfig(container) {
                   <div class="card bg-light border-0 p-4">
                     <h3 class="fw-bold mb-2 text-primary"><i class="ti ti-download me-1"></i> Exportar Respaldo</h3>
                     <p class="text-secondary small mb-3">Genera y descarga una copia completa del ERP en formato JSON. Incluye inventarios, ventas, historial de reparaciones, clientes y nóminas.</p>
-                    <a href="/api/config/backup" id="btn-download-backup" class="btn btn-primary w-100" target="_blank">
+                    <button id="btn-download-backup" class="btn btn-primary w-100">
                       <i class="ti ti-cloud-download me-1"></i> Descargar Respaldo JSON
-                    </a>
+                    </button>
                   </div>
                 </div>
                 <div class="col-md-6">
@@ -767,6 +767,35 @@ export async function initConfig(container) {
       loadConfig();
     } catch (err) {
       alert(err.message);
+    }
+  });
+
+  // Descargar copia de seguridad (Backup) con token de autenticación
+  document.getElementById('btn-download-backup').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-download-backup');
+    try {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader-2 me-1"></i> Generando respaldo…';
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/config/backup', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('No se pudo descargar el respaldo.');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const fecha = new Date().toISOString().split('T')[0];
+      a.download = `backup_erp_${fecha}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-cloud-download me-1"></i> Descargar Respaldo JSON';
     }
   });
 
