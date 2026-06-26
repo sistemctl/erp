@@ -1,9 +1,10 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
+import { showConfirm } from '../utils/toast.js';
 
 export async function initFacturacion(container) {
   const usuario = getUsuario();
-  const isAdminOrGerente = ['admin', 'gerente_sede'].includes(usuario.rol);
+  const isAdminOrGerente = ['admin', 'superadmin', 'gerente_sede'].includes(usuario.rol);
   let facturas = [];
   let sedes = [];
 
@@ -48,7 +49,7 @@ export async function initFacturacion(container) {
                 <option value="anulada">Anulada</option>
               </select>
             </div>
-            ${isAdminOrGerente && usuario.rol === 'admin' ? `
+            ${isAdminOrGerente && ['admin', 'superadmin'].includes(usuario.rol) ? `
               <div class="col-md-2">
                 <label class="form-label">Sede</label>
                 <select id="filtro-sede" class="form-select">
@@ -327,7 +328,8 @@ export async function initFacturacion(container) {
 
   // Void Invoice Action (Nota Crédito)
   async function anularFactura(id) {
-    if (!confirm('¿Está seguro de que desea ANULAR esta factura mediante Nota de Crédito? Esta acción devolverá los productos al stock, anulará los IMEI vendidos y revertirá los ingresos en caja. Esta acción es irreversible.')) {
+    const verificado = await showConfirm('Anular Factura', '¿Está seguro de que desea ANULAR esta factura mediante Nota de Crédito? Esta acción devolverá los productos al stock, anulará los IMEI vendidos y revertirá los ingresos en caja. Esta acción es irreversible.');
+    if (!verificado) {
       return;
     }
 

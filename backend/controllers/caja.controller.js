@@ -13,8 +13,8 @@ function getLocalDateStr(date = new Date()) {
 
 exports.aperturaCaja = async (req, res, next) => {
   try {
-    const { montoApertura } = req.body;
-    const sedeId = req.usuario.sedeId;
+    const { montoApertura, sedeId: bodySedeId } = req.body;
+    const sedeId = bodySedeId || req.usuario.sedeId;
 
     if (!sedeId) {
       return res.status(400).json({ error: 'El usuario debe pertenecer a una sede para abrir caja.' });
@@ -73,8 +73,8 @@ exports.aperturaCaja = async (req, res, next) => {
 exports.egresoCaja = async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
-    const { monto, categoriaId, motivo, pinAdmin } = req.body;
-    const sedeId = req.usuario.sedeId;
+    const { monto, categoriaId, motivo, pinAdmin, sedeId: bodySedeId } = req.body;
+    const sedeId = bodySedeId || req.usuario.sedeId;
 
     if (!monto || parseFloat(monto) <= 0 || !categoriaId || !motivo) {
       return res.status(400).json({ error: 'Parámetros de egreso incompletos o monto inválido.' });
@@ -165,9 +165,10 @@ exports.cierreCaja = async (req, res, next) => {
       totalVentasDaviplata,
       totalVentasTarjeta,
       totalVentasTransferencia,
-      observaciones
+      observaciones,
+      sedeId: bodySedeId
     } = req.body;
-    const sedeId = req.usuario.sedeId;
+    const sedeId = bodySedeId || req.usuario.sedeId;
 
     const caja = await Caja.findOne({
       where: { sedeId, estado: 'abierta' },
@@ -226,7 +227,7 @@ exports.getReporteCaja = async (req, res, next) => {
     const querySedeId = sede || req.usuario.sedeId;
     const queryFecha = fecha || getLocalDateStr();
 
-    const caja = await Caja.findOne({
+    let caja = await Caja.findOne({
       where: {
         sedeId: querySedeId,
         fecha: queryFecha
@@ -236,6 +237,20 @@ exports.getReporteCaja = async (req, res, next) => {
         { model: EgresoCaja, as: 'egresos', include: [{ model: CategoriaEgreso, as: 'categoria', attributes: ['nombre'] }] }
       ]
     });
+
+    // Si no hay caja para la fecha dada, verificar si hay alguna caja abierta sin cerrar de fechas anteriores
+    if (!caja) {
+      caja = await Caja.findOne({
+        where: {
+          sedeId: querySedeId,
+          estado: 'abierta'
+        },
+        order: [['createdAt', 'DESC']],
+        include: [
+          { model: EgresoCaja, as: 'egresos', include: [{ model: CategoriaEgreso, as: 'categoria', attributes: ['nombre'] }] }
+        ]
+      });
+    }
 
     if (!caja) {
       return res.status(404).json({ error: 'No se encontró registro de caja para la fecha e institución especificada.' });
@@ -313,3 +328,56 @@ exports.getHistorialCajas = async (req, res, next) => {
     next(error);
   }
 };
+
+exports.liberarCaja = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const { sedeId: bodySedeId } = req.body;
+    const sedeId = bodySedeId || req.usuario.sedeId;
+
+    if (!sedeId) {
+      return res.status(400).json({ error: 'El usuario debe pertenecer a una sede para liberar caja.' });
+    }
+
+    const caja = await Caja.findOne({
+      where: { sedeId, estado: 'abierta' },
+      transaction
+    });
+
+    if (!caja) {
+      return res.status(400).json({ error: 'No hay ninguna caja abierta en esta sede para liberar.' });
+    }
+
+    // Calcular montos teóricos para el cierre automático sin discrepancias
+    const efectivoTeorico = parseFloat(caja.montoApertura) + parseFloat(caja.totalVentasEfectivo) - parseFloat(caja.totalEgresos);
+
+    await caja.update({
+      estado: 'cerrada',
+      usuarioCierreId: req.usuario.userId,
+      horaCierre: new Date(),
+      totalVentasEfectivo: efectivoTeorico, // Cuadramos con el saldo teórico
+      diferencia: 0,
+      observaciones: 'Liberación forzada / Cierre administrativo por Administrador.'
+    }, { transaction });
+
+    await transaction.commit();
+
+    if (req.logAudit) {
+      await req.logAudit({
+        accion: 'UPDATE',
+        modulo: 'Caja',
+        registroId: caja.id,
+        valorNuevo: caja.toJSON()
+      });
+    }
+
+    return res.json({
+      message: 'Caja liberada y cerrada administrativamente de forma exitosa.',
+      caja
+    });
+  } catch (error) {
+    await transaction.rollback();
+    next(error);
+  }
+};
+

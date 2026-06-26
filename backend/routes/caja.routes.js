@@ -6,6 +6,7 @@ const rolesMiddleware = require('../middleware/roles.middleware');
 
 router.post('/apertura', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'cajero']), cajaController.aperturaCaja);
 router.post('/cierre', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'cajero']), cajaController.cierreCaja);
+router.post('/liberar', authMiddleware, rolesMiddleware(['admin']), cajaController.liberarCaja);
 router.post('/egreso', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'cajero']), cajaController.egresoCaja);
 router.get('/reporte', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'contador']), cajaController.getReporteCaja);
 router.get('/historial', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'contador']), cajaController.getHistorialCajas);

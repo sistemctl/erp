@@ -1,5 +1,6 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
+import { showToast } from '../utils/toast.js';
 
 export async function initSeries(container) {
   const usuario = getUsuario();
@@ -97,12 +98,22 @@ export async function initSeries(container) {
     <div class="modal modal-blur fade" id="modal-serie" tabindex="-1" role="dialog" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered" role="document">
         <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Registrar IMEI / Serie</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          <div class="modal-header d-flex flex-column align-items-start border-bottom-0 pb-0">
+            <div class="d-flex w-100 justify-content-between align-items-center">
+              <h5 class="modal-title">Registrar IMEI / Serie</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <ul class="nav nav-tabs card-header-tabs mt-3 w-100" id="reg-mode-tabs" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="tab-bulk-mode" data-bs-toggle="tab" data-bs-target="#bulk-mode-pane" type="button" role="tab">Carga Masiva (Lote)</button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tab-continuous-mode" data-bs-toggle="tab" data-bs-target="#continuous-mode-pane" type="button" role="tab">Escaneo Continuo ⚡</button>
+              </li>
+            </ul>
           </div>
           <form id="form-create-serie">
-            <div class="modal-body">
+            <div class="modal-body pb-2">
               <div class="mb-3">
                 <label class="form-label">Producto</label>
                 <select id="reg-producto" class="form-select" required>
@@ -115,14 +126,37 @@ export async function initSeries(container) {
                   ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
                 </select>
               </div>
-              <div class="mb-3">
-                <label class="form-label">Número de Serie o IMEI</label>
-                <input type="text" id="reg-imei" class="form-control" placeholder="Ej: 358901234567890" required>
+              
+              <div class="tab-content" id="reg-mode-content">
+                <!-- PESTAÑA 1: CARGA MASIVA -->
+                <div class="tab-pane fade show active" id="bulk-mode-pane" role="tabpanel">
+                  <div class="mb-3">
+                    <label class="form-label d-flex justify-content-between">
+                      <span>Números de Serie / IMEIs (uno por línea o comas)</span>
+                      <span class="badge bg-blue-lt" id="seriales-counter">0 detectados</span>
+                    </label>
+                    <textarea id="reg-imei" class="form-control" rows="5" placeholder="Escriba o pegue los seriales aquí..."></textarea>
+                  </div>
+                </div>
+
+                <!-- PESTAÑA 2: ESCANEO CONTINUO -->
+                <div class="tab-pane fade" id="continuous-mode-pane" role="tabpanel">
+                  <div class="mb-3">
+                    <label class="form-label">Escanear Código de Barras / Serial</label>
+                    <input type="text" id="reg-imei-continuous" class="form-control" placeholder="Escanee y pulse enter para guardar...">
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">Bitácora de Escaneos (Sesión Actual)</label>
+                    <div id="continuous-logs" class="border rounded p-2 overflow-auto bg-surface-light text-secondary" style="max-height: 150px; font-size: 0.85rem; background-color: #f6f8fb;">
+                      <div class="text-center py-2 text-secondary-50">Esperando escaneos...</div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="modal-footer">
-              <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancelar</button>
-              <button type="submit" class="btn btn-primary ms-auto">Registrar Ingreso</button>
+              <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cerrar</button>
+              <button type="submit" id="btn-submit-reg" class="btn btn-primary ms-auto">Registrar Ingreso</button>
             </div>
           </form>
         </div>
@@ -238,27 +272,116 @@ export async function initSeries(container) {
 
   // Botón nueva serie
   if (isAdminOrGerente) {
+    const tabBulk = document.getElementById('tab-bulk-mode');
+    const tabContinuous = document.getElementById('tab-continuous-mode');
+    const btnSubmit = document.getElementById('btn-submit-reg');
+    const inputContinuous = document.getElementById('reg-imei-continuous');
+    const logsDiv = document.getElementById('continuous-logs');
+
+    // Cambiar visibilidad de botón de lote según pestaña activa
+    tabBulk.addEventListener('shown.bs.tab', () => {
+      btnSubmit.classList.remove('d-none');
+    });
+    tabContinuous.addEventListener('shown.bs.tab', () => {
+      btnSubmit.classList.add('d-none');
+      inputContinuous.focus();
+    });
+
     document.getElementById('btn-nueva-serie').addEventListener('click', () => {
       document.getElementById('form-create-serie').reset();
+      document.getElementById('seriales-counter').textContent = '0 detectados';
+      logsDiv.innerHTML = '<div class="text-center py-2 text-secondary-50">Esperando escaneos...</div>';
       // Pre-seleccionar sede del usuario
       document.getElementById('reg-sede').value = usuario.sedeId;
+      
+      // Resetear a pestaña Carga Masiva
+      const firstTab = new bootstrap.Tab(tabBulk);
+      firstTab.show();
+
       modalSerie.show();
     });
 
+    // Contador de seriales en área de texto
+    document.getElementById('reg-imei').addEventListener('input', (e) => {
+      const text = e.target.value;
+      const count = text.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0).length;
+      document.getElementById('seriales-counter').textContent = `${count} detectados`;
+    });
+
+    // Envío del formulario de lote (Modo Masivo)
     document.getElementById('form-create-serie').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const data = {
-        productoId: document.getElementById('reg-producto').value,
-        sedeId: document.getElementById('reg-sede').value,
-        serie: document.getElementById('reg-imei').value.trim()
-      };
+
+      const isBulkActive = tabBulk.classList.contains('active');
+      if (!isBulkActive) return;
+
+      const prodId = document.getElementById('reg-producto').value;
+      const sedeId = document.getElementById('reg-sede').value;
+      const textVal = document.getElementById('reg-imei').value;
+      const series = textVal.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
+
+      if (series.length === 0) {
+        showToast('Error', 'Por favor, ingrese al menos un número de serie válido.', 'error');
+        return;
+      }
 
       try {
-        await apiFetch('/series', { method: 'POST', body: JSON.stringify(data) });
+        const res = await apiFetch('/series/bulk', {
+          method: 'POST',
+          body: JSON.stringify({ series, productoId: prodId, sedeId })
+        });
+        showToast('Éxito', res.message, 'success');
         modalSerie.hide();
         loadSeries();
       } catch (err) {
-        alert(err.message);
+        showToast('Error', err.message, 'error');
+      }
+    });
+
+    // Evento Escaneo Continuo (Auto-guardado al presionar Enter/escanear)
+    inputContinuous.addEventListener('keypress', async (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const serie = inputContinuous.value.trim();
+        if (!serie) return;
+
+        const prodId = document.getElementById('reg-producto').value;
+        const sedeId = document.getElementById('reg-sede').value;
+
+        // Limpiar input inmediatamente para agilizar el próximo escaneo
+        inputContinuous.value = '';
+
+        if (logsDiv.innerHTML.includes('Esperando escaneos...')) {
+          logsDiv.innerHTML = '';
+        }
+
+        const logId = 'log-' + Date.now();
+        const logItem = document.createElement('div');
+        logItem.id = logId;
+        logItem.className = 'd-flex justify-content-between align-items-center mb-1 py-1 border-bottom';
+        logItem.innerHTML = `
+          <span><code>${serie}</code></span>
+          <span class="text-secondary small"><span class="spinner-border spinner-border-sm text-primary" role="status"></span> Guardando...</span>
+        `;
+        logsDiv.insertBefore(logItem, logsDiv.firstChild);
+
+        try {
+          await apiFetch('/series', {
+            method: 'POST',
+            body: JSON.stringify({ serie, productoId: prodId, sedeId })
+          });
+
+          logItem.querySelector('.text-secondary').className = 'text-success small fw-bold';
+          logItem.querySelector('.text-success').innerHTML = '<i class="ti ti-circle-check me-1"></i> Registrado';
+
+          showToast('Serial Registrado', `El serial ${serie} se registró exitosamente.`, 'success');
+          loadSeries();
+        } catch (err) {
+          logItem.querySelector('.text-secondary').className = 'text-danger small fw-bold';
+          logItem.querySelector('.text-danger').innerHTML = `<i class="ti ti-circle-x me-1"></i> ${err.message}`;
+
+          showToast('Error de Escaneo', `${serie}: ${err.message}`, 'error');
+        }
       }
     });
   }

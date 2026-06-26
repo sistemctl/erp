@@ -1,9 +1,10 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
+import { showConfirm } from '../utils/toast.js';
 
 export async function initNomina(container) {
   const usuario = getUsuario();
-  const isAdminOrContador = ['admin', 'contador'].includes(usuario.rol);
+  const isAdminOrContador = ['admin', 'superadmin', 'contador'].includes(usuario.rol);
 
   if (!isAdminOrContador) {
     container.innerHTML = `
@@ -455,8 +456,8 @@ export async function initNomina(container) {
   });
 
   // Soft delete employee
-  async function desvincularEmpleado(id) {
-    if (!confirm('¿Está seguro de que desea desvincular a este empleado del sistema? Esto cambiará su estado a inactivo.')) {
+    const verificado = await showConfirm('Desvincular Empleado', '¿Está seguro de que desea desvincular a este empleado del sistema? Esto cambiará su estado a inactivo.');
+    if (!verificado) {
       return;
     }
     try {
@@ -618,7 +619,8 @@ export async function initNomina(container) {
 
   // Delete Nomina
   async function deleteNomina(id) {
-    if (!confirm('¿Está seguro de que desea eliminar este borrador de nómina?')) {
+    const verificado = await showConfirm('Eliminar Nómina', '¿Está seguro de que desea eliminar este borrador de nómina?');
+    if (!verificado) {
       return;
     }
     try {

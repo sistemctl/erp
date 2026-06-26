@@ -63,6 +63,10 @@ const ConfiguracionSistema = sequelize.define('ConfiguracionSistema', {
     type: DataTypes.DECIMAL(5, 2),
     defaultValue: 19.00
   },
+  cobrarIvaPos: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
+  },
   templateRecibido: {
     type: DataTypes.TEXT,
     defaultValue: "Hola {cliente}, recibimos tu {equipo} en la sede {sede} bajo la orden #{orden}."

@@ -10,6 +10,7 @@ const {
   StockSede,
   MovimientoInventario,
   Factura,
+  Caja,
   sequelize
 } = require('../models');
 const { Op } = require('sequelize');
@@ -23,7 +24,7 @@ const twilioService = require('../services/twilio.service');
 
 exports.getOrdenes = async (req, res, next) => {
   try {
-    const { estado, tecnico, sede, buscar } = req.query;
+    const { estado, tecnico, sede, buscar, desde, hasta } = req.query;
     const where = {};
     const querySedeId = sede || req.usuario.sedeId;
 
@@ -38,6 +39,12 @@ exports.getOrdenes = async (req, res, next) => {
         { imei: { [Op.iLike]: `%${buscar}%` } },
         { '$cliente.nombre$': { [Op.iLike]: `%${buscar}%` } }
       ];
+    }
+
+    if (desde || hasta) {
+      where.createdAt = {};
+      if (desde) where.createdAt[Op.gte] = new Date(desde + 'T00:00:00');
+      if (hasta) where.createdAt[Op.lte] = new Date(hasta + 'T23:59:59');
     }
 
     const ordenes = await OrdenReparacion.findAll({
@@ -202,7 +209,7 @@ exports.updateOrden = async (req, res, next) => {
       const costoRealNum = parseFloat(rentabilidad.costoReal);
       await rentabilidad.update({
         totalCobrado: finalTotalCobrado,
-        margen: finalTotalCobrado - (costoRealNum + manoObraNum)
+        margen: finalTotalCobrado - costoRealNum
       }, { transaction });
     }
 
@@ -228,29 +235,80 @@ exports.updateOrden = async (req, res, next) => {
 // --- CAMBIO DE ESTADO ---
 
 exports.updateEstado = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const { estado } = req.body;
+    const { estado, metodoPago, pagos } = req.body;
 
     if (!['recibido', 'diagnostico', 'en_reparacion', 'listo', 'entregado', 'cancelado'].includes(estado)) {
       return res.status(400).json({ error: 'Estado de reparación inválido.' });
     }
 
-    const orden = await OrdenReparacion.findByPk(id);
+    const orden = await OrdenReparacion.findByPk(id, { transaction });
     if (!orden) {
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
     }
 
-    const valorAnterior = orden.toJSON();
-    await orden.update({
-      estado,
-      notificacionEnviada: false // Preparar el hook de Twilio (Fase 10)
-    });
-
     if (estado === 'entregado') {
-      const yaFacturado = await Factura.findOne({ where: { ordenReparacionId: id } });
+      const caja = await Caja.findOne({
+        where: { sedeId: req.usuario.sedeId, estado: 'abierta' },
+        transaction
+      });
+
+      if (!caja) {
+        throw new Error('Debe abrir caja en su sede correspondiente antes de entregar y cobrar la reparación.');
+      }
+
+      const totalNum = parseFloat(orden.totalCobrado || 0);
+
+      // Si se envía un desglose de pagos mixtos
+      if (pagos) {
+        const efectivoRec = parseFloat(pagos.efectivo || 0);
+        const nequiRec = parseFloat(pagos.nequi || 0);
+        const daviplataRec = parseFloat(pagos.daviplata || 0);
+        const tarjetaRec = parseFloat(pagos.tarjeta || 0);
+        const transferenciaRec = parseFloat(pagos.transferencia || 0);
+
+        const totalPagado = efectivoRec + nequiRec + daviplataRec + tarjetaRec + transferenciaRec;
+
+        let efectivoParaCaja = efectivoRec;
+        if (totalPagado > totalNum) {
+          const vuelto = totalPagado - totalNum;
+          efectivoParaCaja = Math.max(0, efectivoRec - vuelto);
+        }
+
+        await caja.update({
+          totalVentasEfectivo: parseFloat(caja.totalVentasEfectivo) + efectivoParaCaja,
+          totalVentasNequi: parseFloat(caja.totalVentasNequi) + nequiRec,
+          totalVentasDaviplata: parseFloat(caja.totalVentasDaviplata) + daviplataRec,
+          totalVentasTarjeta: parseFloat(caja.totalVentasTarjeta) + tarjetaRec,
+          totalVentasTransferencia: parseFloat(caja.totalVentasTransferencia) + transferenciaRec
+        }, { transaction });
+
+      } else {
+        // Fallback a pago único tradicional
+        const metodo = metodoPago || 'efectivo';
+        if (!['efectivo', 'nequi', 'daviplata', 'tarjeta', 'transferencia'].includes(metodo)) {
+          throw new Error('Método de pago inválido.');
+        }
+
+        if (metodo === 'efectivo') {
+          await caja.update({ totalVentasEfectivo: parseFloat(caja.totalVentasEfectivo) + totalNum }, { transaction });
+        } else if (metodo === 'nequi') {
+          await caja.update({ totalVentasNequi: parseFloat(caja.totalVentasNequi) + totalNum }, { transaction });
+        } else if (metodo === 'daviplata') {
+          await caja.update({ totalVentasDaviplata: parseFloat(caja.totalVentasDaviplata) + totalNum }, { transaction });
+        } else if (metodo === 'tarjeta') {
+          await caja.update({ totalVentasTarjeta: parseFloat(caja.totalVentasTarjeta) + totalNum }, { transaction });
+        } else if (metodo === 'transferencia') {
+          await caja.update({ totalVentasTransferencia: parseFloat(caja.totalVentasTransferencia) + totalNum }, { transaction });
+        }
+      }
+
+      // Crear factura si no existe
+      const yaFacturado = await Factura.findOne({ where: { ordenReparacionId: id }, transaction });
       if (!yaFacturado) {
-        const countFacturas = await Factura.count();
+        const countFacturas = await Factura.count({ transaction });
         const numeroFactura = `FE-${String(countFacturas + 1).padStart(6, '0')}`;
         const fechaVencimiento = new Date();
         fechaVencimiento.setDate(fechaVencimiento.getDate() + 30);
@@ -259,15 +317,23 @@ exports.updateEstado = async (req, res, next) => {
           numeroFactura,
           ordenReparacionId: id,
           clienteId: orden.clienteId,
-          sedeId: orden.sedeId,
-          subtotal: parseFloat(orden.totalCobrado) / 1.19,
-          iva: (parseFloat(orden.totalCobrado) / 1.19) * 0.19,
-          total: parseFloat(orden.totalCobrado),
+          sedeId: req.usuario.sedeId,
+          subtotal: totalNum / 1.19,
+          iva: (totalNum / 1.19) * 0.19,
+          total: totalNum,
           estado: 'pagada',
           fechaVencimiento
-        });
+        }, { transaction });
       }
     }
+
+    const valorAnterior = orden.toJSON();
+    await orden.update({
+      estado,
+      notificacionEnviada: false // Preparar el hook de Twilio (Fase 10)
+    }, { transaction });
+
+    await transaction.commit();
 
     if (req.logAudit) {
       await req.logAudit({
@@ -284,6 +350,7 @@ exports.updateEstado = async (req, res, next) => {
 
     return res.json({ message: 'Estado actualizado correctamente.', estado: orden.estado });
   } catch (error) {
+    await transaction.rollback();
     next(error);
   }
 };
@@ -360,7 +427,7 @@ exports.addRepuestos = async (req, res, next) => {
       await rentabilidad.update({
         costoReal: nuevoCostoReal,
         totalCobrado: nuevoTotalCobrado,
-        margen: nuevoTotalCobrado - (nuevoCostoReal + parseFloat(orden.costoManoObra))
+        margen: nuevoTotalCobrado - nuevoCostoReal
       }, { transaction });
     }
 

@@ -1,11 +1,12 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
+import { showToast, showConfirm } from '../utils/toast.js';
 
 let dataSedes = [];
 
 export async function initInventario(container) {
   const usuario = getUsuario();
-  const isAdminOrGerente = ['admin', 'gerente_sede'].includes(usuario.rol);
+  const isAdminOrGerente = ['admin', 'superadmin', 'gerente_sede'].includes(usuario.rol);
   
   // Cargar sedes para los formularios y traslados
   try {
@@ -29,6 +30,9 @@ export async function initInventario(container) {
               ${isAdminOrGerente ? `
                 <button id="btn-nuevo-producto" class="btn btn-primary">
                   <i class="ti ti-plus me-2"></i> Nuevo Producto
+                </button>
+                <button id="btn-gestionar-categorias" class="btn btn-outline-primary">
+                  <i class="ti ti-tags me-2"></i> Categorías
                 </button>
                 <button id="btn-traslado" class="btn btn-warning">
                   <i class="ti ti-arrows-left-right me-2"></i> Traslado de Stock
@@ -140,6 +144,49 @@ export async function initInventario(container) {
                   </div>
                 </div>
               </div>
+              <div class="row d-none" id="prod-stock-wrapper">
+                <div class="col-lg-12">
+                  <div class="mb-3">
+                    <label class="form-label">Existencias en Sede Seleccionada</label>
+                    <input type="number" id="prod-stock-actual" class="form-control text-primary fw-bold animate__animated animate__fadeIn" readonly style="background-color: #f6f8fb;">
+                    <small class="text-muted d-none" id="admin-stock-note">🔑 Como Administrador, puede ajustar o eliminar (poner en 0) este valor directamente.</small>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Gestión de Seriales (dentro de Editar Producto) -->
+              <div class="row d-none border rounded p-3 mb-3" id="sec-gestion-seriales" style="background-color: #f6f8fb;">
+                <h4 class="mb-2"><i class="ti ti-barcode me-2 text-primary"></i>Códigos de Barras / Seriales (Sede Actual)</h4>
+                
+                <div class="col-lg-12 mb-3">
+                  <label class="form-label d-flex justify-content-between">
+                    <span>Escanear o Pegar Nuevos Seriales (uno por línea o comas)</span>
+                    <span class="badge bg-blue-lt" id="modal-seriales-counter">0 detectados</span>
+                  </label>
+                  <div class="input-group">
+                    <textarea id="modal-reg-imei" class="form-control" rows="2" placeholder="Ej:&#10;ATTECH001&#10;ATTECH002"></textarea>
+                    <button type="button" id="modal-btn-add-seriales" class="btn btn-primary px-3">Agregar</button>
+                  </div>
+                </div>
+
+                <div class="col-lg-12">
+                  <label class="form-label mb-2">Seriales Registrados en esta Sede</label>
+                  <div class="table-responsive border rounded bg-white" style="max-height: 150px;">
+                    <table class="table table-vcenter table-sm card-table mb-0">
+                      <thead>
+                        <tr>
+                          <th>Serial / IMEI</th>
+                          <th class="text-end px-3">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody id="modal-seriales-list-body">
+                        <tr><td colspan="2" class="text-center text-secondary py-2">No hay seriales en stock para este producto.</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
               <div class="row">
                 <div class="col-lg-6">
                   <div class="mb-3">
@@ -248,51 +295,192 @@ export async function initInventario(container) {
         </div>
       </div>
     </div>
+
+    <!-- Modal Gestionar Categorías -->
+    <div class="modal modal-blur fade" id="modal-categorias" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-dialog modal-md modal-dialog-centered" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Gestionar Categorías</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <!-- Formulario para agregar -->
+            <form id="form-crear-categoria" class="mb-4">
+              <label class="form-label">Nueva Categoría</label>
+              <div class="input-group">
+                <input type="text" id="cat-nombre-input" class="form-control" placeholder="Nombre de la categoría..." required>
+                <button type="submit" class="btn btn-primary">
+                  <i class="ti ti-plus me-1"></i> Agregar
+                </button>
+              </div>
+            </form>
+
+            <label class="form-label">Categorías Existentes</label>
+            <div class="border rounded-2" style="max-height: 250px; overflow-y: auto;">
+              <table class="table table-vcenter card-table table-mobile-md mb-0">
+                <thead>
+                  <tr>
+                    <th>Nombre</th>
+                    <th class="w-1">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="lista-categorias-body">
+                  <tr>
+                    <td colspan="2" class="text-center py-3 text-secondary">Cargando...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-link link-secondary ms-auto" data-bs-dismiss="modal">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
   `;
 
   // Inicializar componentes de Bootstrap (Modales)
   const modalProd = new bootstrap.Modal(document.getElementById('modal-producto'));
   const modalTraslado = new bootstrap.Modal(document.getElementById('modal-traslado'));
   const modalCSV = new bootstrap.Modal(document.getElementById('modal-csv'));
+  const modalCategorias = new bootstrap.Modal(document.getElementById('modal-categorias'));
 
   const selectSede = document.getElementById('select-sede-inventario');
   const searchInput = document.getElementById('search-inventario');
 
-  // Cargar Categorías en formulario
-  let categorias = [];
-  try {
-    categorias = await apiFetch('/config/usuarios'); // usaremos esto para buscar configuraciones, o creamos un config de categorias
-    // En las semillas, categorías están creadas. Vamos a consultar categorías reales.
-    // Como no definimos un endpoint específico de categorías en routes/config, podemos hacer una consulta a productos y mapear o crear un endpoint rápido.
-    // Wait, let's just make a quick fetch de categorías de la base de datos!
-    // Podemos crear un endpoint rápido en routes/config o fetch todas las categorías.
-    // De momento, hagamos un query simple o carguemos por defecto las categorías semillas si falla el fetch.
-    categorias = await apiFetch('/productos').then(prods => {
-      const catsMap = {};
-      prods.forEach(p => {
-        if (p.categoria) {
-          catsMap[p.categoriaId] = p.categoria.nombre;
+  // --- GESTIÓN DE SERIALES DESDE EL MODAL ---
+  const loadModalSerials = async (productoId) => {
+    const listBody = document.getElementById('modal-seriales-list-body');
+    if (!listBody) return;
+    listBody.innerHTML = `<tr><td colspan="2" class="text-center py-2"><div class="spinner-border spinner-border-sm text-primary" role="status"></div></td></tr>`;
+    
+    try {
+      const currentSedeId = selectSede.value || usuario.sedeId;
+      const data = await apiFetch(`/series?producto=${productoId}`);
+      const filtered = data.filter(s => s.sedeId === currentSedeId && s.estado === 'en_stock');
+      
+      if (filtered.length === 0) {
+        listBody.innerHTML = `<tr><td colspan="2" class="text-center text-secondary py-2">No hay seriales en stock para este producto en esta sede.</td></tr>`;
+        return;
+      }
+      
+      listBody.innerHTML = filtered.map(s => `
+        <tr>
+          <td><code class="fw-bold text-dark">${s.serie}</code></td>
+          <td class="text-end px-3">
+            <button type="button" class="btn btn-icon btn-ghost-danger btn-sm btn-delete-modal-serial" data-id="${s.id}" title="Eliminar Serial">
+              <i class="ti ti-trash"></i>
+            </button>
+          </td>
+        </tr>
+      `).join('');
+
+      listBody.querySelectorAll('.btn-delete-modal-serial').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const serialId = btn.getAttribute('data-id');
+          const confirmDelete = await showConfirm('Eliminar Serial', '¿Está seguro de eliminar este número de serie? Esto restará 1 unidad al stock.');
+          if (confirmDelete) {
+            try {
+              await apiFetch(`/series/${serialId}`, { method: 'DELETE' });
+              showToast('Éxito', 'Serial eliminado correctamente.', 'success');
+              
+              await loadModalSerials(productoId);
+              
+              const currentStockStr = document.getElementById('prod-stock-actual').value;
+              const currentStockVal = parseInt(currentStockStr) || 0;
+              document.getElementById('prod-stock-actual').value = `${Math.max(0, currentStockVal - 1)} unidades`;
+              
+              loadInventario();
+            } catch (err) {
+              showToast('Error', err.message, 'error');
+            }
+          }
+        });
+      });
+    } catch (err) {
+      listBody.innerHTML = `<tr><td colspan="2" class="text-center text-danger py-2">Error al cargar seriales: ${err.message}</td></tr>`;
+    }
+  };
+
+  // Inicializar listeners de seriales del modal
+  setTimeout(() => {
+    const modalTextarea = document.getElementById('modal-reg-imei');
+    const modalCounter = document.getElementById('modal-seriales-counter');
+    const btnAddSerials = document.getElementById('modal-btn-add-seriales');
+    const switchSerie = document.getElementById('prod-serie');
+
+    if (modalTextarea && modalCounter && btnAddSerials && switchSerie) {
+      modalTextarea.addEventListener('input', (e) => {
+        const text = e.target.value;
+        const count = text.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0).length;
+        modalCounter.textContent = `${count} detectados`;
+      });
+
+      btnAddSerials.addEventListener('click', async () => {
+        const prodId = document.getElementById('producto-id').value;
+        const currentSedeId = selectSede.value || usuario.sedeId;
+        const textVal = modalTextarea.value.trim();
+        
+        const series = textVal.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
+        if (series.length === 0) {
+          showToast('Error', 'Por favor, ingrese al menos un número de serie válido.', 'error');
+          return;
+        }
+
+        try {
+          const res = await apiFetch('/series/bulk', {
+            method: 'POST',
+            body: JSON.stringify({ series, productoId: prodId, sedeId: currentSedeId })
+          });
+          showToast('Éxito', res.message, 'success');
+          
+          modalTextarea.value = '';
+          modalCounter.textContent = '0 detectados';
+          
+          await loadModalSerials(prodId);
+          
+          const currentStockStr = document.getElementById('prod-stock-actual').value;
+          const currentStockVal = parseInt(currentStockStr) || 0;
+          document.getElementById('prod-stock-actual').value = `${currentStockVal + series.length} unidades`;
+          
+          loadInventario();
+        } catch (err) {
+          showToast('Error', err.message, 'error');
         }
       });
-      return Object.keys(catsMap).map(id => ({ id, nombre: catsMap[id] }));
-    }).catch(() => []);
-    
-    if (categorias.length === 0) {
-      // Fallback
-      categorias = [
-        { id: '1', nombre: 'Computadores' },
-        { id: '2', nombre: 'Celulares' },
-        { id: '3', nombre: 'Consolas' },
-        { id: '4', nombre: 'Repuestos' },
-        { id: '5', nombre: 'Accesorios' }
-      ];
-    }
 
-    const selectCat = document.getElementById('prod-categoria');
-    selectCat.innerHTML = categorias.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
-  } catch (e) {
-    console.error(e);
-  }
+      switchSerie.addEventListener('change', (e) => {
+        const prodId = document.getElementById('producto-id').value;
+        const secSeriales = document.getElementById('sec-gestion-seriales');
+        if (e.target.checked && prodId) {
+          secSeriales.classList.remove('d-none');
+          loadModalSerials(prodId);
+        } else {
+          secSeriales.classList.add('d-none');
+        }
+      });
+    }
+  }, 100);
+
+  // Cargar Categorías en formulario
+  const loadCategoriasList = async (selectedId = null) => {
+    try {
+      const list = await apiFetch('/productos/categorias').catch(() => []);
+      const selectCat = document.getElementById('prod-categoria');
+      if (selectCat) {
+        selectCat.innerHTML = list.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+        if (selectedId) {
+          selectCat.value = selectedId;
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  await loadCategoriasList();
 
   // Cargar datos iniciales
   const loadInventario = async () => {
@@ -380,8 +568,33 @@ export async function initInventario(container) {
             document.getElementById('prod-minimo').value = item.producto.stockMinimo;
             document.getElementById('prod-categoria').value = item.producto.categoriaId;
             document.getElementById('prod-serie').checked = item.producto.tieneNumeroSerie;
+            document.getElementById('prod-iva').checked = item.producto.tieneIVA;
             document.getElementById('prod-reacondicionado').checked = item.producto.esReacondicionado;
             document.getElementById('prod-imagen-url').value = item.producto.imagenUrl || '';
+            
+            const stockInput = document.getElementById('prod-stock-actual');
+            const adminNote = document.getElementById('admin-stock-note');
+            stockInput.value = item.cantidad;
+            document.getElementById('prod-stock-wrapper').classList.remove('d-none');
+
+            if (['admin', 'superadmin'].includes(usuario.rol)) {
+              stockInput.removeAttribute('readonly');
+              stockInput.style.backgroundColor = '';
+              adminNote.classList.remove('d-none');
+            } else {
+              stockInput.setAttribute('readonly', 'true');
+              stockInput.style.backgroundColor = '#f6f8fb';
+              adminNote.classList.add('d-none');
+            }
+            
+            // Mostrar u ocultar sección de seriales al abrir
+            const secSeriales = document.getElementById('sec-gestion-seriales');
+            if (item.producto.tieneNumeroSerie) {
+              secSeriales.classList.remove('d-none');
+              loadModalSerials(item.productoId);
+            } else {
+              secSeriales.classList.add('d-none');
+            }
             
             document.getElementById('modal-producto-title').textContent = 'Editar Producto';
             modalProd.show();
@@ -392,12 +605,14 @@ export async function initInventario(container) {
       document.querySelectorAll('.btn-eliminar').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           const id = e.target.getAttribute('data-id');
-          if (confirm('¿Está seguro de eliminar este producto del catálogo?')) {
+          const verificado = await showConfirm('Eliminar Producto', '¿Está seguro de eliminar este producto del catálogo de forma permanente?');
+          if (verificado) {
             try {
               await apiFetch(`/productos/${id}`, { method: 'DELETE' });
+              showToast('Éxito', 'Producto eliminado correctamente.', 'success');
               loadInventario();
             } catch (err) {
-              alert(err.message);
+              showToast('Error', err.message, 'error');
             }
           }
         });
@@ -415,9 +630,82 @@ export async function initInventario(container) {
 
   // Botón Nuevo Producto
   if (isAdminOrGerente) {
+    // Gestión de Categorías
+    const btnGestionarCats = document.getElementById('btn-gestionar-categorias');
+    if (btnGestionarCats) {
+      const loadCategoriasPanel = async () => {
+        const tbody = document.getElementById('lista-categorias-body');
+        tbody.innerHTML = `<tr><td colspan="2" class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary" role="status"></div></td></tr>`;
+        try {
+          const list = await apiFetch('/productos/categorias').catch(() => []);
+          if (list.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="2" class="text-center py-3 text-secondary">No hay categorías registradas.</td></tr>`;
+            return;
+          }
+          tbody.innerHTML = list.map(c => `
+            <tr>
+              <td>${c.nombre}</td>
+              <td class="text-end">
+                <button class="btn btn-icon btn-ghost-danger btn-sm btn-eliminar-categoria" data-id="${c.id}">
+                  <i class="ti ti-trash"></i>
+                </button>
+              </td>
+            </tr>
+          `).join('');
+
+          // Escuchar botones de eliminar categoría
+          tbody.querySelectorAll('.btn-eliminar-categoria').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              const id = btn.getAttribute('data-id');
+              const verificado = await showConfirm('Eliminar Categoría', '¿Está seguro de que desea eliminar esta categoría?');
+              if (verificado) {
+                try {
+                  await apiFetch(`/productos/categorias/${id}`, { method: 'DELETE' });
+                  showToast('Éxito', 'Categoría eliminada correctamente.', 'success');
+                  loadCategoriasPanel();
+                  await loadCategoriasList(); // Actualizar select en formulario de producto
+                } catch (err) {
+                  showToast('Error', err.message, 'error');
+                }
+              }
+            });
+          });
+        } catch (err) {
+          tbody.innerHTML = `<tr><td colspan="2" class="text-center py-3 text-danger">Error al cargar categorías.</td></tr>`;
+        }
+      };
+
+      btnGestionarCats.addEventListener('click', () => {
+        loadCategoriasPanel();
+        modalCategorias.show();
+      });
+
+      document.getElementById('form-crear-categoria').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const nombreInput = document.getElementById('cat-nombre-input');
+        const nombre = nombreInput.value.trim();
+        if (!nombre) return;
+
+        try {
+          await apiFetch('/productos/categorias', {
+            method: 'POST',
+            body: JSON.stringify({ nombre })
+          });
+          nombreInput.value = '';
+          showToast('Éxito', 'Categoría creada exitosamente.', 'success');
+          loadCategoriasPanel();
+          await loadCategoriasList(); // Actualizar select en formulario de producto
+        } catch (err) {
+          showToast('Error', err.message, 'error');
+        }
+      });
+    }
+
     document.getElementById('btn-nuevo-producto').addEventListener('click', () => {
       document.getElementById('form-producto').reset();
       document.getElementById('producto-id').value = '';
+      document.getElementById('prod-stock-wrapper').classList.add('d-none');
+      document.getElementById('sec-gestion-seriales').classList.add('d-none');
       document.getElementById('modal-producto-title').textContent = 'Crear Producto';
       modalProd.show();
     });
@@ -437,7 +725,9 @@ export async function initInventario(container) {
         tieneNumeroSerie: document.getElementById('prod-serie').checked,
         tieneIVA: document.getElementById('prod-iva').checked,
         esReacondicionado: document.getElementById('prod-reacondicionado').checked,
-        imagenUrl: document.getElementById('prod-imagen-url').value.trim() || null
+        imagenUrl: document.getElementById('prod-imagen-url').value.trim() || null,
+        ajusteStock: ['admin', 'superadmin'].includes(usuario.rol) ? parseInt(document.getElementById('prod-stock-actual').value || 0) : null,
+        sedeId: (document.getElementById('select-sede-inventario') ? document.getElementById('select-sede-inventario').value : null) || usuario.sedeId
       };
 
       try {

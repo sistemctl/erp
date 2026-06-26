@@ -3,8 +3,8 @@ import { getUsuario } from '../auth.js';
 
 export async function initCompras(container) {
   const usuario = getUsuario();
-  const isAdminOrContador = ['admin', 'contador'].includes(usuario.rol);
-  const isAdminOrGerente = ['admin', 'gerente_sede'].includes(usuario.rol);
+  const isAdminOrContador = ['admin', 'superadmin', 'contador'].includes(usuario.rol);
+  const isAdminOrGerente = ['admin', 'superadmin', 'gerente_sede'].includes(usuario.rol);
 
   let compras = [];
   let proveedores = [];
@@ -182,8 +182,26 @@ export async function initCompras(container) {
 
     <!-- Modal Recepción de Mercancías -->
     <div class="modal modal-blur fade" id="modal-recibir-mercancia" tabindex="-1" role="dialog" aria-hidden="true">
-      <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+      <div class="modal-dialog modal-xl modal-dialog-centered" role="document">
         <div class="modal-content" id="recibir-mercancia-content">
+          <!-- Dinámico -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Devolución de Mercancías -->
+    <div class="modal modal-blur fade" id="modal-devolver-mercancia" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-centered" role="document">
+        <div class="modal-content" id="devolver-mercancia-content">
+          <!-- Dinámico -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Ver Detalle Compra -->
+    <div class="modal modal-blur fade" id="modal-ver-compra" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content" id="ver-compra-content">
           <!-- Dinámico -->
         </div>
       </div>
@@ -233,6 +251,8 @@ export async function initCompras(container) {
   const tbodyCompras = document.getElementById('compras-table-body');
   const tbodyCpp = document.getElementById('cpp-table-body');
   const modalRecibir = new bootstrap.Modal(document.getElementById('modal-recibir-mercancia'));
+  const modalDevolver = new bootstrap.Modal(document.getElementById('modal-devolver-mercancia'));
+  const modalVer = new bootstrap.Modal(document.getElementById('modal-ver-compra'));
   const modalPagar = new bootstrap.Modal(document.getElementById('modal-pagar-cuenta'));
 
   const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
@@ -265,17 +285,33 @@ export async function initCompras(container) {
           <td class="text-center"><span class="badge ${badgeClass} px-2 py-1">${c.estado.toUpperCase()}</span></td>
           <td class="text-center"><span class="badge ${payBadge} px-2 py-1">${c.estadoPago.toUpperCase()}</span></td>
           <td class="text-end">
-            ${isAdminOrGerente && c.estado !== 'recibida' && c.estado !== 'cancelada' ? `
-              <button class="btn btn-outline-success btn-sm btn-recibir-merc" data-id="${c.id}"><i class="ti ti-package me-1"></i>Recibir</button>
-            ` : '<span class="text-secondary small">Procesada</span>'}
+            <div class="btn-list justify-content-end">
+              <button class="btn btn-outline-primary btn-sm btn-ver-oc" data-id="${c.id}"><i class="ti ti-eye me-1"></i>Ver</button>
+              ${isAdminOrGerente && (c.estado === 'pendiente' || c.estado === 'parcial') ? `
+                <button class="btn btn-outline-success btn-sm btn-recibir-merc" data-id="${c.id}"><i class="ti ti-package me-1"></i>Recibir</button>
+              ` : ''}
+              ${isAdminOrGerente && (c.estado === 'recibida' || c.estado === 'parcial') ? `
+                <button class="btn btn-outline-danger btn-sm btn-devolver-merc" data-id="${c.id}"><i class="ti ti-arrow-back me-1"></i>Devolver</button>
+              ` : ''}
+              ${c.estado === 'cancelada' ? '<span class="text-secondary small">Cancelada</span>' : ''}
+              ${!isAdminOrGerente && c.estado !== 'cancelada' ? '<span class="text-secondary small">Procesada</span>' : ''}
+            </div>
           </td>
         </tr>
       `;
     }).join('');
 
-    // Attach receipt listeners
+    // Attach receipt and devolution listeners
+    document.querySelectorAll('.btn-ver-oc').forEach(btn => {
+      btn.addEventListener('click', () => openVerCompra(btn.dataset.id));
+    });
+
     document.querySelectorAll('.btn-recibir-merc').forEach(btn => {
       btn.addEventListener('click', () => openRecibirMercancia(btn.dataset.id));
+    });
+
+    document.querySelectorAll('.btn-devolver-merc').forEach(btn => {
+      btn.addEventListener('click', () => openDevolverMercancia(btn.dataset.id));
     });
   }
 
@@ -478,21 +514,33 @@ export async function initCompras(container) {
                   <th class="text-center">Recibidas Previamente</th>
                   <th class="text-center" style="width: 140px;">Recibiendo Ahora</th>
                 </tr>
-              </thead>
-              <tbody>
-                ${oc.items.map(item => {
+                             ${oc.items.map(item => {
                   const maxPosible = item.cantidadPedida - item.cantidadRecibida;
+                  const isSerialized = item.producto.tieneNumeroSerie;
                   return `
                     <tr class="align-middle">
-                      <td><strong>${item.producto.nombre}</strong></td>
+                      <td>
+                        <strong>${item.producto.nombre}</strong>
+                        <div class="mt-2 form-check form-switch small">
+                          <input class="form-check-input switch-recibir-seriales" type="checkbox" data-pid="${item.productoId}" ${isSerialized ? 'checked' : ''}>
+                          <label class="form-check-label text-secondary fw-semibold">Registrar Seriales / IMEIs</label>
+                        </div>
+                        <div class="mt-2 container-series-input ${isSerialized ? '' : 'd-none'}" data-pid="${item.productoId}">
+                          <textarea class="form-control form-control-sm input-recibir-series" 
+                                    data-pid="${item.productoId}" 
+                                    rows="4" 
+                                    placeholder="Escriba o escanee los seriales (uno por línea o comas)..." ${isSerialized ? 'required' : ''}></textarea>
+                          <div class="small text-secondary mt-1"><span class="badge bg-blue-lt counter-series-rec" data-pid="${item.productoId}">0</span> de <span class="badge bg-secondary-lt max-series-rec" data-pid="${item.productoId}">${maxPosible}</span> seriales requeridos</div>
+                        </div>
+                      </td>
                       <td class="text-center">${item.cantidadPedida}</td>
                       <td class="text-center text-blue">${item.cantidadRecibida}</td>
                       <td class="text-center">
                         <input type="number" class="form-control form-control-sm input-recibir-cant" 
-                               data-pid="${item.productoId}" 
-                               value="${maxPosible}" 
-                               min="0" 
-                               max="${maxPosible}" required>
+                                data-pid="${item.productoId}" 
+                                value="${maxPosible}" 
+                                min="0" 
+                                max="${maxPosible}" required>
                       </td>
                     </tr>
                   `;
@@ -507,17 +555,84 @@ export async function initCompras(container) {
         </form>
       `;
 
+      // Listeners para actualizar dinámicamente los contadores de seriales y switches
+      const modalForm = document.getElementById('form-recibir-oc');
+      
+      modalForm.querySelectorAll('.switch-recibir-seriales').forEach(sw => {
+        sw.addEventListener('change', (e) => {
+          const pid = sw.dataset.pid;
+          const container = modalForm.querySelector(`.container-series-input[data-pid="${pid}"]`);
+          const textarea = modalForm.querySelector(`.input-recibir-series[data-pid="${pid}"]`);
+          if (e.target.checked) {
+            container.classList.remove('d-none');
+            textarea.required = true;
+          } else {
+            container.classList.add('d-none');
+            textarea.required = false;
+            textarea.value = '';
+            const counterBadge = modalForm.querySelector(`.counter-series-rec[data-pid="${pid}"]`);
+            if (counterBadge) counterBadge.textContent = '0';
+          }
+        });
+      });
+
+      modalForm.querySelectorAll('.input-recibir-cant').forEach(input => {
+        input.addEventListener('input', (e) => {
+          const pid = input.dataset.pid;
+          const maxBadge = modalForm.querySelector(`.max-series-rec[data-pid="${pid}"]`);
+          if (maxBadge) {
+            maxBadge.textContent = e.target.value;
+          }
+        });
+      });
+
+      modalForm.querySelectorAll('.input-recibir-series').forEach(textarea => {
+        textarea.addEventListener('input', (e) => {
+          const pid = textarea.dataset.pid;
+          const counterBadge = modalForm.querySelector(`.counter-series-rec[data-pid="${pid}"]`);
+          if (counterBadge) {
+            const text = e.target.value;
+            const count = text.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0).length;
+            counterBadge.textContent = count;
+          }
+        });
+      });
+
       // Submit Recepción
-      document.getElementById('form-recibir-oc').addEventListener('submit', async (ev) => {
+      modalForm.addEventListener('submit', async (ev) => {
         ev.preventDefault();
         const inputs = document.querySelectorAll('.input-recibir-cant');
         const items = [];
+        let validationError = null;
+
         inputs.forEach(input => {
+          const pid = input.dataset.pid;
+          const cant = parseInt(input.value || 0);
+          
+          const switchSeries = modalForm.querySelector(`.switch-recibir-seriales[data-pid="${pid}"]`);
+          const seriesTextarea = modalForm.querySelector(`.input-recibir-series[data-pid="${pid}"]`);
+          let series = [];
+          
+          if (switchSeries && switchSeries.checked && seriesTextarea && cant > 0) {
+            const textVal = seriesTextarea.value.trim();
+            series = textVal.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
+            if (series.length !== cant) {
+              validationError = `Debe ingresar exactamente ${cant} seriales para el producto serializado.`;
+            }
+          }
+
           items.push({
-            productoId: input.dataset.pid,
-            cantidadRecibida: input.value || 0
+            productoId: pid,
+            cantidadRecibida: cant,
+            series
           });
         });
+
+        if (validationError) {
+          const { showToast } = await import('../utils/toast.js').catch(() => ({ showToast: alert }));
+          showToast('Error de Validación', validationError, 'error');
+          return;
+        }
 
         try {
           await apiFetch(`/compras/${oc.id}/recibir`, {
@@ -528,14 +643,302 @@ export async function initCompras(container) {
           await loadInitialData();
           renderComprasTable();
           renderCppTable();
+
+          const { showToast } = await import('../utils/toast.js').catch(() => ({ showToast: alert }));
+          showToast('Éxito', 'Inventario entrante y seriales actualizados con éxito.', 'success');
         } catch (err) {
-          alert('Error al recibir mercancía: ' + err.message);
+          const { showToast } = await import('../utils/toast.js').catch(() => ({ showToast: alert }));
+          showToast('Error', err.message, 'error');
         }
       });
 
     } catch (err) {
       modalContent.innerHTML = `<div class="alert alert-danger m-3">${err.message}</div>`;
     }
+  }
+
+  // Open Devolución Modal
+  async function openDevolverMercancia(id) {
+    const modalContent = document.getElementById('devolver-mercancia-content');
+    modalContent.innerHTML = `<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>`;
+    modalDevolver.show();
+
+    try {
+      const oc = compras.find(c => c.id === id);
+      if (!oc) throw new Error('Orden no encontrada');
+
+      const shortId = oc.id.split('-')[0].toUpperCase();
+
+      modalContent.innerHTML = `
+        <form id="form-devolver-oc">
+          <input type="hidden" id="dev-compra-id" value="${oc.id}">
+          <div class="modal-header">
+            <h5 class="modal-title">Devolución de Mercancía: <strong>OC-${shortId}</strong></h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-secondary small mb-3">Ingrese las cantidades de mercancía que se devolverán al proveedor. Se descontarán del almacén de la sede: <strong>${oc.sede ? oc.sede.nombre : 'N/A'}</strong>.</p>
+            <table class="table table-sm table-striped">
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th class="text-center">Recibidas</th>
+                  <th class="text-center" style="width: 140px;">Cantidad a Devolver</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${oc.items.filter(item => item.cantidadRecibida > 0).map(item => {
+                  const maxPosible = item.cantidadRecibida;
+                  const isSerialized = item.producto.tieneNumeroSerie;
+                  return `
+                    <tr class="align-middle">
+                      <td>
+                        <strong>${item.producto.nombre}</strong>
+                        <div class="mt-2 form-check form-switch small">
+                          <input class="form-check-input switch-devolver-seriales" type="checkbox" data-pid="${item.productoId}" ${isSerialized ? 'checked' : ''}>
+                          <label class="form-check-label text-secondary fw-semibold">Ingresar Seriales / IMEIs a Devolver</label>
+                        </div>
+                        <div class="mt-2 container-series-dev-input ${isSerialized ? '' : 'd-none'}" data-pid="${item.productoId}">
+                          <textarea class="form-control form-control-sm input-devolver-series" 
+                                    data-pid="${item.productoId}" 
+                                    rows="4" 
+                                    placeholder="Escriba o escanee los seriales a devolver (uno por línea o comas)..." ${isSerialized ? 'required' : ''}></textarea>
+                          <div class="small text-secondary mt-1"><span class="badge bg-danger-lt counter-series-dev" data-pid="${item.productoId}">0</span> de <span class="badge bg-secondary-lt max-series-dev" data-pid="${item.productoId}">0</span> seriales ingresados</div>
+                        </div>
+                      </td>
+                      <td class="text-center text-success fw-bold">${item.cantidadRecibida}</td>
+                      <td class="text-center">
+                        <input type="number" class="form-control form-control-sm input-devolver-cant" 
+                                data-pid="${item.productoId}" 
+                                value="0" 
+                                min="0" 
+                                max="${maxPosible}" required>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-danger ms-auto"><i class="ti ti-arrow-back me-1"></i>Procesar Devolución</button>
+          </div>
+        </form>
+      `;
+
+      // Listeners
+      const modalForm = document.getElementById('form-devolver-oc');
+      
+      modalForm.querySelectorAll('.switch-devolver-seriales').forEach(sw => {
+        sw.addEventListener('change', (e) => {
+          const pid = sw.dataset.pid;
+          const container = modalForm.querySelector(`.container-series-dev-input[data-pid="${pid}"]`);
+          const textarea = modalForm.querySelector(`.input-devolver-series[data-pid="${pid}"]`);
+          if (e.target.checked) {
+            container.classList.remove('d-none');
+            textarea.required = true;
+          } else {
+            container.classList.add('d-none');
+            textarea.required = false;
+            textarea.value = '';
+            const counterBadge = modalForm.querySelector(`.counter-series-dev[data-pid="${pid}"]`);
+            if (counterBadge) counterBadge.textContent = '0';
+          }
+        });
+      });
+
+      modalForm.querySelectorAll('.input-devolver-cant').forEach(input => {
+        input.addEventListener('input', (e) => {
+          const pid = input.dataset.pid;
+          const maxBadge = modalForm.querySelector(`.max-series-dev[data-pid="${pid}"]`);
+          if (maxBadge) {
+            maxBadge.textContent = e.target.value;
+          }
+        });
+      });
+
+      modalForm.querySelectorAll('.input-devolver-series').forEach(textarea => {
+        textarea.addEventListener('input', (e) => {
+          const pid = textarea.dataset.pid;
+          const counterBadge = modalForm.querySelector(`.counter-series-dev[data-pid="${pid}"]`);
+          if (counterBadge) {
+            const text = e.target.value;
+            const count = text.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0).length;
+            counterBadge.textContent = count;
+          }
+        });
+      });
+
+      // Submit Devolución
+      modalForm.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const inputs = modalForm.querySelectorAll('.input-devolver-cant');
+        const items = [];
+        let validationError = null;
+        let totalDevuelto = 0;
+
+        inputs.forEach(input => {
+          const pid = input.dataset.pid;
+          const cant = parseInt(input.value || 0);
+          if (cant > 0) {
+            totalDevuelto += cant;
+            const switchSeries = modalForm.querySelector(`.switch-devolver-seriales[data-pid="${pid}"]`);
+            const seriesTextarea = modalForm.querySelector(`.input-devolver-series[data-pid="${pid}"]`);
+            let series = [];
+            
+            if (switchSeries && switchSeries.checked && seriesTextarea) {
+              const textVal = seriesTextarea.value.trim();
+              series = textVal.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
+              if (series.length !== cant) {
+                validationError = `Debe ingresar exactamente ${cant} seriales para el producto serializado.`;
+              }
+            }
+
+            items.push({
+              productoId: pid,
+              cantidadDevolver: cant,
+              series
+            });
+          }
+        });
+
+        if (totalDevuelto === 0) {
+          const { showToast } = await import('../utils/toast.js').catch(() => ({ showToast: alert }));
+          showToast('Error de Validación', 'Debe especificar al menos un ítem con cantidad mayor a 0 para devolver.', 'error');
+          return;
+        }
+
+        if (validationError) {
+          const { showToast } = await import('../utils/toast.js').catch(() => ({ showToast: alert }));
+          showToast('Error de Validación', validationError, 'error');
+          return;
+        }
+
+        try {
+          await apiFetch(`/compras/${oc.id}/devolver`, {
+            method: 'POST',
+            body: JSON.stringify({ items })
+          });
+          modalDevolver.hide();
+          await loadInitialData();
+          renderComprasTable();
+          renderCppTable();
+
+          const { showToast } = await import('../utils/toast.js').catch(() => ({ showToast: alert }));
+          showToast('Éxito', 'Mercancía devuelta e inventario actualizado con éxito.', 'success');
+        } catch (err) {
+          const { showToast } = await import('../utils/toast.js').catch(() => ({ showToast: alert }));
+          showToast('Error', err.message, 'error');
+        }
+      });
+
+    } catch (err) {
+      modalContent.innerHTML = `<div class="alert alert-danger m-3">${err.message}</div>`;
+    }
+  }
+
+  // Open Ver Compra Modal
+  function openVerCompra(id) {
+    const modalContent = document.getElementById('ver-compra-content');
+    const oc = compras.find(c => c.id === id);
+    if (!oc) return;
+
+    const shortId = oc.id.split('-')[0].toUpperCase();
+    let badgeClass = 'bg-warning-lt';
+    if (oc.estado === 'recibida') badgeClass = 'bg-success-lt';
+    else if (oc.estado === 'parcial') badgeClass = 'bg-blue-lt';
+    else if (oc.estado === 'cancelada') badgeClass = 'bg-danger-lt';
+
+    let payBadge = 'bg-danger-lt';
+    if (oc.estadoPago === 'pagado') payBadge = 'bg-success-lt';
+    else if (oc.estadoPago === 'abono_parcial') payBadge = 'bg-warning-lt';
+
+    modalContent.innerHTML = `
+      <div class="modal-header">
+        <h5 class="modal-title">Detalle de Orden de Compra: <strong>OC-${shortId}</strong></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <div class="text-secondary small">Proveedor</div>
+            <div class="fw-bold">${oc.proveedor ? oc.proveedor.nombre : 'N/A'}</div>
+            ${oc.proveedor && oc.proveedor.nit ? `<div class="text-secondary small">NIT: ${oc.proveedor.nit}</div>` : ''}
+          </div>
+          <div class="col-md-6 text-md-end">
+            <div class="text-secondary small">Sede Destino</div>
+            <div class="fw-bold">${oc.sede ? oc.sede.nombre : 'N/A'}</div>
+            <div class="text-secondary small">Registrada por: ${oc.usuario ? oc.usuario.nombre : 'N/A'}</div>
+          </div>
+        </div>
+        <div class="row mb-4 border-top border-bottom py-2 bg-light">
+          <div class="col-6 col-md-3">
+            <div class="text-secondary small">Fecha Emisión</div>
+            <div class="fw-bold">${new Date(oc.createdAt).toLocaleDateString()}</div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="text-secondary small">Estado Mercancía</div>
+            <div><span class="badge ${badgeClass}">${oc.estado.toUpperCase()}</span></div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="text-secondary small">Estado Pago</div>
+            <div><span class="badge ${payBadge}">${oc.estadoPago.toUpperCase()}</span></div>
+          </div>
+          <div class="col-6 col-md-3 text-end">
+            <div class="text-secondary small">Saldo Pendiente</div>
+            <div class="fw-bold text-danger">${formatter.format(oc.saldoPendiente)}</div>
+          </div>
+        </div>
+
+        <h6 class="mb-2">Productos en esta Orden</h6>
+        <div class="table-responsive mb-3">
+          <table class="table table-sm table-striped">
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th class="text-center">Cant. Pedida</th>
+                <th class="text-center">Cant. Recibida</th>
+                <th class="text-end">Costo Unitario</th>
+                <th class="text-end">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${oc.items.map(item => `
+                <tr>
+                  <td>
+                    <div><strong>${item.producto ? item.producto.nombre : 'N/A'}</strong></div>
+                    ${item.producto && item.producto.codigoBarras ? `<div class="text-secondary small">${item.producto.codigoBarras}</div>` : ''}
+                  </td>
+                  <td class="text-center">${item.cantidadPedida}</td>
+                  <td class="text-center text-blue fw-bold">${item.cantidadRecibida}</td>
+                  <td class="text-end">${formatter.format(item.precioUnitario)}</td>
+                  <td class="text-end fw-bold">${formatter.format(item.cantidadPedida * item.precioUnitario)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="4" class="text-end fw-bold">TOTAL:</td>
+                <td class="text-end fw-bold text-primary">${formatter.format(oc.total)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        ${oc.observaciones ? `
+          <div class="mb-3">
+            <div class="text-secondary small">Observaciones:</div>
+            <p class="mb-0 text-secondary italic small">${oc.observaciones}</p>
+          </div>
+        ` : ''}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary ms-auto" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    `;
+
+    modalVer.show();
   }
 
   // Open Registrar Pago Account

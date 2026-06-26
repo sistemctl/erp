@@ -241,3 +241,300 @@ body {
 .login-card .btn-primary:active {
   transform: translateY(0) !important;
 }
+
+/* POS Category buttons and card overrides */
+.btn-cat-filter {
+  background-color: #ffffff;
+  color: #4a5568;
+  border: 1px solid #e2e8f0;
+  border-radius: 50px !important;
+  font-weight: 600;
+  padding: 0.4rem 1rem !important;
+  font-size: 0.85rem !important;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-cat-filter.btn-primary {
+  background-color: #8a1a1a !important; /* Dark red style from reference */
+  color: #ffffff !important;
+  border-color: #8a1a1a !important;
+  box-shadow: 0 4px 6px rgba(138, 26, 26, 0.15) !important;
+}
+
+.btn-cat-filter:hover:not(.btn-primary) {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
+
+/* POS Card Grid Item styling */
+.pos-product-card {
+  border-radius: 12px !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02) !important;
+  transition: transform 0.25s ease, box-shadow 0.25s ease !important;
+  display: flex;
+  flex-direction: column;
+  height: 250px !important;
+  overflow: hidden;
+  cursor: pointer;
+  background-color: #ffffff;
+}
+
+.pos-product-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 20px rgba(0, 0, 0, 0.06) !important;
+}
+
+.pos-product-card-img {
+  height: 130px;
+  width: 100%;
+  object-fit: cover;
+}
+
+.pos-product-card-fallback {
+  height: 130px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f1f5f9;
+  color: #94a3b8;
+  font-size: 2.5rem;
+  font-weight: bold;
+}
+
+.pos-product-card-brand {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.05em;
+  text-align: left;
+}
+
+.pos-product-card-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-top: 2px;
+  text-align: left;
+  line-height: 1.25;
+}
+
+.pos-product-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.pos-product-card-price {
+  font-weight: 700;
+  color: #b91c1c; /* Red price color like reference */
+  font-size: 0.95rem;
+}
+
+.pos-product-card-stock {
+  font-size: 0.7rem;
+  color: #64748b;
+  font-weight: 550;
+}
+
+/* Styled horizontal scrollbar for POS categories */
+#pos-categories-container::-webkit-scrollbar {
+  height: 4px;
+}
+#pos-categories-container::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 10px;
+}
+#pos-categories-container::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 10px;
+}
+#pos-categories-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Premium Toast Styles */
+.premium-toast-container {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.premium-toast {
+  min-width: 320px;
+  max-width: 400px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  pointer-events: auto;
+  transform: translateY(-20px) scale(0.95);
+  opacity: 0;
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-bs-theme="dark"] .premium-toast {
+  background: rgba(26, 32, 44, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.premium-toast.show {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.premium-toast.hide {
+  transform: translateY(-10px) scale(0.95);
+  opacity: 0;
+}
+
+.premium-toast-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.premium-toast-success .premium-toast-icon {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+
+.premium-toast-error .premium-toast-icon {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.premium-toast-warning .premium-toast-icon {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+}
+
+.premium-toast-content {
+  flex-grow: 1;
+}
+
+.premium-toast-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 2px;
+  color: var(--tblr-body-color, #1e293b);
+}
+
+.premium-toast-msg {
+  font-size: 0.8rem;
+  color: var(--tblr-secondary, #64748b);
+}
+
+/* Premium Confirm Modal Overlay */
+.premium-confirm-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.premium-confirm-overlay.show {
+  opacity: 1;
+}
+
+.premium-confirm-overlay.hide {
+  opacity: 0;
+}
+
+.premium-confirm-card {
+  width: 90%;
+  max-width: 400px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: scale(0.9) translateY(10px);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+[data-bs-theme="dark"] .premium-confirm-card {
+  background: rgba(30, 41, 59, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+.premium-confirm-overlay.show .premium-confirm-card {
+  transform: scale(1) translateY(0);
+}
+
+.premium-confirm-overlay.hide .premium-confirm-card {
+  transform: scale(0.95) translateY(10px);
+}
+
+.premium-confirm-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.premium-confirm-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--tblr-body-color, #1e293b);
+}
+
+.premium-confirm-msg {
+  font-size: 0.875rem;
+  color: var(--tblr-secondary, #64748b);
+}
+
+/* Agrandar el modal de recepción de mercancía */
+#modal-recibir-mercancia .modal-dialog {
+  max-width: 1250px !important;
+  width: 95% !important;
+}
+
+/* Agrandar el modal de devolución de mercancía */
+#modal-devolver-mercancia .modal-dialog {
+  max-width: 1250px !important;
+  width: 95% !important;
+}
+

@@ -1,5 +1,6 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
+import { showConfirm } from '../utils/toast.js';
 
 export async function initConfig(container) {
   const usuario = getUsuario();
@@ -82,6 +83,13 @@ export async function initConfig(container) {
                   <label class="form-label fw-bold">Límite de Egreso sin PIN (COP)</label>
                   <input type="number" id="cfg-egreso-max" class="form-control" min="0" step="100" required>
                 </div>
+                <div class="col-md-12 mt-3">
+                  <label class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="cfg-cobrar-iva">
+                    <span class="form-check-label fw-bold">Cobrar e incluir IVA en el Punto de Venta (POS)</span>
+                  </label>
+                  <small class="text-secondary d-block mt-1">Si se desactiva, el POS no sumará ningún impuesto adicional sobre el precio de venta del producto (se asume que el precio de venta ya incluye el IVA o que la venta no aplica IVA).</small>
+                </div>
                 
                 <div class="col-12 mt-4">
                   <button type="submit" class="btn btn-primary"><i class="ti ti-device-floppy me-1"></i> Guardar Configuración General</button>
@@ -124,7 +132,7 @@ export async function initConfig(container) {
                   <thead>
                     <tr>
                       <th>Nombre</th>
-                      <th>Email</th>
+                      <th>Usuario</th>
                       <th>Rol</th>
                       <th>Sede Asignada</th>
                       <th>Estado</th>
@@ -311,8 +319,8 @@ export async function initConfig(container) {
               <input type="text" id="usr-nombre" class="form-control" required placeholder="Ej: Juan Pérez">
             </div>
             <div class="mb-3">
-              <label class="form-label fw-bold">Correo Electrónico</label>
-              <input type="email" id="usr-email" class="form-control" required placeholder="Ej: juan@techstore.co">
+              <label class="form-label fw-bold">Nombre de Usuario</label>
+              <input type="text" id="usr-email" class="form-control" required placeholder="Ej: juanperez">
             </div>
             <div class="mb-3">
               <label class="form-label fw-bold" id="lbl-usr-password">Contraseña</label>
@@ -327,6 +335,7 @@ export async function initConfig(container) {
                 <option value="gerente_sede">Gerente de Sede</option>
                 <option value="contador">Contador</option>
                 <option value="admin">Administrador General</option>
+                <option value="superadmin">Superadministrador</option>
               </select>
             </div>
             <div class="mb-3">
@@ -372,6 +381,7 @@ export async function initConfig(container) {
       document.getElementById('cfg-iva').value = data.ivaDefecto || 19.00;
       document.getElementById('cfg-descuento-max').value = data.descuentoMaximoPct || 15.00;
       document.getElementById('cfg-egreso-max').value = data.egresoMaximoSinPin || 50000;
+      document.getElementById('cfg-cobrar-iva').checked = !!data.cobrarIvaPos;
 
       // Twilio
       document.getElementById('cfg-notif-activas').checked = !!data.notificacionesActivas;
@@ -442,7 +452,8 @@ export async function initConfig(container) {
       document.querySelectorAll('.btn-delete-sede').forEach(btn => {
         btn.addEventListener('click', async () => {
           const id = btn.getAttribute('data-id');
-          if (confirm('¿Estás seguro de eliminar esta sede? Esto podría afectar a los usuarios y ventas asociadas.')) {
+          const verificado = await showConfirm('Eliminar Sede', '¿Estás seguro de eliminar esta sede? Esto podría afectar a los usuarios y ventas asociadas.');
+          if (verificado) {
             try {
               await apiFetch(`/config/sedes/${id}`, { method: 'DELETE' });
               alert('Sede eliminada.');
@@ -530,7 +541,8 @@ export async function initConfig(container) {
       document.querySelectorAll('.btn-delete-usuario').forEach(btn => {
         btn.addEventListener('click', async () => {
           const id = btn.getAttribute('data-id');
-          if (confirm('¿Estás seguro de eliminar permanentemente este usuario?')) {
+          const verificado = await showConfirm('Eliminar Usuario', '¿Estás seguro de eliminar permanentemente este usuario?');
+          if (verificado) {
             try {
               await apiFetch(`/config/usuarios/${id}`, { method: 'DELETE' });
               alert('Usuario eliminado.');
@@ -631,7 +643,8 @@ export async function initConfig(container) {
       telefono: document.getElementById('cfg-telefono').value.trim(),
       ivaDefecto: parseFloat(document.getElementById('cfg-iva').value),
       descuentoMaximoPct: parseFloat(document.getElementById('cfg-descuento-max').value),
-      egresoMaximoSinPin: parseFloat(document.getElementById('cfg-egreso-max').value)
+      egresoMaximoSinPin: parseFloat(document.getElementById('cfg-egreso-max').value),
+      cobrarIvaPos: document.getElementById('cfg-cobrar-iva').checked
     };
 
     try {
@@ -770,7 +783,8 @@ export async function initConfig(container) {
       try {
         const backupData = JSON.parse(evt.target.result);
         
-        if (confirm('🚨 ¡ATENCIÓN! La restauración de base de datos vaciará las tablas actuales y cargará los datos de la copia de seguridad. ¿Estás seguro de continuar?')) {
+        const verificado = await showConfirm('Restaurar Base de Datos', '🚨 ¡ATENCIÓN! La restauración de base de datos vaciará las tablas actuales y cargará los datos de la copia de seguridad. ¿Estás seguro de continuar?');
+        if (verificado) {
           const res = await apiFetch('/config/restore', {
             method: 'POST',
             body: JSON.stringify(backupData)

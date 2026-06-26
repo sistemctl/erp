@@ -28,5 +28,8 @@
     "sequelize": "^6.37.8",
     "twilio": "^6.0.2",
     "uuid": "^14.0.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
   }
 }

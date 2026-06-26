@@ -237,7 +237,8 @@ exports.getSistemaConfig = async (req, res, next) => {
         descuentoMaximoPct: 15.00,
         egresoMaximoSinPin: 50000.00,
         notificacionesActivas: false,
-        ivaDefecto: 19.00
+        ivaDefecto: 19.00,
+        cobrarIvaPos: true
       });
     }
     return res.json(config);

@@ -1,4 +1,4 @@
-const { Producto, Categoria, Sede, StockSede, sequelize } = require('../models');
+const { Producto, Categoria, Sede, StockSede, NumeroSerie, MovimientoInventario, sequelize } = require('../models');
 const { Op } = require('sequelize');
 
 // --- CRUD PRODUCTOS ---
@@ -48,10 +48,53 @@ exports.createProducto = async (req, res, next) => {
       imagenUrl
     } = req.body;
 
-    // Verificar código duplicado
-    const existe = await Producto.findOne({ where: { codigoBarras, activo: true } });
+    // Verificar código duplicado (incluyendo inactivos)
+    const existe = await Producto.findOne({ where: { codigoBarras } });
     if (existe) {
-      return res.status(400).json({ error: 'El código de barras ya está asignado a otro producto.' });
+      if (existe.activo) {
+        return res.status(400).json({ error: 'El código de barras ya está asignado a otro producto activo.' });
+      } else {
+        // Restaurarlo y actualizarlo con la nueva información
+        await existe.update({
+          nombre,
+          descripcion,
+          precioVenta,
+          precioCosto,
+          tieneIVA,
+          stockMinimo,
+          tieneNumeroSerie,
+          esReacondicionado,
+          categoriaId,
+          imagenUrl,
+          activo: true
+        }, { transaction });
+
+        // Garantizar que tiene sus registros de StockSede inicializados
+        const sedes = await Sede.findAll();
+        for (const sede of sedes) {
+          const stockReg = await StockSede.findOne({ where: { productoId: existe.id, sedeId: sede.id }, transaction });
+          if (!stockReg) {
+            await StockSede.create({
+              productoId: existe.id,
+              sedeId: sede.id,
+              cantidad: 0
+            }, { transaction });
+          }
+        }
+
+        await transaction.commit();
+
+        if (req.logAudit) {
+          await req.logAudit({
+            accion: 'CREATE',
+            modulo: 'Productos',
+            registroId: existe.id,
+            valorNuevo: existe.toJSON()
+          });
+        }
+
+        return res.status(201).json(existe);
+      }
     }
 
     const producto = await Producto.create({
@@ -107,9 +150,31 @@ exports.updateProducto = async (req, res, next) => {
 
     const { codigoBarras } = req.body;
     if (codigoBarras && codigoBarras !== producto.codigoBarras) {
-      const existe = await Producto.findOne({ where: { codigoBarras, activo: true } });
+      const existe = await Producto.findOne({ where: { codigoBarras } });
       if (existe) {
-        return res.status(400).json({ error: 'El código de barras ya está asignado a otro producto.' });
+        return res.status(400).json({ error: 'El código de barras ya está asignado a otro producto (activo o inactivo).' });
+      }
+    }
+
+    const { ajusteStock, sedeId } = req.body;
+    if (req.usuario.rol === 'admin' && typeof ajusteStock === 'number' && sedeId) {
+      const [stockSede] = await StockSede.findOrCreate({
+        where: { productoId: id, sedeId },
+        defaults: { cantidad: 0 }
+      });
+
+      const cantidadAnterior = parseInt(stockSede.cantidad);
+      if (cantidadAnterior !== ajusteStock) {
+        await stockSede.update({ cantidad: ajusteStock });
+
+        await MovimientoInventario.create({
+          productoId: id,
+          sedeId,
+          tipo: ajusteStock > cantidadAnterior ? 'entrada' : 'salida',
+          cantidad: Math.abs(ajusteStock - cantidadAnterior),
+          motivo: `Ajuste manual de inventario por Administrador`,
+          usuarioId: req.usuario.userId
+        });
       }
     }
 
@@ -180,16 +245,44 @@ exports.getProductoByBarcode = async (req, res, next) => {
       });
     }
 
-    const producto = await Producto.findOne({
+    let producto = await Producto.findOne({
       where: { codigoBarras: codigo, activo: true },
       include
     });
 
+    let autoDetectedImei = null;
+
     if (!producto) {
-      return res.status(404).json({ error: 'Producto no encontrado con el código de barras provisto.' });
+      // Buscar si el código corresponde a un número de serie / IMEI en stock
+      const querySedeId = sedeId || (req.usuario ? req.usuario.sedeId : null);
+      const serieWhere = { serie: codigo, estado: 'en_stock' };
+      if (querySedeId) {
+        serieWhere.sedeId = querySedeId;
+      }
+      
+      const serieObj = await NumeroSerie.findOne({
+        where: serieWhere
+      });
+
+      if (serieObj) {
+        autoDetectedImei = serieObj.serie;
+        producto = await Producto.findOne({
+          where: { id: serieObj.productoId, activo: true },
+          include
+        });
+      }
     }
 
-    return res.json(producto);
+    if (!producto) {
+      return res.status(404).json({ error: 'Producto o Serial no encontrado en stock.' });
+    }
+
+    const responseData = producto.toJSON();
+    if (autoDetectedImei) {
+      responseData.autoDetectedImei = autoDetectedImei;
+    }
+
+    return res.json(responseData);
   } catch (error) {
     next(error);
   }
@@ -294,3 +387,80 @@ exports.importarCSV = async (req, res, next) => {
     next(error);
   }
 };
+
+// --- CATEGORÍAS ---
+
+exports.getCategorias = async (req, res, next) => {
+  try {
+    const categorias = await Categoria.findAll({ order: [['nombre', 'ASC']] });
+    return res.json(categorias);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.createCategoria = async (req, res, next) => {
+  try {
+    const { nombre, descripcion } = req.body;
+    if (!nombre) {
+      return res.status(400).json({ error: 'El nombre de la categoría es obligatorio.' });
+    }
+
+    const existe = await Categoria.findOne({ where: { nombre } });
+    if (existe) {
+      return res.status(400).json({ error: 'Ya existe una categoría con ese nombre.' });
+    }
+
+    const categoria = await Categoria.create({
+      nombre,
+      descripcion: descripcion || ''
+    });
+
+    if (req.logAudit) {
+      await req.logAudit({
+        accion: 'CREATE',
+        modulo: 'Productos',
+        registroId: categoria.id,
+        valorNuevo: categoria.toJSON()
+      });
+    }
+
+    return res.status(201).json(categoria);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.deleteCategoria = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const categoria = await Categoria.findByPk(id);
+    if (!categoria) {
+      return res.status(404).json({ error: 'La categoría no existe.' });
+    }
+
+    // Verificar si hay productos asociados
+    const productosAsociados = await Producto.count({ where: { categoriaId: id } });
+    if (productosAsociados > 0) {
+      return res.status(400).json({ error: 'No se puede eliminar esta categoría porque tiene productos asociados.' });
+    }
+
+    await categoria.destroy();
+
+    if (req.logAudit) {
+      await req.logAudit({
+        accion: 'DELETE',
+        modulo: 'Productos',
+        registroId: id,
+        valorAnterior: categoria.toJSON()
+      });
+    }
+
+    return res.json({ message: 'Categoría eliminada correctamente.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+

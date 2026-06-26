@@ -1,5 +1,6 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
+import { showConfirm } from '../utils/toast.js';
 
 export async function initProveedores(container) {
   const usuario = getUsuario();
@@ -238,9 +239,9 @@ export async function initProveedores(container) {
     }
   });
 
-  // Delete Proveedor
   async function deleteProveedor(id) {
-    if (!confirm('¿Está seguro de que desea eliminar a este proveedor? Esta acción no se puede deshacer.')) {
+    const verificado = await showConfirm('Eliminar Proveedor', '¿Está seguro de que desea eliminar a este proveedor? Esta acción no se puede deshacer.');
+    if (!verificado) {
       return;
     }
     try {

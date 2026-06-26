@@ -79,8 +79,18 @@ exports.getCotizacionById = async (req, res, next) => {
 exports.crearCotizacion = async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
-    const { clienteId, items, fechaVencimiento, notas } = req.body;
-    const sedeId = req.usuario.sedeId;
+    const { clienteId, items, fechaVencimiento, notas, sedeId: bodySedeId } = req.body;
+    let sedeId = bodySedeId || req.usuario.sedeId;
+
+    if (!sedeId && req.usuario.rol === 'admin') {
+      const firstSede = await Sede.findOne({ transaction });
+      if (firstSede) sedeId = firstSede.id;
+    }
+
+    if (!sedeId) {
+      return res.status(400).json({ error: 'Debe especificar una sede para la cotización.' });
+    }
+
     const usuarioId = req.usuario.userId;
 
     if (!clienteId || !items || items.length === 0 || !fechaVencimiento) {

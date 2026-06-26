@@ -3,7 +3,7 @@ import { getUsuario } from '../auth.js';
 
 export async function initVentas(container) {
   const usuario = getUsuario();
-  const isAdminOrGerente = ['admin', 'gerente_sede'].includes(usuario.rol);
+  const isAdminOrGerente = ['admin', 'superadmin', 'gerente_sede'].includes(usuario.rol);
   const isContador = usuario.rol === 'contador';
 
   let ventas = [];
@@ -13,7 +13,7 @@ export async function initVentas(container) {
   async function loadInitialData() {
     try {
       ventas = await apiFetch('/ventas');
-      vendedores = await apiFetch('/config/usuarios').then(users => users.filter(u => ['admin', 'gerente_sede', 'cajero'].includes(u.rol) && u.activo));
+      vendedores = await apiFetch('/config/usuarios').then(users => users.filter(u => ['admin', 'superadmin', 'gerente_sede', 'cajero'].includes(u.rol) && u.activo));
       sedes = await apiFetch('/config/sedes').catch(() => []);
     } catch (e) {
       console.error('Error precargando datos en ventas:', e);
@@ -47,9 +47,14 @@ export async function initVentas(container) {
                 <i class="ti ti-percentage me-1"></i> Comisiones de Vendedores
               </a>
             </li>
-            <li class="nav-item" role="presentation">
+             <li class="nav-item" role="presentation">
               <a href="#tab-descuentos" class="nav-link" data-bs-toggle="tab" aria-selected="false" role="tab" tabindex="-1">
                 <i class="ti ti-discount-2 me-1"></i> Reporte de Descuentos (Price Override)
+              </a>
+            </li>
+            <li class="nav-item" role="presentation">
+              <a href="#tab-reparaciones" class="nav-link" data-bs-toggle="tab" aria-selected="false" role="tab" tabindex="-1">
+                <i class="ti ti-tools me-1"></i> Historial de Reparaciones
               </a>
             </li>
           </ul>
@@ -70,7 +75,7 @@ export async function initVentas(container) {
                     ${vendedores.map(v => `<option value="${v.id}">${v.nombre}</option>`).join('')}
                   </select>
                 </div>
-                ${isAdminOrGerente && usuario.rol === 'admin' ? `
+                ${isAdminOrGerente && ['admin', 'superadmin'].includes(usuario.rol) ? `
                   <div class="col-md-2">
                     <label class="form-label">Sede</label>
                     <select id="filtro-sede-venta" class="form-select">
@@ -186,6 +191,69 @@ export async function initVentas(container) {
                 </table>
               </div>
             </div>
+
+            <!-- TAB 4: HISTORIAL DE REPARACIONES -->
+            <div class="tab-pane" id="tab-reparaciones" role="tabpanel">
+              <form id="form-filtros-reparaciones" class="row g-3 mb-4">
+                <div class="col-md-3">
+                  <label class="form-label">Buscar Orden / Cliente</label>
+                  <input type="text" id="filtro-buscar-reparacion" class="form-control" placeholder="No. Orden o Cliente...">
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label">Estado</label>
+                  <select id="filtro-estado-reparacion" class="form-select">
+                    <option value="">-- Todos --</option>
+                    <option value="recibido">Recibido</option>
+                    <option value="diagnostico">Diagnóstico</option>
+                    <option value="en_reparacion">En Reparación</option>
+                    <option value="listo">Listo para Entrega</option>
+                    <option value="entregado">Entregado</option>
+                    <option value="cancelado">Cancelado</option>
+                  </select>
+                </div>
+                ${isAdminOrGerente && ['admin', 'superadmin'].includes(usuario.rol) ? `
+                  <div class="col-md-2">
+                    <label class="form-label">Sede</label>
+                    <select id="filtro-sede-reparacion" class="form-select">
+                      <option value="">-- Todas --</option>
+                      ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                    </select>
+                  </div>
+                ` : '<input type="hidden" id="filtro-sede-reparacion" value="">'}
+                <div class="col-md-2">
+                  <label class="form-label">Desde</label>
+                  <input type="date" id="filtro-desde-reparacion" class="form-control">
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label">Hasta</label>
+                  <input type="date" id="filtro-hasta-reparacion" class="form-control">
+                </div>
+                <div class="col-md-1 d-flex align-items-end">
+                  <button type="submit" class="btn btn-primary w-100"><i class="ti ti-filter"></i></button>
+                </div>
+              </form>
+
+              <div class="table-responsive">
+                <table class="table table-vcenter card-table table-hover table-striped">
+                  <thead>
+                    <tr>
+                      <th>No. Orden</th>
+                      <th>Fecha Registro</th>
+                      <th>Cliente</th>
+                      <th>Técnico</th>
+                      <th>Sede</th>
+                      <th>Estado</th>
+                      <th class="text-end">Mano de Obra</th>
+                      <th class="text-end">Costo Repuestos</th>
+                      <th class="text-end">Total Cobrado</th>
+                    </tr>
+                  </thead>
+                  <tbody id="reparaciones-table-body">
+                    <!-- Dinámico -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -195,6 +263,7 @@ export async function initVentas(container) {
   const tbodyVentas = document.getElementById('ventas-table-body');
   const tbodyComisiones = document.getElementById('comisiones-table-body');
   const tbodyDescuentos = document.getElementById('descuentos-table-body');
+  const tbodyReparaciones = document.getElementById('reparaciones-table-body');
   const kpisComisiones = document.getElementById('kpi-comisiones-wrapper');
 
   const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
@@ -359,6 +428,75 @@ export async function initVentas(container) {
   if (tabEl) {
     tabEl.addEventListener('shown.bs.tab', () => {
       loadDescuentos();
+    });
+  }
+
+  // Render & Load Reparaciones
+  function renderReparacionesTable(data) {
+    if (data.length === 0) {
+      tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-secondary">No se encontraron órdenes de reparación.</td></tr>`;
+      return;
+    }
+
+    const badgeClasses = {
+      recibido: 'bg-secondary text-white',
+      diagnostico: 'bg-warning text-dark',
+      en_reparacion: 'bg-info text-white',
+      listo: 'bg-primary text-white',
+      entregado: 'bg-success text-white',
+      cancelado: 'bg-danger text-white'
+    };
+
+    tbodyReparaciones.innerHTML = data.map(o => `
+      <tr>
+        <td><strong class="text-blue">${o.numeroOrden}</strong></td>
+        <td>${new Date(o.createdAt).toLocaleDateString()}</td>
+        <td>${o.cliente ? o.cliente.nombre : 'Cliente General'}</td>
+        <td>${o.tecnico ? o.tecnico.nombre : 'Sin Técnico'}</td>
+        <td>${o.sede ? o.sede.nombre : 'N/A'}</td>
+        <td><span class="badge ${badgeClasses[o.estado] || 'bg-secondary text-white'}">${o.estado.toUpperCase()}</span></td>
+        <td class="text-end text-secondary">${formatter.format(parseFloat(o.costoManoObra || 0))}</td>
+        <td class="text-end text-danger">${formatter.format(parseFloat(o.costoRepuestos || 0))}</td>
+        <td class="text-end fw-bold text-primary">${formatter.format(parseFloat(o.totalCobrado || 0))}</td>
+      </tr>
+    `).join('');
+  }
+
+  async function loadReparaciones() {
+    tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>`;
+    try {
+      const buscar = document.getElementById('filtro-buscar-reparacion').value;
+      const estado = document.getElementById('filtro-estado-reparacion').value;
+      const sede = document.getElementById('filtro-sede-reparacion').value;
+      const desde = document.getElementById('filtro-desde-reparacion').value;
+      const hasta = document.getElementById('filtro-hasta-reparacion').value;
+
+      const params = [];
+      if (buscar) params.push(`buscar=${buscar}`);
+      if (estado) params.push(`estado=${estado}`);
+      if (sede) params.push(`sede=${sede}`);
+      if (desde) params.push(`desde=${desde}`);
+      if (hasta) params.push(`hasta=${hasta}`);
+
+      const query = params.length > 0 ? '?' + params.join('&') : '';
+      const data = await apiFetch(`/reparaciones${query}`);
+      renderReparacionesTable(data);
+    } catch (err) {
+      tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
+    }
+  }
+
+  // Bind submit event to reparaciones filters form
+  document.getElementById('form-filtros-reparaciones').addEventListener('submit', (e) => {
+    e.preventDefault();
+    loadReparaciones();
+  });
+
+  // Load reparaciones upon tab activation
+  const tabReparacionesEl = document.querySelector('a[href="#tab-reparaciones"]');
+  if (tabReparacionesEl) {
+    tabReparacionesEl.addEventListener('shown.bs.tab', () => {
+      loadReparaciones();
     });
   }
 }

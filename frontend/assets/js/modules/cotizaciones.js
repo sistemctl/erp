@@ -7,11 +7,15 @@ export async function initCotizaciones(container) {
 
   let clientes = [];
   let productos = [];
+  let sedes = [];
   let cotizacionCart = [];
 
   try {
     clientes = await apiFetch('/clientes').catch(() => []);
     productos = await apiFetch('/productos').catch(() => []);
+    if (['admin', 'superadmin'].includes(usuario.rol)) {
+      sedes = await apiFetch('/config/sedes').catch(() => []);
+    }
   } catch (e) {
     console.error('Error precargando datos en cotizaciones:', e);
   }
@@ -89,17 +93,38 @@ export async function initCotizaciones(container) {
             <div class="tab-pane" id="tab-nueva-cot" role="tabpanel">
               <form id="form-nueva-cotizacion">
                 <div class="row">
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Cliente</label>
-                    <select id="cot-cliente" class="form-select" required>
-                      <option value="">-- Seleccionar Cliente --</option>
-                      ${clientes.map(c => `<option value="${c.id}">${c.nombre} (${c.documento || 'Sin doc'})</option>`).join('')}
-                    </select>
-                  </div>
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Fecha de Vencimiento</label>
-                    <input type="date" id="cot-vencimiento" class="form-control" required>
-                  </div>
+                  ${['admin', 'superadmin'].includes(usuario.rol) ? `
+                    <div class="col-md-4 mb-3">
+                      <label class="form-label">Sede</label>
+                      <select id="cot-sede" class="form-select" required>
+                        <option value="">-- Seleccionar Sede --</option>
+                        ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                      </select>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                      <label class="form-label">Cliente</label>
+                      <select id="cot-cliente" class="form-select" required>
+                        <option value="">-- Seleccionar Cliente --</option>
+                        ${clientes.map(c => `<option value="${c.id}">${c.nombre} (${c.documento || 'Sin doc'})</option>`).join('')}
+                      </select>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                      <label class="form-label">Fecha de Vencimiento</label>
+                      <input type="date" id="cot-vencimiento" class="form-control" required>
+                    </div>
+                  ` : `
+                    <div class="col-md-6 mb-3">
+                      <label class="form-label">Cliente</label>
+                      <select id="cot-cliente" class="form-select" required>
+                        <option value="">-- Seleccionar Cliente --</option>
+                        ${clientes.map(c => `<option value="${c.id}">${c.nombre} (${c.documento || 'Sin doc'})</option>`).join('')}
+                      </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                      <label class="form-label">Fecha de Vencimiento</label>
+                      <input type="date" id="cot-vencimiento" class="form-control" required>
+                    </div>
+                  `}
                 </div>
 
                 <div class="mb-3">
@@ -288,6 +313,10 @@ export async function initCotizaciones(container) {
       notas: document.getElementById('cot-notas').value,
       items: cotizacionCart
     };
+
+    if (['admin', 'superadmin'].includes(usuario.rol) && document.getElementById('cot-sede')) {
+      payload.sedeId = document.getElementById('cot-sede').value;
+    }
 
     try {
       await apiFetch('/cotizaciones', {

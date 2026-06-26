@@ -1,11 +1,12 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { getLocalDateStr } from '../utils/date.js';
+import { showToast, showConfirm } from '../utils/toast.js';
 
 export async function initCaja(container) {
   const usuario = getUsuario();
-  const sedeId = usuario.sedeId;
-  const isAdminOrContador = ['admin', 'contador'].includes(usuario.rol);
+  let currentSedeId = usuario.sedeId;
+  const isAdminOrContador = ['admin', 'superadmin', 'contador'].includes(usuario.rol);
 
   let activeCaja = null;
   let limiteEgresoSinPin = 50000;
@@ -48,6 +49,20 @@ export async function initCaja(container) {
           <div class="tab-content">
             <!-- TAB 1: CAJA ACTIVA -->
             <div class="tab-pane active show" id="tab-caja-activa" role="tabpanel">
+              ${isAdminOrContador ? `
+                <div class="card mb-3 d-print-none shadow-sm">
+                  <div class="card-body py-2">
+                    <div class="row align-items-center">
+                      <div class="col-md-4">
+                        <label class="form-label small fw-bold mb-1 text-primary">Sede de Caja a Monitorear</label>
+                        <select id="select-caja-sede" class="form-select form-select-sm">
+                          ${sedes.map(s => `<option value="${s.id}" ${s.id === currentSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ` : ''}
               <div id="caja-modulo-body">
                 <div class="text-center py-5">
                   <div class="spinner-border text-primary" role="status"></div>
@@ -59,7 +74,7 @@ export async function initCaja(container) {
             <!-- TAB 2: HISTORIAL DE CIERRES -->
             <div class="tab-pane" id="tab-historial-cajas" role="tabpanel">
               <form id="form-filtros-historial-caja" class="row g-3 mb-4">
-                ${usuario.rol === 'admin' ? `
+                ${['admin', 'superadmin'].includes(usuario.rol) ? `
                   <div class="col-md-4">
                     <label class="form-label">Sede</label>
                     <select id="hist-caja-sede" class="form-select">
@@ -238,6 +253,16 @@ export async function initCaja(container) {
   const modalCierre = new bootstrap.Modal(document.getElementById('modal-cierre'));
   const modalDetallePast = new bootstrap.Modal(document.getElementById('modal-detalle-past-caja'));
 
+  if (isAdminOrContador) {
+    const selectSede = document.getElementById('select-caja-sede');
+    if (selectSede) {
+      selectSede.addEventListener('change', (e) => {
+        currentSedeId = e.target.value;
+        loadCajaStatus();
+      });
+    }
+  }
+
   const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
   // Cargar categorías de egreso en el select
@@ -270,7 +295,7 @@ export async function initCaja(container) {
 
     try {
       const hoyStr = getLocalDateStr();
-      const data = await apiFetch(`/caja/reporte?fecha=${hoyStr}&sede=${sedeId}`).catch(() => null);
+      const data = await apiFetch(`/caja/reporte?fecha=${hoyStr}&sede=${currentSedeId}`).catch(() => null);
 
       if (!data || data.estado === 'cerrada') {
         activeCaja = null;
@@ -350,6 +375,11 @@ export async function initCaja(container) {
           <button id="btn-pos-cierre" class="btn btn-primary">
             <i class="ti ti-lock me-2"></i> Hacer Cierre de Caja
           </button>
+          ${['admin', 'superadmin'].includes(usuario.rol) ? `
+            <button id="btn-pos-liberar" class="btn btn-warning">
+              <i class="ti ti-key me-2"></i> Liberar Caja (Admin)
+            </button>
+          ` : ''}
         </div>
 
         <div class="card">
@@ -392,6 +422,28 @@ export async function initCaja(container) {
         modalCierre.show();
       });
 
+      if (['admin', 'superadmin'].includes(usuario.rol)) {
+        document.getElementById('btn-pos-liberar').addEventListener('click', async () => {
+          const confirmed = await showConfirm(
+            '¿Liberar Caja?',
+            'Se cerrará administrativamente esta caja abierta utilizando los saldos teóricos actuales del sistema (diferencia cero). Esta acción se registrará en la auditoría.'
+          );
+          if (confirmed) {
+            try {
+              const res = await apiFetch('/caja/liberar', {
+                method: 'POST',
+                body: JSON.stringify({ sedeId: currentSedeId })
+              });
+              showToast('Éxito', res.message, 'success');
+              loadCajaStatus();
+            } catch (err) {
+              showToast('Error', err.message, 'error');
+            }
+          }
+        });
+      }
+
+
     } catch (err) {
       body.innerHTML = `<div class="alert alert-danger">${err.message}</div>`;
     }
@@ -401,11 +453,11 @@ export async function initCaja(container) {
     const tbody = document.getElementById('egresos-table-body');
     if (!tbody) return;
     try {
-      const hoyStr = getLocalDateStr();
-      const data = await apiFetch(`/caja/egresos?sede=${sedeId}&fecha=${hoyStr}`);
+      const queryFecha = activeCaja ? activeCaja.fecha : getLocalDateStr();
+      const data = await apiFetch(`/caja/egresos?sede=${currentSedeId}&fecha=${queryFecha}`);
 
       if (data.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3 text-secondary">No se han registrado retiros de caja hoy.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3 text-secondary">No se han registrado retiros de caja para esta sesión.</td></tr>`;
         return;
       }
 
@@ -431,12 +483,12 @@ export async function initCaja(container) {
     try {
       await apiFetch('/caja/apertura', {
         method: 'POST',
-        body: JSON.stringify({ montoApertura: parseFloat(monto) })
+        body: JSON.stringify({ montoApertura: parseFloat(monto), sedeId: currentSedeId })
       });
       modalApertura.hide();
       loadCajaStatus();
     } catch (err) {
-      alert(err.message);
+      showToast('Error', err.message, 'error');
     }
   });
 
@@ -460,7 +512,8 @@ export async function initCaja(container) {
     const data = {
       monto: montoVal,
       categoriaId: document.getElementById('egreso-categoria').value,
-      motivo: document.getElementById('egreso-motivo').value
+      motivo: document.getElementById('egreso-motivo').value,
+      sedeId: currentSedeId
     };
 
     if (montoVal > limiteEgresoSinPin) {
@@ -475,7 +528,7 @@ export async function initCaja(container) {
       modalEgreso.hide();
       loadCajaStatus();
     } catch (err) {
-      alert(err.message);
+      showToast('Error', err.message, 'error');
     }
   });
 
@@ -488,7 +541,8 @@ export async function initCaja(container) {
       totalVentasDaviplata: parseFloat(document.getElementById('cierre-daviplata').value || 0),
       totalVentasTarjeta: parseFloat(document.getElementById('cierre-tarjeta').value || 0),
       totalVentasTransferencia: parseFloat(document.getElementById('cierre-transferencia').value || 0),
-      observaciones: document.getElementById('cierre-observaciones').value
+      observaciones: document.getElementById('cierre-observaciones').value,
+      sedeId: currentSedeId
     };
 
     try {
@@ -500,16 +554,16 @@ export async function initCaja(container) {
       
       const diff = parseFloat(res.caja.diferencia);
       if (diff === 0) {
-        alert('Cierre exitoso. Caja cuadriculada a la perfección.');
+        showToast('Cierre Exitoso', 'Cierre exitoso. Caja cuadriculada a la perfección.', 'success');
       } else if (diff > 0) {
-        alert(`Cierre exitoso. Se detectó un SOBRANTE de caja de: ${formatter.format(diff)}`);
+        showToast('Cierre Exitoso', `Cierre exitoso. Se detectó un SOBRANTE de caja de: ${formatter.format(diff)}`, 'warning');
       } else {
-        alert(`Cierre exitoso. Se detectó un FALTANTE de caja de: ${formatter.format(Math.abs(diff))}`);
+        showToast('Cierre Exitoso', `Cierre exitoso. Se detectó un FALTANTE de caja de: ${formatter.format(Math.abs(diff))}`, 'warning');
       }
 
       loadCajaStatus();
     } catch (err) {
-      alert(err.message);
+      showToast('Error', err.message, 'error');
     }
   });
 

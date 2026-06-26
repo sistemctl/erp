@@ -3,7 +3,7 @@ import { getUsuario } from '../auth.js';
 
 export async function initClientes(container) {
   const usuario = getUsuario();
-  const isAdminOrGerente = ['admin', 'gerente_sede'].includes(usuario.rol);
+  const isAdminOrGerente = ['admin', 'superadmin', 'gerente_sede'].includes(usuario.rol);
   let clientes = [];
 
   async function loadClientes() {

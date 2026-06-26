@@ -15,17 +15,14 @@ const Usuario = sequelize.define('Usuario', {
   email: {
     type: DataTypes.STRING,
     allowNull: false,
-    unique: true,
-    validate: {
-      isEmail: true
-    }
+    unique: true
   },
   password: {
     type: DataTypes.STRING,
     allowNull: false
   },
   rol: {
-    type: DataTypes.ENUM('admin', 'gerente_sede', 'cajero', 'tecnico', 'contador'),
+    type: DataTypes.ENUM('superadmin', 'admin', 'gerente_sede', 'cajero', 'tecnico', 'contador'),
     allowNull: false
   },
   sedeId: {

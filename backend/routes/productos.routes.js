@@ -10,9 +10,12 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 // Consultas permitidas a todos los roles autenticados
 router.get('/', authMiddleware, productosController.getProductos);
+router.get('/categorias', authMiddleware, productosController.getCategorias);
 router.get('/barcode/:codigo', authMiddleware, productosController.getProductoByBarcode);
 
 // Rutas de administración de catálogo
+router.post('/categorias', authMiddleware, rolesMiddleware(['admin', 'gerente_sede']), productosController.createCategoria);
+router.delete('/categorias/:id', authMiddleware, rolesMiddleware(['admin', 'gerente_sede']), productosController.deleteCategoria);
 router.post('/', authMiddleware, rolesMiddleware(['admin', 'gerente_sede']), productosController.createProducto);
 router.put('/:id', authMiddleware, rolesMiddleware(['admin', 'gerente_sede']), productosController.updateProducto);
 router.delete('/:id', authMiddleware, rolesMiddleware(['admin', 'gerente_sede']), productosController.deleteProducto);

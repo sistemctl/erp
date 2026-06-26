@@ -40,7 +40,8 @@ function handleKeyDown(e) {
       }
       buffer = '';
     }
-  } else if (e.key.length === 1) {
+  } else if (e.key && e.key.length === 1) {
     buffer += e.key;
   }
 }
+

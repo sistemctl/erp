@@ -7,6 +7,7 @@ const rolesMiddleware = require('../middleware/roles.middleware');
 router.get('/', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'contador']), comprasController.getCompras);
 router.post('/', authMiddleware, rolesMiddleware(['admin', 'contador']), comprasController.createCompra);
 router.post('/:id/recibir', authMiddleware, rolesMiddleware(['admin', 'gerente_sede']), comprasController.recibirCompra);
+router.post('/:id/devolver', authMiddleware, rolesMiddleware(['admin', 'gerente_sede']), comprasController.devolverMercancia);
 router.put('/:id/pago', authMiddleware, rolesMiddleware(['admin', 'contador']), comprasController.registrarPagoCompra);
 
 module.exports = router;

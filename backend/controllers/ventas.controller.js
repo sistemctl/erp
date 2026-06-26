@@ -12,6 +12,8 @@ const {
   ConfiguracionSistema,
   Usuario,
   TradeIn,
+  Cliente,
+  Sede,
   sequelize
 } = require('../models');
 const { Op } = require('sequelize');
@@ -32,7 +34,13 @@ exports.procesarVenta = async (req, res, next) => {
       pinAdmin // opcional para price overrides
     } = req.body;
 
-    const sedeId = req.usuario.sedeId;
+    const { sedeId: bodySedeId } = req.body;
+    const sedeId = bodySedeId || req.usuario.sedeId;
+
+    if (!sedeId) {
+      return res.status(400).json({ error: 'Debe especificar una sede para la venta.' });
+    }
+
     const usuarioId = req.usuario.userId;
 
     if (!items || items.length === 0) {
@@ -409,7 +417,7 @@ exports.getVentas = async (req, res, next) => {
         { model: Usuario, as: 'usuario', attributes: ['nombre'] },
         { model: Sede, as: 'sede', attributes: ['nombre'] },
         { model: PagoVenta, as: 'pagos' },
-        { model: ItemVenta, as: 'items', include: [{ model: Producto, as: 'producto', attributes: ['nombre'] }] }
+        { model: ItemVenta, as: 'items', include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'precioCosto'] }] }
       ],
       order: [['createdAt', 'DESC']]
     });

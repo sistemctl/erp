@@ -1,7 +1,43 @@
 import { isAuthenticated, getUsuario, logout } from './auth.js';
+import { showToast } from './utils/toast.js';
 
-// Lista de módulos por rol (Permisos)
+// Anular global alert del navegador con una notificación Toast Premium animada
+window.alert = (message) => {
+  let type = 'info';
+  const msgLower = (message || '').toString().toLowerCase();
+  if (msgLower.includes('error') || msgLower.includes('fall') || msgLower.includes('insuficiente') || msgLower.includes('no se') || msgLower.includes('inválid') || msgLower.includes('duplicado') || msgLower.includes('no hay') || msgLower.includes('falta')) {
+    type = 'error';
+  } else if (msgLower.includes('exitosa') || msgLower.includes('éxito') || msgLower.includes('correcta') || msgLower.includes('creado') || msgLower.includes('eliminado') || msgLower.includes('guardado') || msgLower.includes('actualizad') || msgLower.includes('restaurada') || msgLower.includes('bien') || msgLower.includes('completad')) {
+    type = 'success';
+  } else if (msgLower.includes('atención') || msgLower.includes('advertencia') || msgLower.includes('cuidado') || msgLower.includes('requerid') || msgLower.includes('seguro')) {
+    type = 'warning';
+  }
+  
+  const title = type === 'success' ? 'Éxito' : type === 'error' ? 'Error' : 'Aviso';
+  showToast(title, message, type);
+};
+
+
 const modulosPorRol = {
+  superadmin: [
+    { name: 'Dashboard', hash: '#/dashboard', icon: 'ti-dashboard' },
+    { name: 'POS / Ventas', hash: '#/pos', icon: 'ti-shopping-cart' },
+    { name: 'Historial Ventas', hash: '#/ventas', icon: 'ti-receipt' },
+    { name: 'Clientes CRM', hash: '#/clientes', icon: 'ti-users-group' },
+    { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
+    { name: 'Rentabilidad', hash: '#/rentabilidad', icon: 'ti-chart-bar' },
+    { name: 'Inventario', hash: '#/inventario', icon: 'ti-package' },
+    { name: 'Facturación', hash: '#/facturacion', icon: 'ti-file-text' },
+    { name: 'Caja', hash: '#/caja', icon: 'ti-building-store' },
+    { name: 'Nómina', hash: '#/nomina', icon: 'ti-users' },
+    { name: 'Compras', hash: '#/compras', icon: 'ti-truck' },
+    { name: 'Proveedores', hash: '#/proveedores', icon: 'ti-building-factory' },
+    { name: 'Cotizaciones', hash: '#/cotizaciones', icon: 'ti-file-invoice' },
+    { name: 'Trade-In', hash: '#/tradein', icon: 'ti-refresh' },
+    { name: 'Cartera', hash: '#/cartera', icon: 'ti-wallet' },
+    { name: 'Auditoría', hash: '#/auditlog', icon: 'ti-shield-lock' },
+    { name: 'Configuración', hash: '#/config', icon: 'ti-settings' }
+  ],
   admin: [
     { name: 'Dashboard', hash: '#/dashboard', icon: 'ti-dashboard' },
     { name: 'POS / Ventas', hash: '#/pos', icon: 'ti-shopping-cart' },
@@ -14,11 +50,11 @@ const modulosPorRol = {
     { name: 'Caja', hash: '#/caja', icon: 'ti-building-store' },
     { name: 'Nómina', hash: '#/nomina', icon: 'ti-users' },
     { name: 'Compras', hash: '#/compras', icon: 'ti-truck' },
+    { name: 'Proveedores', hash: '#/proveedores', icon: 'ti-building-factory' },
     { name: 'Cotizaciones', hash: '#/cotizaciones', icon: 'ti-file-invoice' },
     { name: 'Trade-In', hash: '#/tradein', icon: 'ti-refresh' },
     { name: 'Cartera', hash: '#/cartera', icon: 'ti-wallet' },
-    { name: 'Auditoría', hash: '#/auditlog', icon: 'ti-shield-lock' },
-    { name: 'Configuración', hash: '#/config', icon: 'ti-settings' }
+    { name: 'Auditoría', hash: '#/auditlog', icon: 'ti-shield-lock' }
   ],
   gerente_sede: [
     { name: 'Dashboard', hash: '#/dashboard', icon: 'ti-dashboard' },
@@ -31,6 +67,7 @@ const modulosPorRol = {
     { name: 'Facturación', hash: '#/facturacion', icon: 'ti-file-text' },
     { name: 'Caja', hash: '#/caja', icon: 'ti-building-store' },
     { name: 'Compras', hash: '#/compras', icon: 'ti-truck' },
+    { name: 'Proveedores', hash: '#/proveedores', icon: 'ti-building-factory' },
     { name: 'Cotizaciones', hash: '#/cotizaciones', icon: 'ti-file-invoice' },
     { name: 'Trade-In', hash: '#/tradein', icon: 'ti-refresh' },
     { name: 'Cartera', hash: '#/cartera', icon: 'ti-wallet' }
@@ -52,6 +89,7 @@ const modulosPorRol = {
     { name: 'Facturación', hash: '#/facturacion', icon: 'ti-file-text' },
     { name: 'Nómina', hash: '#/nomina', icon: 'ti-users' },
     { name: 'Compras', hash: '#/compras', icon: 'ti-truck' },
+    { name: 'Proveedores', hash: '#/proveedores', icon: 'ti-building-factory' },
     { name: 'Caja', hash: '#/caja', icon: 'ti-building-store' },
     { name: 'Rentabilidad', hash: '#/rentabilidad', icon: 'ti-chart-bar' }
   ]
@@ -223,8 +261,8 @@ function renderLoginView(container) {
         
         <form id="login-form" autocomplete="off" novalidate>
           <div class="mb-3">
-            <label class="form-label"><i class="ti ti-mail me-1"></i> Correo Electrónico</label>
-            <input type="email" id="login-email" class="form-control" placeholder="admin@techstore.co" required autocomplete="username">
+            <label class="form-label"><i class="ti ti-user me-1"></i> Nombre de Usuario</label>
+            <input type="text" id="login-email" class="form-control" placeholder="Nombre de usuario..." required autocomplete="username">
           </div>
           <div class="mb-4">
             <label class="form-label"><i class="ti ti-lock me-1"></i> Contraseña</label>

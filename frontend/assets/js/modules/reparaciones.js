@@ -178,11 +178,86 @@ export async function initReparaciones(container) {
         </div>
       </div>
     </div>
+
+    <!-- Modal Entregar/Cobrar Reparación -->
+    <div class="modal modal-blur fade" id="modal-entregar-reparacion" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <form id="form-entregar-reparacion" class="modal-content shadow-lg">
+          <input type="hidden" id="entregar-id">
+          <div class="modal-header">
+            <h5 class="modal-title fw-bold">Cobrar y Entregar Reparación</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row">
+              <div class="col-md-6 border-end">
+                <p class="text-secondary small mb-3">La orden pasará al estado <strong>Entregado</strong> y se generará la factura correspondiente. Por favor confirme los datos del cobro.</p>
+                <div class="mb-2">
+                  <label class="form-label fw-bold">Orden N°</label>
+                  <input type="text" id="entregar-numero" class="form-control-plaintext fw-bold text-blue py-0" readonly>
+                </div>
+                <div class="mb-2">
+                  <label class="form-label fw-bold">Cliente</label>
+                  <input type="text" id="entregar-cliente" class="form-control-plaintext py-0" readonly>
+                </div>
+                <div class="mt-4 alert alert-info py-2 mb-0">
+                  <div class="fs-4 fw-bold">Total a Cobrar:</div>
+                  <div class="h2 mb-0 fw-bold text-primary" id="entregar-total-txt">$ 0</div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <h4 class="mb-3 text-secondary">Desglose de Pago (Mixto)</h4>
+                <div class="row g-2">
+                  <div class="col-6 mb-2">
+                    <label class="form-label small mb-1">Efectivo Recibido</label>
+                    <input type="number" id="entregar-pay-efectivo" class="form-control form-control-sm input-entregar-pago" min="0" value="0">
+                  </div>
+                  <div class="col-6 mb-2">
+                    <label class="form-label small mb-1">Nequi</label>
+                    <input type="number" id="entregar-pay-nequi" class="form-control form-control-sm input-entregar-pago" min="0" value="0">
+                  </div>
+                  <div class="col-6 mb-2">
+                    <label class="form-label small mb-1">Daviplata</label>
+                    <input type="number" id="entregar-pay-daviplata" class="form-control form-control-sm input-entregar-pago" min="0" value="0">
+                  </div>
+                  <div class="col-6 mb-2">
+                    <label class="form-label small mb-1">Tarjeta</label>
+                    <input type="number" id="entregar-pay-tarjeta" class="form-control form-control-sm input-entregar-pago" min="0" value="0">
+                  </div>
+                  <div class="col-12 mb-2">
+                    <label class="form-label small mb-1">Transferencia Bancaria</label>
+                    <input type="number" id="entregar-pay-transferencia" class="form-control form-control-sm input-entregar-pago" min="0" value="0">
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="alert alert-secondary mt-3 mb-0 py-2">
+              <div class="row align-items-center">
+                <div class="col">
+                  <div class="fs-5 text-secondary">Total Ingresado:</div>
+                  <div class="h3 mb-0" id="entregar-total-ingresado">$ 0</div>
+                </div>
+                <div class="col-auto text-end">
+                  <div class="fs-5 text-secondary" id="entregar-label-cambio">Cambio (Vuelto):</div>
+                  <div class="h3 mb-0 text-success fw-bold" id="entregar-cambio">$ 0</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-success ms-auto" id="entregar-submit-btn" disabled><i class="ti ti-check me-1"></i>Cobrar y Entregar</button>
+          </div>
+        </form>
+      </div>
+    </div>
   `;
 
   // Modales
   const modalOrden = new bootstrap.Modal(document.getElementById('modal-orden-reparacion'));
   const modalDetalle = new bootstrap.Modal(document.getElementById('modal-detalle-orden'));
+  const modalEntregar = new bootstrap.Modal(document.getElementById('modal-entregar-reparacion'));
 
   // Renderizar columnas de Kanban
   function renderKanbanColumn(title, statusKey, colorClass) {
@@ -287,6 +362,11 @@ export async function initReparaciones(container) {
       col.classList.remove('bg-secondary-lt');
       const orderId = e.dataTransfer.getData('text/plain');
       const newStatus = col.dataset.status;
+
+      if (newStatus === 'entregado') {
+        openEntregarReparacionModal(orderId);
+        return;
+      }
 
       try {
         const res = await apiFetch(`/reparaciones/${orderId}/estado`, {
@@ -551,10 +631,13 @@ export async function initReparaciones(container) {
               ${isAdminOrGerente || esTecnico ? `
                 <form id="form-add-repuesto" class="row g-2 mb-4 border p-2 bg-light rounded">
                   <div class="col-md-7">
-                    <select id="repuesto-select" class="form-select form-select-sm" required>
-                      <option value="">-- Seleccionar Repuesto del Inventario --</option>
-                      ${productos.filter(p => p.tieneNumeroSerie === false).map(p => `<option value="${p.id}">${p.nombre} (Costo: ${formatter.format(p.precioCosto)})</option>`).join('')}
-                    </select>
+                    <div class="position-relative" id="repuesto-dropdown-container">
+                      <input type="hidden" id="repuesto-select" value="" required>
+                      <input type="text" id="repuesto-search" class="form-control form-control-sm" placeholder="🔍 Seleccionar o buscar repuesto..." autocomplete="off">
+                      <div id="repuesto-dropdown-menu" class="dropdown-menu w-100 shadow-sm" style="max-height: 200px; overflow-y: auto; display: none; position: absolute; top: 100%; left: 0; z-index: 1050; background: var(--tblr-bg-surface, #fff); border: 1px solid var(--tblr-border-color, #e6e8eb); border-radius: 4px;">
+                        <!-- Opciones dinámicas -->
+                      </div>
+                    </div>
                   </div>
                   <div class="col-md-3">
                     <input type="number" id="repuesto-cantidad" class="form-control form-control-sm" value="1" min="1" required>
@@ -606,10 +689,17 @@ export async function initReparaciones(container) {
       // Event handlers inside details modal
       // 1. Update Estado directly
       document.getElementById('det-estado').addEventListener('change', async (e) => {
+        const newStatus = e.target.value;
+        if (newStatus === 'entregado') {
+          e.target.value = orden.estado;
+          modalDetalle.hide();
+          openEntregarReparacionModal(id);
+          return;
+        }
         try {
           await apiFetch(`/reparaciones/${id}/estado`, {
             method: 'PUT',
-            body: JSON.stringify({ estado: e.target.value })
+            body: JSON.stringify({ estado: newStatus })
           });
           await loadData();
           fillKanban(document.getElementById('kanban-search').value);
@@ -665,6 +755,74 @@ export async function initReparaciones(container) {
             openDetalle(id);
           } catch (err) {
             alert('Error al agregar repuesto: ' + err.message);
+          }
+        });
+      }
+
+      // Buscador unificado y dropdown dinámico de repuestos
+      const container = document.getElementById('repuesto-dropdown-container');
+      const searchInput = document.getElementById('repuesto-search');
+      const hiddenInput = document.getElementById('repuesto-select');
+      const dropdownMenu = document.getElementById('repuesto-dropdown-menu');
+
+      if (container && searchInput && hiddenInput && dropdownMenu) {
+        // Filtrar productos seriales
+        const repuestosDisponibles = productos.filter(p => p.tieneNumeroSerie === false).map(p => ({
+          id: p.id,
+          nombre: p.nombre,
+          texto: `${p.nombre} (Costo: ${formatter.format(p.precioCosto)})`
+        }));
+
+        // Renderizar opciones en el menú dropdown
+        const renderDropdownOptions = (filterText = '') => {
+          const query = filterText.toLowerCase().trim();
+          const filtered = repuestosDisponibles.filter(item => 
+            item.nombre.toLowerCase().includes(query)
+          );
+
+          if (filtered.length === 0) {
+            dropdownMenu.innerHTML = `<div class="dropdown-item text-secondary disabled py-2 px-3 small">No se encontraron resultados</div>`;
+            return;
+          }
+
+          dropdownMenu.innerHTML = filtered.map(item => `
+            <button type="button" class="dropdown-item py-2 px-3 text-start btn-select-repuesto w-100 border-0 bg-transparent" data-id="${item.id}" data-text="${item.nombre}">
+              ${item.texto}
+            </button>
+          `).join('');
+
+          // Click en una opción
+          dropdownMenu.querySelectorAll('.btn-select-repuesto').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+              e.preventDefault();
+              const id = btn.getAttribute('data-id');
+              const text = btn.getAttribute('data-text');
+              hiddenInput.value = id;
+              searchInput.value = text;
+              dropdownMenu.style.display = 'none';
+            });
+          });
+        };
+
+        // Mostrar menú al hacer focus o click
+        searchInput.addEventListener('focus', () => {
+          renderDropdownOptions(searchInput.value);
+          dropdownMenu.style.display = 'block';
+        });
+
+        // Filtrar al escribir
+        searchInput.addEventListener('input', (e) => {
+          if (e.target.value.trim() === '') {
+            hiddenInput.value = '';
+          }
+          renderDropdownOptions(e.target.value);
+          dropdownMenu.style.display = 'block';
+        });
+
+        // Cerrar al hacer click fuera
+        document.addEventListener('click', (e) => {
+          if (!container.contains(e.target)) {
+            dropdownMenu.style.display = 'none';
           }
         });
       }
@@ -769,6 +927,113 @@ export async function initReparaciones(container) {
       content.innerHTML = `<div class="alert alert-danger m-3">${err.message}</div>`;
     }
   }
+
+  let currentTotalCobrar = 0;
+
+  // Open Entregar/Cobrar Modal
+  function openEntregarReparacionModal(orderId) {
+    const o = ordenes.find(item => item.id === orderId);
+    if (!o) return;
+
+    document.getElementById('entregar-id').value = o.id;
+    document.getElementById('entregar-numero').value = o.numeroOrden;
+    document.getElementById('entregar-cliente').value = o.cliente ? o.cliente.nombre : 'Cliente General';
+    
+    currentTotalCobrar = parseFloat(o.totalCobrado || 0);
+
+    const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+    document.getElementById('entregar-total-txt').textContent = formatter.format(currentTotalCobrar);
+    
+    // Reset payment inputs
+    document.getElementById('entregar-pay-efectivo').value = 0;
+    document.getElementById('entregar-pay-nequi').value = 0;
+    document.getElementById('entregar-pay-daviplata').value = 0;
+    document.getElementById('entregar-pay-tarjeta').value = 0;
+    document.getElementById('entregar-pay-transferencia').value = 0;
+
+    calcularTotalesEntrega();
+
+    modalEntregar.show();
+  }
+
+  function calcularTotalesEntrega() {
+    const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+    
+    const efectivo = parseFloat(document.getElementById('entregar-pay-efectivo').value || 0);
+    const nequi = parseFloat(document.getElementById('entregar-pay-nequi').value || 0);
+    const daviplata = parseFloat(document.getElementById('entregar-pay-daviplata').value || 0);
+    const tarjeta = parseFloat(document.getElementById('entregar-pay-tarjeta').value || 0);
+    const transferencia = parseFloat(document.getElementById('entregar-pay-transferencia').value || 0);
+
+    const totalIngresado = efectivo + nequi + daviplata + tarjeta + transferencia;
+    document.getElementById('entregar-total-ingresado').textContent = formatter.format(totalIngresado);
+
+    const cambioVal = document.getElementById('entregar-cambio');
+    const labelCambio = document.getElementById('entregar-label-cambio');
+    const submitBtn = document.getElementById('entregar-submit-btn');
+
+    const diferencia = totalIngresado - currentTotalCobrar;
+
+    if (diferencia < 0) {
+      labelCambio.textContent = 'Faltante (Pendiente):';
+      cambioVal.textContent = formatter.format(Math.abs(diferencia));
+      cambioVal.classList.add('text-danger');
+      cambioVal.classList.remove('text-success');
+      submitBtn.disabled = true;
+    } else {
+      labelCambio.textContent = 'Cambio (Vuelto):';
+      cambioVal.textContent = formatter.format(diferencia);
+      cambioVal.classList.add('text-success');
+      cambioVal.classList.remove('text-danger');
+      submitBtn.disabled = false;
+    }
+  }
+
+  // Bind change/input events to all payment inputs
+  document.querySelectorAll('.input-entregar-pago').forEach(input => {
+    input.addEventListener('input', calcularTotalesEntrega);
+  });
+
+  // Submit Entregar/Cobrar Form
+  document.getElementById('form-entregar-reparacion').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('entregar-id').value;
+
+    const pagos = {
+      efectivo: parseFloat(document.getElementById('entregar-pay-efectivo').value || 0),
+      nequi: parseFloat(document.getElementById('entregar-pay-nequi').value || 0),
+      daviplata: parseFloat(document.getElementById('entregar-pay-daviplata').value || 0),
+      tarjeta: parseFloat(document.getElementById('entregar-pay-tarjeta').value || 0),
+      transferencia: parseFloat(document.getElementById('entregar-pay-transferencia').value || 0)
+    };
+
+    try {
+      const { showToast } = await import('../utils/toast.js').catch(() => ({ showToast: alert }));
+      
+      await apiFetch(`/reparaciones/${id}/estado`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          estado: 'entregado',
+          pagos
+        })
+      });
+
+      modalEntregar.hide();
+      
+      // Actualizar local
+      const idx = ordenes.findIndex(o => o.id === id);
+      if (idx !== -1) {
+        ordenes[idx].estado = 'entregado';
+      }
+      
+      await loadData();
+      fillKanban(document.getElementById('kanban-search').value);
+      showToast('Éxito', 'Reparación cobrada y entregada correctamente.', 'success');
+    } catch (err) {
+      const { showToast } = await import('../utils/toast.js').catch(() => ({ showToast: alert }));
+      showToast('Error', err.message, 'error');
+    }
+  });
 
   // Si hay un query param 'buscar' en la URL (por el QR), autocompletar buscador y abrir detalle si corresponde
   const urlParams = new URLSearchParams(window.location.hash.split('?')[1] || '');

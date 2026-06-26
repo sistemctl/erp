@@ -3,7 +3,7 @@ import { getUsuario } from '../auth.js';
 
 export async function initDashboard(container) {
   const usuario = getUsuario();
-  const isAdmin = usuario.rol === 'admin';
+  const isAdmin = ['admin', 'superadmin'].includes(usuario.rol);
 
   // Obtener sedes y configuración del sistema
   let sedes = [];

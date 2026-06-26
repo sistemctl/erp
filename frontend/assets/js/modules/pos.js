@@ -2,27 +2,49 @@ import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { initBarcodeScanner, destroyBarcodeScanner } from '../utils/barcode.js';
 import { getLocalDateStr } from '../utils/date.js';
+import { showToast } from '../utils/toast.js';
 
 let cart = [];
 let maxDescuentoPermitido = 15;
 let clientes = [];
+let selectedCategoryId = null;
+let cobrarIva = true;
+let ivaPct = 0.19;
+let currentSedeId = null;
+let sedes = [];
 
 export async function initPos(container) {
   const usuario = getUsuario();
-  const sedeId = usuario.sedeId;
+  const isAdmin = ['admin', 'superadmin'].includes(usuario.rol);
+  currentSedeId = usuario.sedeId;
 
-  // 1. Cargar datos básicos y verificar si la caja está abierta
-  let cajaAbierta = null;
   try {
-    const hoyStr = getLocalDateStr();
-    cajaAbierta = await apiFetch(`/caja/reporte?fecha=${hoyStr}&sede=${sedeId}`).catch(() => null);
+    if (isAdmin) {
+      sedes = await apiFetch('/config/sedes').catch(() => []);
+      if (!currentSedeId && sedes.length > 0) {
+        currentSedeId = sedes[0].id;
+      }
+    }
+  } catch (e) {
+    console.error('Error precargando sedes en POS:', e);
+  }
+
+  async function loadAndRenderPOS() {
+    destroyBarcodeScanner();
     
-    // Obtener configuración del sistema para el descuento máximo
+    // 1. Cargar datos básicos y verificar si la caja está abierta
+    let cajaAbierta = null;
+    try {
+      const hoyStr = getLocalDateStr();
+      cajaAbierta = await apiFetch(`/caja/reporte?fecha=${hoyStr}&sede=${currentSedeId}`).catch(() => null);
+    
+    // Obtener configuración del sistema para el descuento máximo e IVA
     const config = await apiFetch('/config/sistema').catch(() => null);
     maxDescuentoPermitido = config ? parseFloat(config.descuentoMaximoPct) : 15;
+    cobrarIva = config && config.cobrarIvaPos !== undefined ? !!config.cobrarIvaPos : true;
+    ivaPct = config && config.ivaDefecto !== undefined ? parseFloat(config.ivaDefecto) / 100 : 0.19;
 
     // Cargar clientes para ventas a crédito
-    // En las semillas, no creamos clientes, pero hagamos un fetch a clientes y si no hay, creamos una lista por defecto o mock
     clientes = await apiFetch('/clientes').catch(() => [
       { id: '1', nombre: 'Cliente General', documento: '22222222' },
       { id: '2', nombre: 'Juan Pérez', documento: '1019087654' },
@@ -32,41 +54,86 @@ export async function initPos(container) {
     console.error('Error al inicializar POS:', e);
   }
 
-  if (!cajaAbierta || cajaAbierta.estado === 'cerrada') {
-    container.innerHTML = `
-      <div class="container-xl py-5">
-        <div class="alert alert-warning">
-          <h4 class="alert-title">Caja Cerrada</h4>
-          <div class="text-secondary">Debe realizar la <a href="#/caja" class="alert-link">Apertura de Caja</a> para esta sede antes de operar el Punto de Venta (POS).</div>
-        </div>
-      </div>
-    `;
-    return;
+  // Cargar categorías del catálogo directamente de la base de datos
+  let categories = [];
+  try {
+    categories = await apiFetch('/productos/categorias').catch(() => []);
+  } catch (e) {
+    console.error('Error al obtener categorías:', e);
   }
 
-  // Renderizar maquetación del POS
-  container.innerHTML = `
-    <div class="container-xl">
-      <div class="row mb-3 d-print-none">
-        <div class="col">
-          <h2 class="page-title">Punto de Venta (POS)</h2>
-          <div class="text-secondary mt-1">Sede: <strong>${usuario.sedeNombre}</strong> | Cajero: <strong>${usuario.nombre}</strong></div>
-        </div>
-        <div class="col-auto">
-          <span class="badge bg-green-lt p-2">Lectura de código de barras activa ⚡</span>
-        </div>
-      </div>
 
-      <div class="row row-cards d-print-none">
-        <!-- Columna de búsqueda de productos -->
-        <div class="col-lg-7">
-          <div class="card" style="height: 600px; display: flex; flex-direction: column;">
-            <div class="card-body border-bottom py-3">
-              <div class="input-icon">
-                <span class="input-icon-addon"><i class="ti ti-search"></i></span>
-                <input type="text" id="pos-search-input" class="form-control form-control-lg" placeholder="Buscar producto por nombre o código de barras (F2)..." autocomplete="off">
+    if (!cajaAbierta || cajaAbierta.estado === 'cerrada') {
+      container.innerHTML = `
+        <div class="container-xl py-5">
+          ${isAdmin ? `
+            <div class="card mb-3 d-print-none shadow-sm">
+              <div class="card-body py-2">
+                <div class="row align-items-center">
+                  <div class="col-md-4">
+                    <label class="form-label small fw-bold mb-1 text-primary">Sede a Operar (POS)</label>
+                    <select id="select-pos-sede" class="form-select form-select-sm">
+                      ${sedes.map(s => `<option value="${s.id}" ${s.id === currentSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                    </select>
+                  </div>
+                </div>
               </div>
             </div>
+          ` : ''}
+          <div class="alert alert-warning">
+            <h4 class="alert-title">Caja Cerrada</h4>
+            <div class="text-secondary">Debe realizar la <a href="#/caja" class="alert-link">Apertura de Caja</a> para esta sede antes de operar el Punto de Venta (POS).</div>
+          </div>
+        </div>
+      `;
+      if (isAdmin) {
+        const selectPosSede = document.getElementById('select-pos-sede');
+        if (selectPosSede) {
+          selectPosSede.addEventListener('change', (e) => {
+            currentSedeId = e.target.value;
+            cart = [];
+            loadAndRenderPOS();
+          });
+        }
+      }
+      return;
+    }
+
+    // Renderizar maquetación del POS
+    container.innerHTML = `
+      <div class="container-xl">
+        <div class="row mb-3 d-print-none">
+          <div class="col">
+            <h2 class="page-title">Punto de Venta (POS)</h2>
+            ${isAdmin ? `
+              <div class="row align-items-center mt-2">
+                <div class="col-md-6">
+                  <label class="form-label small fw-bold mb-1 text-primary">Sede a Operar (POS)</label>
+                  <select id="select-pos-sede" class="form-select form-select-sm">
+                    ${sedes.map(s => `<option value="${s.id}" ${s.id === currentSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                  </select>
+                </div>
+              </div>
+            ` : `
+              <div class="text-secondary mt-1">Sede: <strong>${usuario.sedeNombre}</strong> | Cajero: <strong>${usuario.nombre}</strong></div>
+            `}
+          </div>
+          <div class="col-auto d-flex align-items-end">
+            <span class="badge bg-green-lt p-2">Lectura de código de barras activa ⚡</span>
+          </div>
+        </div>
+
+        <div class="row row-cards d-print-none">
+          <!-- Columna de búsqueda de productos -->
+          <div class="col-lg-7">
+            <div class="card" style="height: 600px; display: flex; flex-direction: column;">
+              <div class="card-body border-bottom py-3">
+                <div class="input-icon">
+                  <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+                  <input type="text" id="pos-search-input" class="form-control form-control-lg" placeholder="Buscar producto por nombre o código de barras (F2)..." autocomplete="off">
+                </div>
+                <div id="pos-categories-container" class="d-flex flex-nowrap gap-2 mt-2 overflow-x-auto pb-2"></div>
+              </div>
             <!-- Lista de resultados -->
             <div class="card-body flex-fill" style="overflow-y: auto;" id="pos-search-results">
               <div class="text-center py-5 text-secondary">Use el buscador superior o escanee un código de barras.</div>
@@ -310,6 +377,7 @@ export async function initPos(container) {
             cantidad: item.cantidad,
             tieneNumeroSerie: item.producto ? item.producto.tieneNumeroSerie : false,
             imei: '',
+            imagenUrl: item.producto ? item.producto.imagenUrl : null,
             subtotal: parseFloat(item.precioUnitario) * item.cantidad
           });
         } else {
@@ -335,27 +403,27 @@ export async function initPos(container) {
   // Inicializar escáner de código de barras USB
   initBarcodeScanner(async (barcode) => {
     try {
-      const prod = await apiFetch(`/productos/barcode/${barcode}?sedeId=${sedeId}`);
+      const prod = await apiFetch(`/productos/barcode/${barcode}?sedeId=${currentSedeId}`);
       addToCart(prod);
     } catch (err) {
-      alert(`Código de barras escaneado no encontrado: ${barcode}`);
+      showToast('Error de Búsqueda', `Código de barras escaneado no encontrado: ${barcode}`, 'error');
     }
   });
 
   // Búsqueda de productos en catálogo
   const searchProducts = async () => {
     const q = searchInput.value.trim();
-    if (!q) {
-      resultsContainer.innerHTML = `<div class="text-center py-5 text-secondary">Use el buscador superior o escanee un código de barras.</div>`;
-      return;
-    }
 
     resultsContainer.innerHTML = `<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>`;
 
     try {
       // Buscar productos activos que coincidan con la consulta en la sede actual
-      const stock = await apiFetch(`/inventario/stock?sedeId=${sedeId}`);
+      const stock = await apiFetch(`/inventario/stock?sedeId=${currentSedeId}`);
       const filtered = stock.filter(item => {
+        if (selectedCategoryId && item.producto.categoriaId !== selectedCategoryId) {
+          return false;
+        }
+        if (!q) return true;
         const query = q.toLowerCase();
         return item.producto.nombre.toLowerCase().includes(query) || item.producto.codigoBarras.toLowerCase().includes(query);
       });
@@ -366,27 +434,33 @@ export async function initPos(container) {
       }
 
       resultsContainer.innerHTML = `
-        <div class="list-group list-group-flush">
+        <div class="row row-cards g-2 p-2">
           ${filtered.map(item => {
+            const brandName = item.producto.categoria ? item.producto.categoria.nombre : 'GENÉRICO';
             const imgHtml = item.producto.imagenUrl 
-              ? `<img src="${item.producto.imagenUrl}" class="avatar avatar-md me-3 rounded" style="object-fit: cover;" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'24\\' height=\\'24\\' fill=\\'none\\' stroke=\\'%23ccc\\' stroke-width=\\'2\\'><rect width=\\'20\\' height=\\'20\\' x=\\'2\\' y=\\'2\\' rx=\\'2\\'/><circle cx=\\'9\\' cy=\\'9\\' r=\\'2\\'/><path d=\\'m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\\'/></svg>';">` 
-              : `<span class="avatar avatar-md me-3 rounded bg-secondary-lt fw-bold">${item.producto.nombre.charAt(0).toUpperCase()}</span>`;
+              ? `<img src="${item.producto.imagenUrl}" class="pos-product-card-img" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'24\\' height=\\'24\\' fill=\\'none\\' stroke=\\'%23ccc\\' stroke-width=\\'2\\'><rect width=\\'20\\' height=\\'20\\' x=\\'2\\' y=\\'2\\' rx=\\'2\\'/><circle cx=\\'9\\' cy=\\'9\\' r=\\'2\\'/><path d=\\'m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\\'/></svg>';">` 
+              : `<div class="pos-product-card-fallback">${item.producto.nombre.charAt(0).toUpperCase()}</div>`;
 
             return `
-              <button class="list-group-item list-group-item-action py-3 btn-add-prod" data-id="${item.productoId}">
-                <div class="row align-items-center">
-                  <div class="col-auto">
-                    ${imgHtml}
-                  </div>
-                  <div class="col">
-                    <div class="font-weight-semibold text-dark text-start">${item.producto.nombre}</div>
-                    <div class="text-secondary small text-start">Código: ${item.producto.codigoBarras} | Stock: <strong class="${item.cantidad <= item.producto.stockMinimo ? 'text-danger' : 'text-success'}">${item.cantidad}</strong></div>
-                  </div>
-                  <div class="col-auto text-primary font-weight-bold">
-                    $ ${new Intl.NumberFormat('es-CO').format(item.producto.precioVenta)}
+              <div class="col-6 col-sm-4 col-md-3 animate__animated animate__fadeIn">
+                <div class="card pos-product-card btn-add-prod" data-id="${item.productoId}">
+                  <!-- Imagen -->
+                  ${imgHtml}
+                  
+                  <!-- Detalle -->
+                  <div class="card-body p-2 d-flex flex-column justify-content-between flex-fill">
+                    <div class="d-flex flex-column">
+                      <span class="pos-product-card-brand">${brandName}</span>
+                      <div class="pos-product-card-title text-truncate" title="${item.producto.nombre}">${item.producto.nombre}</div>
+                    </div>
+                    
+                    <div class="pos-product-card-footer">
+                      <span class="pos-product-card-price">$ ${new Intl.NumberFormat('es-CO').format(item.producto.precioVenta)}</span>
+                      <span class="pos-product-card-stock">Stock: <strong class="${item.cantidad <= item.producto.stockMinimo ? 'text-danger' : 'text-success'}">${item.cantidad}</strong></span>
+                    </div>
                   </div>
                 </div>
-              </button>
+              </div>
             `;
           }).join('')}
         </div>
@@ -402,7 +476,7 @@ export async function initPos(container) {
             const cartItem = cart.find(c => c.productoId === id);
             const qty = cartItem ? cartItem.cantidad + 1 : 1;
             if (qty > item.cantidad) {
-              alert('No puedes agregar más unidades que las disponibles en stock.');
+              showToast('Stock Insuficiente', 'No puedes agregar más unidades que las disponibles en stock.', 'error');
               return;
             }
 
@@ -421,9 +495,46 @@ export async function initPos(container) {
 
   searchInput.addEventListener('input', searchProducts);
 
+  const renderCategoryButtons = () => {
+    const catsContainer = document.getElementById('pos-categories-container');
+    if (!catsContainer) return;
+
+    const allBtnClass = selectedCategoryId === null ? 'btn-primary' : 'btn-outline-secondary';
+    let buttonsHtml = `<button class="btn btn-xs ${allBtnClass} btn-cat-filter px-2" data-id="all">Todos</button>`;
+
+    categories.forEach(c => {
+      const btnClass = selectedCategoryId === c.id ? 'btn-primary' : 'btn-outline-secondary';
+      buttonsHtml += `<button class="btn btn-xs ${btnClass} btn-cat-filter px-2" data-id="${c.id}">${c.nombre}</button>`;
+    });
+
+    catsContainer.innerHTML = buttonsHtml;
+
+    document.querySelectorAll('.btn-cat-filter').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const catId = btn.getAttribute('data-id');
+        selectedCategoryId = catId === 'all' ? null : catId;
+        renderCategoryButtons();
+        searchProducts();
+      });
+    });
+  };
+
+  // Renderizar botones e iniciar catálogo por defecto
+  renderCategoryButtons();
+  searchProducts();
+
   // Funciones del Carrito
   function addToCart(producto) {
-    const existing = cart.find(item => item.productoId === producto.id);
+    if (producto.autoDetectedImei) {
+      const isAlreadyInCart = cart.some(item => item.imei === producto.autoDetectedImei);
+      if (isAlreadyInCart) {
+        showToast('Serial ya agregado', `El serial/IMEI ${producto.autoDetectedImei} ya está en el carrito.`, 'warning');
+        return;
+      }
+    }
+
+    // Si tiene número de serie, no agruparlos para poder registrar cada IMEI individualmente en el carrito
+    const existing = producto.tieneNumeroSerie ? null : cart.find(item => item.productoId === producto.id);
     if (existing) {
       existing.cantidad += 1;
       existing.subtotal = existing.precioModificado * existing.cantidad;
@@ -438,7 +549,8 @@ export async function initPos(container) {
         descuentoPct: 0,
         cantidad: 1,
         tieneNumeroSerie: producto.tieneNumeroSerie,
-        imei: '',
+        imei: producto.autoDetectedImei || '',
+        imagenUrl: producto.imagenUrl,
         subtotal: parseFloat(producto.precioVenta)
       });
     }
@@ -460,32 +572,68 @@ export async function initPos(container) {
     checkoutBtn.disabled = false;
     const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
-    cartContainer.innerHTML = cart.map((item, idx) => `
-      <div class="border-bottom p-3">
-        <div class="row align-items-center">
-          <div class="col">
-            <div class="font-weight-semibold text-dark">${item.nombre}</div>
-            <div class="text-secondary small">
-              ${formatter.format(item.precioModificado)} 
-              ${item.descuentoPct > 0 ? `<span class="text-danger">(-${item.descuentoPct}%)</span>` : ''}
-              x ${item.cantidad}
-            </div>
-            ${item.tieneNumeroSerie ? `
-              <div class="mt-2">
-                <input type="text" class="form-control form-control-sm input-imei-cart" data-idx="${idx}" placeholder="Ingresar IMEI/Serie..." value="${item.imei || ''}" required>
+    cartContainer.className = "card-body flex-fill p-3";
+    cartContainer.innerHTML = cart.map((item, idx) => {
+      const imgHtml = item.imagenUrl 
+        ? `<img src="${item.imagenUrl}" class="avatar avatar-md rounded" style="object-fit: cover;" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'24\\' height=\\'24\\' fill=\\'none\\' stroke=\\'%23ccc\\' stroke-width=\\'2\\'><rect width=\\'20\\' height=\\'20\\' x=\\'2\\' y=\\'2\\' rx=\\'2\\'/><circle cx=\\'9\\' cy=\\'9\\' r=\\'2\\'/><path d=\\'m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\\'/></svg>';">` 
+        : `<span class="avatar avatar-md rounded bg-secondary-lt fw-bold">${item.nombre.charAt(0).toUpperCase()}</span>`;
+
+      return `
+        <div class="card mb-2 shadow-sm border-light animate__animated animate__fadeIn">
+          <div class="card-body p-3">
+            <div class="row align-items-start g-3">
+              <!-- Imagen -->
+              <div class="col-auto">
+                ${imgHtml}
               </div>
-            ` : ''}
-          </div>
-          <div class="col-auto text-end">
-            <div class="font-weight-bold text-dark mb-2">${formatter.format(item.subtotal)}</div>
-            <div class="btn-list flex-nowrap">
-              <button class="btn btn-icon btn-sm btn-white btn-override-item" data-idx="${idx}"><i class="ti ti-edit"></i></button>
-              <button class="btn btn-icon btn-sm btn-danger btn-remove-item" data-idx="${idx}"><i class="ti ti-trash"></i></button>
+              
+              <!-- Info del Item -->
+              <div class="col">
+                <div class="font-weight-bold text-dark text-truncate" style="max-width: 170px;" title="${item.nombre}">${item.nombre}</div>
+                <div class="text-secondary small mt-1">
+                  ${formatter.format(item.precioModificado)} 
+                  ${item.descuentoPct > 0 ? `<span class="badge bg-red-lt ms-1">-${item.descuentoPct}%</span>` : ''}
+                </div>
+                <div class="d-flex align-items-center mt-2">
+                  <span class="text-muted small me-2">Cant:</span>
+                  ${item.tieneNumeroSerie ? `
+                    <span class="badge bg-secondary-lt fw-bold px-2 py-1">1</span>
+                  ` : `
+                    <div class="input-group input-group-sm" style="width: 80px;">
+                      <button class="btn btn-outline-secondary btn-icon btn-sm py-0 px-1 btn-dec-qty" data-idx="${idx}" type="button" style="height: 24px; width: 24px; line-height: 1;">-</button>
+                      <input type="number" class="form-control text-center p-0 fw-bold bg-white text-dark input-qty-cart" data-idx="${idx}" value="${item.cantidad}" min="0" style="height: 24px; font-size: 0.85rem; border-left: 0; border-right: 0;">
+                      <button class="btn btn-outline-secondary btn-icon btn-sm py-0 px-1 btn-inc-qty" data-idx="${idx}" type="button" style="height: 24px; width: 24px; line-height: 1;">+</button>
+                    </div>
+                  `}
+                </div>
+                
+                ${item.tieneNumeroSerie ? `
+                  <div class="mt-2">
+                    <div class="input-icon">
+                      <span class="input-icon-addon"><i class="ti ti-barcode text-secondary" style="font-size: 0.8rem;"></i></span>
+                      <input type="text" class="form-control form-control-sm input-imei-cart" data-idx="${idx}" placeholder="Ingresar IMEI/Serie..." value="${item.imei || ''}" required>
+                    </div>
+                  </div>
+                ` : ''}
+              </div>
+              
+              <!-- Total y Botones -->
+              <div class="col-auto text-end d-flex flex-column align-items-end" style="min-height: 70px; justify-content: space-between;">
+                <div class="font-weight-bold text-primary">${formatter.format(item.subtotal)}</div>
+                <div class="btn-list flex-nowrap mt-2">
+                  <button class="btn btn-icon btn-sm btn-outline-secondary btn-override-item" data-idx="${idx}" title="Descuento / Precio">
+                    <i class="ti ti-edit"></i>
+                  </button>
+                  <button class="btn btn-icon btn-sm btn-outline-danger btn-remove-item" data-idx="${idx}" title="Eliminar">
+                    <i class="ti ti-trash"></i>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
     // Listeners del carrito
     document.querySelectorAll('.btn-remove-item').forEach(btn => {
@@ -496,10 +644,57 @@ export async function initPos(container) {
       });
     });
 
+    document.querySelectorAll('.btn-inc-qty').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-idx'));
+        cart[idx].cantidad += 1;
+        cart[idx].subtotal = cart[idx].precioModificado * cart[idx].cantidad;
+        renderCart();
+      });
+    });
+
+    document.querySelectorAll('.btn-dec-qty').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-idx'));
+        cart[idx].cantidad -= 1;
+        if (cart[idx].cantidad <= 0) {
+          cart.splice(idx, 1);
+        } else {
+          cart[idx].subtotal = cart[idx].precioModificado * cart[idx].cantidad;
+        }
+        renderCart();
+      });
+    });
+
+    document.querySelectorAll('.input-qty-cart').forEach(input => {
+      input.addEventListener('change', (e) => {
+        const idx = parseInt(input.getAttribute('data-idx'));
+        let val = parseInt(e.target.value);
+        if (isNaN(val) || val <= 0) {
+          cart.splice(idx, 1);
+        } else {
+          cart[idx].cantidad = val;
+          cart[idx].subtotal = cart[idx].precioModificado * cart[idx].cantidad;
+        }
+        renderCart();
+      });
+    });
+
     document.querySelectorAll('.input-imei-cart').forEach(input => {
       input.addEventListener('change', (e) => {
         const idx = parseInt(input.getAttribute('data-idx'));
-        cart[idx].imei = e.target.value.trim();
+        const val = e.target.value.trim();
+
+        if (val) {
+          const duplicateIdx = cart.findIndex((item, i) => i !== idx && item.imei === val);
+          if (duplicateIdx !== -1) {
+            showToast('Serial Duplicado', `El serial/IMEI ${val} ya fue ingresado en otro artículo del carrito.`, 'warning');
+            e.target.value = '';
+            cart[idx].imei = '';
+            return;
+          }
+        }
+        cart[idx].imei = val;
       });
     });
 
@@ -534,7 +729,7 @@ export async function initPos(container) {
       descTotal += (item.precioBase - item.precioModificado) * item.cantidad;
     });
 
-    const ivaTotal = (subtotalTotal - descTotal) * 0.19; // IVA 19%
+    const ivaTotal = cobrarIva ? (subtotalTotal - descTotal) * ivaPct : 0;
     const totalFinal = (subtotalTotal - descTotal) + ivaTotal;
 
     updateTotals(subtotalTotal, descTotal, ivaTotal, totalFinal);
@@ -544,6 +739,13 @@ export async function initPos(container) {
     const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
     document.getElementById('pos-subtotal').textContent = formatter.format(sub);
     document.getElementById('pos-descuento').textContent = `-${formatter.format(desc)}`;
+    
+    // Cambiar la etiqueta de IVA dinámicamente según configuración
+    const ivaValEl = document.getElementById('pos-iva');
+    if (ivaValEl && ivaValEl.previousElementSibling) {
+      ivaValEl.previousElementSibling.textContent = cobrarIva ? `IVA (${(ivaPct * 100).toFixed(0)}%):` : 'IVA (Exento):';
+    }
+    
     document.getElementById('pos-iva').textContent = formatter.format(iva);
     document.getElementById('pos-total').textContent = formatter.format(tot);
   }
@@ -640,11 +842,22 @@ export async function initPos(container) {
   // Botón Abrir checkout
   document.getElementById('pos-checkout-btn').addEventListener('click', () => {
     // Validar si productos con IMEI tienen IMEI ingresado
+    const imeis = [];
     for (const item of cart) {
-      if (item.tieneNumeroSerie && !item.imei) {
-        alert(`Por favor, ingrese el IMEI para: ${item.nombre}`);
-        return;
+      if (item.tieneNumeroSerie) {
+        if (!item.imei) {
+          showToast('IMEI Requerido', `Por favor, ingrese el IMEI para: ${item.nombre}`, 'warning');
+          return;
+        }
+        imeis.push(item.imei);
       }
+    }
+
+    // Validar si hay seriales duplicados
+    const uniqueImeis = new Set(imeis);
+    if (imeis.length !== uniqueImeis.size) {
+      showToast('Seriales Duplicados', 'Hay números de serie duplicados en el carrito. Cada artículo debe tener un serial único.', 'warning');
+      return;
     }
 
     // Calcular montos de checkout
@@ -796,7 +1009,7 @@ export async function initPos(container) {
     const clienteId = document.getElementById('checkout-cliente').value;
 
     if (isCredito && !clienteId) {
-      alert('Debe seleccionar un cliente registrado para realizar ventas a crédito.');
+      showToast('Venta a Crédito', 'Debe seleccionar un cliente registrado para realizar ventas a crédito.', 'warning');
       return;
     }
 
@@ -819,7 +1032,7 @@ export async function initPos(container) {
     const totalPagado = pagos.reduce((acc, curr) => acc + curr.monto, 0);
 
     if (!isCredito && totalPagado < total) {
-      alert('El monto pagado es insuficiente.');
+      showToast('Pago Insuficiente', 'El monto pagado es insuficiente.', 'error');
       return;
     }
 
@@ -831,6 +1044,7 @@ export async function initPos(container) {
 
     const body = {
       clienteId: clienteId || null,
+      sedeId: currentSedeId,
       subtotal,
       descuentoTotal,
       iva,
@@ -879,7 +1093,7 @@ export async function initPos(container) {
       // Forzar impresión
       window.print();
     } catch (err) {
-      alert(err.message);
+      showToast('Error', err.message, 'error');
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Procesar Venta';
@@ -925,13 +1139,27 @@ export async function initPos(container) {
       <div style="margin-top: 10px; font-size: 11px;">
         <p style="margin: 2px 0; text-align: right;"><strong>Subtotal:</strong> ${formatter.format(body.subtotal)}</p>
         <p style="margin: 2px 0; text-align: right;"><strong>Descuento:</strong> -${formatter.format(body.descuentoTotal)}</p>
-        <p style="margin: 2px 0; text-align: right;"><strong>IVA (19%):</strong> ${formatter.format(body.iva)}</p>
+        <p style="margin: 2px 0; text-align: right;"><strong>${cobrarIva ? `IVA (${(ivaPct * 100).toFixed(0)}%):` : 'IVA (Exento):'}</strong> ${formatter.format(body.iva)}</p>
         <p style="margin: 2px 0; text-align: right; font-size: 13px;"><strong>TOTAL:</strong> ${formatter.format(body.total)}</p>
         <p style="margin: 2px 0;">----------------------------</p>
         <p style="margin: 2px 0; text-align: center; font-size: 10px;">¡Gracias por su compra!<br>Garantía directa según políticas.</p>
       </div>
     `;
   }
+
+  if (isAdmin) {
+    const selectPosSede = document.getElementById('select-pos-sede');
+    if (selectPosSede) {
+      selectPosSede.addEventListener('change', (e) => {
+        currentSedeId = e.target.value;
+        cart = [];
+        loadAndRenderPOS();
+      });
+    }
+  }
+}
+
+  loadAndRenderPOS();
 }
 
 export function destroyPos() {

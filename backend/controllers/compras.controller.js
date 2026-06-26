@@ -10,6 +10,7 @@ const {
   Caja,
   EgresoCaja,
   CategoriaEgreso,
+  NumeroSerie,
   sequelize
 } = require('../models');
 const { Op } = require('sequelize');
@@ -38,7 +39,7 @@ exports.getCompras = async (req, res, next) => {
         {
           model: ItemOrdenCompra,
           as: 'items',
-          include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras'] }]
+          include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras', 'tieneNumeroSerie'] }]
         }
       ],
       order: [['createdAt', 'DESC']]
@@ -150,6 +151,33 @@ exports.recibirCompra = async (req, res, next) => {
       const nuevaCantidadRecibida = parseInt(dbItem.cantidadRecibida) + parseInt(recItem.cantidadRecibida);
       if (nuevaCantidadRecibida > dbItem.cantidadPedida) {
         throw new Error(`La cantidad recibida total supera la cantidad pedida para el producto ID: ${recItem.productoId}.`);
+      }
+
+      const producto = await Producto.findByPk(recItem.productoId, { transaction });
+      if (producto && recItem.series && Array.isArray(recItem.series) && recItem.series.length > 0) {
+        const cant = parseInt(recItem.cantidadRecibida);
+        if (recItem.series.length !== cant) {
+          throw new Error(`Debe especificar exactamente ${cant} seriales para el producto ${producto.nombre}.`);
+        }
+
+        // Verificar si alguno ya existe
+        const existentes = await NumeroSerie.findAll({
+          where: { serie: recItem.series },
+          transaction
+        });
+        if (existentes.length > 0) {
+          const listEx = existentes.map(e => e.serie).join(', ');
+          throw new Error(`Los siguientes seriales ya están registrados en el sistema: ${listEx}`);
+        }
+
+        // Crear las series en la base de datos
+        const registrosSeries = recItem.series.map(s => ({
+          serie: s,
+          productoId: recItem.productoId,
+          sedeId: orden.sedeId,
+          estado: 'en_stock'
+        }));
+        await NumeroSerie.bulkCreate(registrosSeries, { transaction });
       }
 
       await dbItem.update({ cantidadRecibida: nuevaCantidadRecibida }, { transaction });
@@ -295,3 +323,137 @@ exports.registrarPagoCompra = async (req, res, next) => {
     next(error);
   }
 };
+
+exports.devolverMercancia = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const { items } = req.body; // array of { productoId, cantidadDevolver, series }
+
+    if (!items || items.length === 0) {
+      return res.status(400).json({ error: 'Debe especificar los ítems y cantidades a devolver.' });
+    }
+
+    const orden = await OrdenCompra.findByPk(id, {
+      include: [{ model: ItemOrdenCompra, as: 'items' }],
+      transaction
+    });
+
+    if (!orden) {
+      return res.status(404).json({ error: 'Orden de compra no encontrada.' });
+    }
+
+    if (orden.estado === 'pendiente') {
+      return res.status(400).json({ error: 'No se puede devolver mercancía de una orden que está pendiente de recibir.' });
+    }
+
+    for (const devItem of items) {
+      const dbItem = orden.items.find(i => i.productoId === devItem.productoId);
+      if (!dbItem) continue;
+
+      const cantidadDev = parseInt(devItem.cantidadDevolver || 0);
+      if (cantidadDev <= 0) continue;
+
+      if (cantidadDev > dbItem.cantidadRecibida) {
+        throw new Error(`La cantidad a devolver supera la cantidad recibida para el producto ID: ${devItem.productoId}.`);
+      }
+
+      // Si es serializado, verificar y eliminar las series
+      const producto = await Producto.findByPk(devItem.productoId, { transaction });
+      if (producto && producto.tieneNumeroSerie) {
+        if (!devItem.series || !Array.isArray(devItem.series) || devItem.series.length !== cantidadDev) {
+          throw new Error(`Debe especificar exactamente ${cantidadDev} seriales a devolver para el producto ${producto.nombre}.`);
+        }
+
+        // Buscar las series en stock
+        const seriesRegs = await NumeroSerie.findAll({
+          where: {
+            serie: devItem.series,
+            productoId: devItem.productoId,
+            sedeId: orden.sedeId,
+            estado: 'en_stock'
+          },
+          transaction
+        });
+
+        if (seriesRegs.length !== cantidadDev) {
+          throw new Error(`Alguno de los seriales ingresados para ${producto.nombre} no existe en stock o ya fue vendido.`);
+        }
+
+        // Eliminar las series
+        for (const s of seriesRegs) {
+          await s.destroy({ transaction });
+        }
+      }
+
+      const nuevaCantidadRecibida = parseInt(dbItem.cantidadRecibida) - cantidadDev;
+      await dbItem.update({ cantidadRecibida: nuevaCantidadRecibida }, { transaction });
+
+      // Actualizar Stock en la Sede
+      const stock = await StockSede.findOne({
+        where: { productoId: devItem.productoId, sedeId: orden.sedeId },
+        transaction
+      });
+
+      if (stock) {
+        await stock.update({ cantidad: Math.max(0, stock.cantidad - cantidadDev) }, { transaction });
+      }
+
+      // Registrar Movimiento Inventario
+      await MovimientoInventario.create({
+        productoId: devItem.productoId,
+        sedeId: orden.sedeId,
+        tipo: 'salida',
+        cantidad: -cantidadDev,
+        motivo: `Devolución a proveedor de Orden de Compra ID: ${orden.id}`,
+        referenciaId: orden.id,
+        usuarioId: req.usuario.userId
+      }, { transaction });
+    }
+
+    // Recalcular estado de la orden
+    let algunRecibido = false;
+    let todosRecibidosCompletamente = true;
+
+    // Volver a consultar los items actualizados
+    const itemsActualizados = await ItemOrdenCompra.findAll({
+      where: { ordenCompraId: id },
+      transaction
+    });
+
+    for (const item of itemsActualizados) {
+      if (item.cantidadRecibida > 0) {
+        algunRecibido = true;
+      }
+      if (item.cantidadRecibida < item.cantidadPedida) {
+        todosRecibidosCompletamente = false;
+      }
+    }
+
+    let nuevoEstado = 'pendiente';
+    if (todosRecibidosCompletamente) {
+      nuevoEstado = 'recibida';
+    } else if (algunRecibido) {
+      nuevoEstado = 'parcial';
+    }
+
+    await orden.update({ estado: nuevoEstado }, { transaction });
+
+    await transaction.commit();
+
+    if (req.logAudit) {
+      await req.logAudit({
+        accion: 'UPDATE',
+        modulo: 'Compras',
+        registroId: id,
+        valorNuevo: { estado: orden.estado, devoluciones: items }
+      });
+    }
+
+    return res.json({ message: 'Mercancía devuelta e inventario actualizado con éxito.', estado: orden.estado });
+  } catch (error) {
+    await transaction.rollback();
+    next(error);
+  }
+};
+
