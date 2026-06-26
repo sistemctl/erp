@@ -8,7 +8,7 @@ router.post('/apertura', authMiddleware, rolesMiddleware(['admin', 'gerente_sede
 router.post('/cierre', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'cajero']), cajaController.cierreCaja);
 router.post('/liberar', authMiddleware, rolesMiddleware(['admin']), cajaController.liberarCaja);
 router.post('/egreso', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'cajero']), cajaController.egresoCaja);
-router.get('/reporte', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'contador']), cajaController.getReporteCaja);
+router.get('/reporte', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'contador', 'cajero']), cajaController.getReporteCaja);
 router.get('/historial', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'contador']), cajaController.getHistorialCajas);
 router.get('/egresos', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'cajero', 'contador']), cajaController.getEgresos);
 router.get('/categorias-egreso', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'cajero', 'contador']), cajaController.getCategoriasEgreso);
