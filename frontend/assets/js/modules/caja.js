@@ -66,7 +66,7 @@ export async function initCaja(container) {
               <div id="caja-modulo-body">
                 <div class="text-center py-5">
                   <div class="spinner-border text-primary" role="status"></div>
-                  <div class="mt-2 text-secondary">Consultando estado de caja...</div>
+                  <div class="mt-2 text-secondary">Consultando estado de caja…</div>
                 </div>
               </div>
             </div>
@@ -224,7 +224,7 @@ export async function initCaja(container) {
                   </div>
                   <div class="mb-3">
                     <label class="form-label">Observaciones y Notas</label>
-                    <textarea id="cierre-observaciones" class="form-control" rows="2" placeholder="Describa diferencias si las hay..."></textarea>
+                    <textarea id="cierre-observaciones" class="form-control" rows="2" placeholder="Describa diferencias si las hay…"></textarea>
                   </div>
                 </div>
               </div>
@@ -397,7 +397,7 @@ export async function initCaja(container) {
                 </tr>
               </thead>
               <tbody id="egresos-table-body">
-                <tr><td colspan="6" class="text-center py-3">Consultando retiros...</td></tr>
+                 <tr><td colspan="6" class="text-center py-3">Consultando retiros…</td></tr>
               </tbody>
             </table>
           </div>

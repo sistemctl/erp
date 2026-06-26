@@ -152,7 +152,7 @@ export async function initNomina(container) {
                 </div>
                 <div class="col-6 mb-3">
                   <label class="form-label">Email</label>
-                  <input type="email" id="emp-email" class="form-control" placeholder="Ej: diana@techstore.com">
+                   <input type="email" id="emp-email" class="form-control" placeholder="Ej: diana@techstore.com" spellcheck="false">
                 </div>
               </div>
               <div class="row">
@@ -314,11 +314,11 @@ export async function initNomina(container) {
           <span class="badge ${e.activo ? 'bg-success-lt' : 'bg-danger-lt'} px-2 py-1">${e.activo ? 'ACTIVO' : 'INACTIVO'}</span>
         </td>
         <td class="text-end">
-          <button class="btn btn-outline-secondary btn-icon btn-sm btn-edit-emp" data-id="${e.id}" title="Editar">
+          <button class="btn btn-outline-secondary btn-icon btn-sm btn-edit-emp" data-id="${e.id}" title="Editar" aria-label="Editar empleado">
             <i class="ti ti-edit"></i>
           </button>
           ${e.activo ? `
-            <button class="btn btn-outline-danger btn-icon btn-sm btn-delete-emp" data-id="${e.id}" title="Desvincular">
+            <button class="btn btn-outline-danger btn-icon btn-sm btn-delete-emp" data-id="${e.id}" title="Desvincular" aria-label="Desvincular empleado">
               <i class="ti ti-user-x"></i>
             </button>
           ` : ''}
@@ -359,14 +359,14 @@ export async function initNomina(container) {
             <span class="badge ${badgeClass} px-2 py-1">${n.estado.toUpperCase()}</span>
           </td>
           <td class="text-end">
-            <button class="btn btn-outline-primary btn-icon btn-sm btn-ver-nom" data-id="${n.id}" title="Ver Detalle">
+            <button class="btn btn-outline-primary btn-icon btn-sm btn-ver-nom" data-id="${n.id}" title="Ver Detalle" aria-label="Ver detalle de nómina">
               <i class="ti ti-eye"></i>
             </button>
-            <button class="btn btn-outline-secondary btn-icon btn-sm btn-pdf-nom" data-id="${n.id}" title="Descargar Desprendible PDF">
+            <button class="btn btn-outline-secondary btn-icon btn-sm btn-pdf-nom" data-id="${n.id}" title="Descargar Desprendible PDF" aria-label="Descargar PDF de nómina">
               <i class="ti ti-file-text"></i>
             </button>
             ${n.estado === 'borrador' ? `
-              <button class="btn btn-outline-danger btn-icon btn-sm btn-delete-nom" data-id="${n.id}" title="Eliminar Borrador">
+              <button class="btn btn-outline-danger btn-icon btn-sm btn-delete-nom" data-id="${n.id}" title="Eliminar Borrador" aria-label="Eliminar borrador de nómina">
                 <i class="ti ti-trash"></i>
               </button>
             ` : ''}

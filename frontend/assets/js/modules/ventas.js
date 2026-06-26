@@ -66,7 +66,7 @@ export async function initVentas(container) {
               <form id="form-filtros-ventas" class="row g-3 mb-4">
                 <div class="col-md-3">
                   <label class="form-label">Buscar Venta / Cliente</label>
-                  <input type="text" id="filtro-buscar-venta" class="form-control" placeholder="No. Venta o Cliente...">
+                  <input type="text" id="filtro-buscar-venta" class="form-control" placeholder="No. Venta o Cliente…" spellcheck="false">
                 </div>
                 <div class="col-md-2">
                   <label class="form-label">Vendedor</label>
@@ -93,7 +93,7 @@ export async function initVentas(container) {
                   <input type="date" id="filtro-hasta-venta" class="form-control">
                 </div>
                 <div class="col-md-1 d-flex align-items-end">
-                  <button type="submit" class="btn btn-primary w-100"><i class="ti ti-filter"></i></button>
+                  <button type="submit" class="btn btn-primary w-100" aria-label="Filtrar historial de ventas"><i class="ti ti-filter"></i></button>
                 </div>
               </form>
 
@@ -229,7 +229,7 @@ export async function initVentas(container) {
                   <input type="date" id="filtro-hasta-reparacion" class="form-control">
                 </div>
                 <div class="col-md-1 d-flex align-items-end">
-                  <button type="submit" class="btn btn-primary w-100"><i class="ti ti-filter"></i></button>
+                  <button type="submit" class="btn btn-primary w-100" aria-label="Filtrar reparaciones facturadas"><i class="ti ti-filter"></i></button>
                 </div>
               </form>
 

@@ -36,7 +36,7 @@ export async function initReparaciones(container) {
           </div>
           <div class="col-auto ms-auto">
             <div class="btn-list">
-              <input type="text" id="kanban-search" class="form-control d-inline-block w-auto me-2" placeholder="Buscar por orden, IMEI o cliente...">
+              <input type="text" id="kanban-search" class="form-control d-inline-block w-auto me-2" placeholder="Buscar por orden, IMEI o cliente…" spellcheck="false">
               ${!esTecnico ? `
                 <button id="btn-nueva-orden" class="btn btn-primary">
                   <i class="ti ti-plus me-2"></i> Nueva Orden
@@ -95,7 +95,7 @@ export async function initReparaciones(container) {
                     </div>
                     <div class="mb-2">
                       <label class="form-label">Correo Electrónico</label>
-                      <input type="email" id="cli-email" class="form-control form-control-sm">
+                      <input type="email" id="cli-email" class="form-control form-control-sm" spellcheck="false">
                     </div>
                   </div>
                 </div>
@@ -125,7 +125,7 @@ export async function initReparaciones(container) {
                   </div>
                   <div class="mb-3">
                     <label class="form-label required">Problema Reportado</label>
-                    <textarea id="eq-problema" class="form-control" rows="2" placeholder="Falla reportada por el cliente..." required></textarea>
+                    <textarea id="eq-problema" class="form-control" rows="2" placeholder="Falla reportada por el cliente…" required spellcheck="false"></textarea>
                   </div>
                   <div class="row">
                     <div class="col-6 mb-3">
@@ -423,7 +423,7 @@ export async function initReparaciones(container) {
     e.preventDefault();
     const btnSubmit = e.submitter;
     btnSubmit.disabled = true;
-    btnSubmit.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Registrando...`;
+    btnSubmit.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Registrando…`;
 
     try {
       let clienteId = clientSelect.value;
@@ -492,7 +492,7 @@ export async function initReparaciones(container) {
   // Modal Detalle
   async function openDetalle(id) {
     const content = document.getElementById('detalle-orden-content');
-    content.innerHTML = `<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div><div class="mt-2 text-secondary">Cargando detalles de la orden...</div></div>`;
+    content.innerHTML = `<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div><div class="mt-2 text-secondary">Cargando detalles de la orden…</div></div>`;
     modalDetalle.show();
 
     try {
@@ -590,7 +590,7 @@ export async function initReparaciones(container) {
                 </div>
                 <div class="mb-3">
                   <label class="form-label">Diagnóstico Técnico</label>
-                  <textarea id="det-diagnostico" class="form-control" rows="2" placeholder="Describa el diagnóstico final o avance...">${orden.diagnostico || ''}</textarea>
+                  <textarea id="det-diagnostico" class="form-control" rows="2" placeholder="Describa el diagnóstico final o avance…" spellcheck="false">${orden.diagnostico || ''}</textarea>
                 </div>
                 <div class="mb-3">
                   <label class="form-label">Observaciones</label>
@@ -633,7 +633,7 @@ export async function initReparaciones(container) {
                   <div class="col-md-7">
                     <div class="position-relative" id="repuesto-dropdown-container">
                       <input type="hidden" id="repuesto-select" value="" required>
-                      <input type="text" id="repuesto-search" class="form-control form-control-sm" placeholder="🔍 Seleccionar o buscar repuesto..." autocomplete="off">
+                      <input type="text" id="repuesto-search" class="form-control form-control-sm" placeholder="🔍 Seleccionar o buscar repuesto…" autocomplete="off" spellcheck="false">
                       <div id="repuesto-dropdown-menu" class="dropdown-menu w-100 shadow-sm" style="max-height: 200px; overflow-y: auto; display: none; position: absolute; top: 100%; left: 0; z-index: 1050; background: var(--tblr-bg-surface, #fff); border: 1px solid var(--tblr-border-color, #e6e8eb); border-radius: 4px;">
                         <!-- Opciones dinámicas -->
                       </div>

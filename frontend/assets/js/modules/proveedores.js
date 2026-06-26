@@ -40,7 +40,7 @@ export async function initProveedores(container) {
         <div class="card-body">
           <div class="input-icon">
             <span class="input-icon-addon"><i class="ti ti-search"></i></span>
-            <input type="text" id="prov-search-input" class="form-control form-control-lg" placeholder="Buscar proveedor por nombre, NIT o contacto...">
+            <input type="text" id="prov-search-input" class="form-control form-control-lg" placeholder="Buscar proveedor por nombre, NIT o contacto…" spellcheck="false">
           </div>
         </div>
       </div>
@@ -98,7 +98,7 @@ export async function initProveedores(container) {
               </div>
               <div class="mb-3">
                 <label class="form-label">Correo Electrónico</label>
-                <input type="email" id="form-prov-email" class="form-control" placeholder="Ej: ventas@proveedor.com">
+                <input type="email" id="form-prov-email" class="form-control" placeholder="Ej: ventas@proveedor.com" spellcheck="false">
               </div>
               <div class="mb-3">
                 <label class="form-label">Dirección</label>
@@ -145,10 +145,10 @@ export async function initProveedores(container) {
         </td>
         ${isAdminOrContador ? `
           <td class="text-end">
-            <button class="btn btn-outline-secondary btn-icon btn-sm btn-edit-prov" data-id="${p.id}" title="Editar">
+            <button class="btn btn-outline-secondary btn-icon btn-sm btn-edit-prov" data-id="${p.id}" title="Editar" aria-label="Editar proveedor">
               <i class="ti ti-edit"></i>
             </button>
-            <button class="btn btn-outline-danger btn-icon btn-sm btn-delete-prov" data-id="${p.id}" title="Eliminar">
+            <button class="btn btn-outline-danger btn-icon btn-sm btn-delete-prov" data-id="${p.id}" title="Eliminar" aria-label="Eliminar proveedor">
               <i class="ti ti-trash"></i>
             </button>
           </td>

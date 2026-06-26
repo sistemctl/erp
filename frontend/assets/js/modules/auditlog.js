@@ -32,7 +32,7 @@ export async function initAuditLog(container) {
           <form id="form-audit-filter" class="row g-3">
             <div class="col-md-3">
               <label class="form-label small fw-bold">Usuario / Email</label>
-              <input type="text" id="filter-usuario" class="form-control form-control-sm" placeholder="Buscar por nombre o correo...">
+              <input type="text" id="filter-usuario" class="form-control form-control-sm" placeholder="Buscar por nombre o correo…" spellcheck="false">
             </div>
             <div class="col-md-2">
               <label class="form-label small fw-bold">Módulo</label>
@@ -75,7 +75,7 @@ export async function initAuditLog(container) {
               <input type="date" id="filter-hasta" class="form-control form-control-sm">
             </div>
             <div class="col-md-1 d-flex align-items-end">
-              <button type="submit" class="btn btn-primary btn-sm w-100"><i class="ti ti-search"></i></button>
+              <button type="submit" class="btn btn-primary btn-sm w-100" aria-label="Buscar bitácora"><i class="ti ti-search"></i></button>
             </div>
           </form>
         </div>
@@ -100,7 +100,7 @@ export async function initAuditLog(container) {
               <tr>
                 <td colspan="7" class="text-center py-4 text-secondary">
                   <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
-                  Cargando bitácora de auditoría...
+                   Cargando bitácora de auditoría…
                 </td>
               </tr>
             </tbody>
@@ -207,7 +207,7 @@ export async function initAuditLog(container) {
               <code class="text-muted small">${log.ip || 'Localhost'}</code>
             </td>
             <td class="d-print-none text-end">
-              <button class="btn btn-light btn-icon btn-sm btn-view-detail" data-index="${index}" title="Ver Comparativa">
+               <button class="btn btn-light btn-icon btn-sm btn-view-detail" data-index="${index}" title="Ver Comparativa" aria-label="Ver comparativa de auditoría">
                 <i class="ti ti-eye text-primary"></i>
               </button>
             </td>

@@ -103,7 +103,7 @@ export async function initTradeIn(container) {
                   </tr>
                 </thead>
                 <tbody id="tradeins-table-body">
-                  <tr><td colspan="6" class="text-center py-4 text-secondary">Cargando trade-ins...</td></tr>
+                  <tr><td colspan="6" class="text-center py-4 text-secondary">Cargando trade-ins…</td></tr>
                 </tbody>
               </table>
             </div>

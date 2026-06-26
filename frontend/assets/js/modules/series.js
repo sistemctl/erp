@@ -43,7 +43,7 @@ export async function initSeries(container) {
               <h3 class="card-title">Consultar Historial por IMEI / Serie</h3>
               <form id="form-search-imei" class="row g-2">
                 <div class="col-md-9">
-                  <input type="text" id="input-search-imei" class="form-control" placeholder="Ingrese el IMEI o número de serie completo..." required>
+                  <input type="text" id="input-search-imei" class="form-control" placeholder="Ingrese el IMEI o número de serie completo…" required spellcheck="false">
                 </div>
                 <div class="col-md-3">
                   <button type="submit" class="btn btn-primary w-100">Consultar Historial</button>
@@ -59,7 +59,7 @@ export async function initSeries(container) {
             <div class="card-body">
               <h3 class="card-title">Filtro por Producto</h3>
               <select id="select-producto-series" class="form-select mb-3">
-                <option value="">Seleccione un producto...</option>
+                <option value="">Seleccione un producto…</option>
                 ${productos.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}
               </select>
             </div>
@@ -135,7 +135,7 @@ export async function initSeries(container) {
                       <span>Números de Serie / IMEIs (uno por línea o comas)</span>
                       <span class="badge bg-blue-lt" id="seriales-counter">0 detectados</span>
                     </label>
-                    <textarea id="reg-imei" class="form-control" rows="5" placeholder="Escriba o pegue los seriales aquí..."></textarea>
+                    <textarea id="reg-imei" class="form-control" rows="5" placeholder="Escriba o pegue los seriales aquí…" spellcheck="false"></textarea>
                   </div>
                 </div>
 
@@ -143,12 +143,12 @@ export async function initSeries(container) {
                 <div class="tab-pane fade" id="continuous-mode-pane" role="tabpanel">
                   <div class="mb-3">
                     <label class="form-label">Escanear Código de Barras / Serial</label>
-                    <input type="text" id="reg-imei-continuous" class="form-control" placeholder="Escanee y pulse enter para guardar...">
+                    <input type="text" id="reg-imei-continuous" class="form-control" placeholder="Escanee y pulse enter para guardar…" spellcheck="false">
                   </div>
                   <div class="mb-3">
                     <label class="form-label">Bitácora de Escaneos (Sesión Actual)</label>
                     <div id="continuous-logs" class="border rounded p-2 overflow-auto bg-surface-light text-secondary" style="max-height: 150px; font-size: 0.85rem; background-color: #f6f8fb;">
-                      <div class="text-center py-2 text-secondary-50">Esperando escaneos...</div>
+                      <div class="text-center py-2 text-secondary-50">Esperando escaneos…</div>
                     </div>
                   </div>
                 </div>
@@ -290,7 +290,7 @@ export async function initSeries(container) {
     document.getElementById('btn-nueva-serie').addEventListener('click', () => {
       document.getElementById('form-create-serie').reset();
       document.getElementById('seriales-counter').textContent = '0 detectados';
-      logsDiv.innerHTML = '<div class="text-center py-2 text-secondary-50">Esperando escaneos...</div>';
+      logsDiv.innerHTML = '<div class="text-center py-2 text-secondary-50">Esperando escaneos…</div>';
       // Pre-seleccionar sede del usuario
       document.getElementById('reg-sede').value = usuario.sedeId;
       
@@ -351,7 +351,7 @@ export async function initSeries(container) {
         // Limpiar input inmediatamente para agilizar el próximo escaneo
         inputContinuous.value = '';
 
-        if (logsDiv.innerHTML.includes('Esperando escaneos...')) {
+        if (logsDiv.innerHTML.includes('Esperando escaneos…')) {
           logsDiv.innerHTML = '';
         }
 
@@ -361,7 +361,7 @@ export async function initSeries(container) {
         logItem.className = 'd-flex justify-content-between align-items-center mb-1 py-1 border-bottom';
         logItem.innerHTML = `
           <span><code>${serie}</code></span>
-          <span class="text-secondary small"><span class="spinner-border spinner-border-sm text-primary" role="status"></span> Guardando...</span>
+          <span class="text-secondary small"><span class="spinner-border spinner-border-sm text-primary" role="status"></span> Guardando…</span>
         `;
         logsDiv.insertBefore(logItem, logsDiv.firstChild);
 

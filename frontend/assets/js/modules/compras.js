@@ -426,7 +426,7 @@ export async function initCompras(container) {
           <td class="text-end">${formatter.format(item.precioUnitario)}</td>
           <td class="text-end fw-bold text-primary">${formatter.format(sub)}</td>
           <td>
-            <button type="button" class="btn btn-outline-danger btn-icon btn-sm btn-remove-cart" data-idx="${idx}">
+            <button type="button" class="btn btn-outline-danger btn-icon btn-sm btn-remove-cart" data-idx="${idx}" aria-label="Eliminar ítem del carrito">
               <i class="ti ti-trash"></i>
             </button>
           </td>
@@ -529,7 +529,7 @@ export async function initCompras(container) {
                           <textarea class="form-control form-control-sm input-recibir-series" 
                                     data-pid="${item.productoId}" 
                                     rows="4" 
-                                    placeholder="Escriba o escanee los seriales (uno por línea o comas)..." ${isSerialized ? 'required' : ''}></textarea>
+                                    placeholder="Escriba o escanee los seriales (uno por línea o comas)…" spellcheck="false" ${isSerialized ? 'required' : ''}></textarea>
                           <div class="small text-secondary mt-1"><span class="badge bg-blue-lt counter-series-rec" data-pid="${item.productoId}">0</span> de <span class="badge bg-secondary-lt max-series-rec" data-pid="${item.productoId}">${maxPosible}</span> seriales requeridos</div>
                         </div>
                       </td>
@@ -702,7 +702,7 @@ export async function initCompras(container) {
                           <textarea class="form-control form-control-sm input-devolver-series" 
                                     data-pid="${item.productoId}" 
                                     rows="4" 
-                                    placeholder="Escriba o escanee los seriales a devolver (uno por línea o comas)..." ${isSerialized ? 'required' : ''}></textarea>
+                                    placeholder="Escriba o escanee los seriales a devolver (uno por línea o comas)…" spellcheck="false" ${isSerialized ? 'required' : ''}></textarea>
                           <div class="small text-secondary mt-1"><span class="badge bg-danger-lt counter-series-dev" data-pid="${item.productoId}">0</span> de <span class="badge bg-secondary-lt max-series-dev" data-pid="${item.productoId}">0</span> seriales ingresados</div>
                         </div>
                       </td>

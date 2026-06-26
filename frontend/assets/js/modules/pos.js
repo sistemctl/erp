@@ -130,7 +130,7 @@ export async function initPos(container) {
               <div class="card-body border-bottom py-3">
                 <div class="input-icon">
                   <span class="input-icon-addon"><i class="ti ti-search"></i></span>
-                  <input type="text" id="pos-search-input" class="form-control form-control-lg" placeholder="Buscar producto por nombre o código de barras (F2)..." autocomplete="off">
+                  <input type="text" id="pos-search-input" class="form-control form-control-lg" placeholder="Buscar producto por nombre o código de barras (F2)…" autocomplete="off" spellcheck="false">
                 </div>
                 <div id="pos-categories-container" class="d-flex flex-nowrap gap-2 mt-2 overflow-x-auto pb-2"></div>
               </div>
@@ -600,9 +600,9 @@ export async function initPos(container) {
                     <span class="badge bg-secondary-lt fw-bold px-2 py-1">1</span>
                   ` : `
                     <div class="input-group input-group-sm" style="width: 80px;">
-                      <button class="btn btn-outline-secondary btn-icon btn-sm py-0 px-1 btn-dec-qty" data-idx="${idx}" type="button" style="height: 24px; width: 24px; line-height: 1;">-</button>
+                      <button class="btn btn-outline-secondary btn-icon btn-sm py-0 px-1 btn-dec-qty" data-idx="${idx}" type="button" style="height: 24px; width: 24px; line-height: 1;" aria-label="Disminuir cantidad">-</button>
                       <input type="number" class="form-control text-center p-0 fw-bold bg-white text-dark input-qty-cart" data-idx="${idx}" value="${item.cantidad}" min="0" style="height: 24px; font-size: 0.85rem; border-left: 0; border-right: 0;">
-                      <button class="btn btn-outline-secondary btn-icon btn-sm py-0 px-1 btn-inc-qty" data-idx="${idx}" type="button" style="height: 24px; width: 24px; line-height: 1;">+</button>
+                      <button class="btn btn-outline-secondary btn-icon btn-sm py-0 px-1 btn-inc-qty" data-idx="${idx}" type="button" style="height: 24px; width: 24px; line-height: 1;" aria-label="Aumentar cantidad">+</button>
                     </div>
                   `}
                 </div>
@@ -611,7 +611,7 @@ export async function initPos(container) {
                   <div class="mt-2">
                     <div class="input-icon">
                       <span class="input-icon-addon"><i class="ti ti-barcode text-secondary" style="font-size: 0.8rem;"></i></span>
-                      <input type="text" class="form-control form-control-sm input-imei-cart" data-idx="${idx}" placeholder="Ingresar IMEI/Serie..." value="${item.imei || ''}" required>
+                      <input type="text" class="form-control form-control-sm input-imei-cart" data-idx="${idx}" placeholder="Ingresar IMEI/Serie…" value="${item.imei || ''}" required spellcheck="false">
                     </div>
                   </div>
                 ` : ''}
@@ -621,10 +621,10 @@ export async function initPos(container) {
               <div class="col-auto text-end d-flex flex-column align-items-end" style="min-height: 70px; justify-content: space-between;">
                 <div class="font-weight-bold text-primary">${formatter.format(item.subtotal)}</div>
                 <div class="btn-list flex-nowrap mt-2">
-                  <button class="btn btn-icon btn-sm btn-outline-secondary btn-override-item" data-idx="${idx}" title="Descuento / Precio">
+                  <button class="btn btn-icon btn-sm btn-outline-secondary btn-override-item" data-idx="${idx}" title="Descuento / Precio" aria-label="Descuento o precio personalizado">
                     <i class="ti ti-edit"></i>
                   </button>
-                  <button class="btn btn-icon btn-sm btn-outline-danger btn-remove-item" data-idx="${idx}" title="Eliminar">
+                  <button class="btn btn-icon btn-sm btn-outline-danger btn-remove-item" data-idx="${idx}" title="Eliminar" aria-label="Eliminar ítem del carrito">
                     <i class="ti ti-trash"></i>
                   </button>
                 </div>
@@ -1064,7 +1064,7 @@ export async function initPos(container) {
     };
 
     submitBtn.disabled = true;
-    submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Registrando...`;
+    submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Registrando…`;
 
     try {
       const res = await apiFetch('/ventas', {

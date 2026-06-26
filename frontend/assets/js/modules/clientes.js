@@ -37,7 +37,7 @@ export async function initClientes(container) {
         <div class="card-body">
           <div class="input-icon">
             <span class="input-icon-addon"><i class="ti ti-search"></i></span>
-            <input type="text" id="crm-search-input" class="form-control form-control-lg" placeholder="Buscar cliente por nombre, documento o teléfono...">
+            <input type="text" id="crm-search-input" class="form-control form-control-lg" placeholder="Buscar cliente por nombre, documento o teléfono…" spellcheck="false">
           </div>
         </div>
       </div>
@@ -89,7 +89,7 @@ export async function initClientes(container) {
               </div>
               <div class="mb-3">
                 <label class="form-label">Correo Electrónico</label>
-                <input type="email" id="form-cli-email" class="form-control" placeholder="Ej: carlos@gmail.com">
+                 <input type="email" id="form-cli-email" class="form-control" placeholder="Ej: carlos@gmail.com" spellcheck="false">
               </div>
               <div class="mb-3">
                 <label class="form-label">Dirección</label>
@@ -135,10 +135,10 @@ export async function initClientes(container) {
         <td>${c.email || '<span class="text-secondary small">No registrado</span>'}</td>
         <td class="small text-secondary">${c.direccion || 'N/A'}</td>
         <td class="text-end">
-          <button class="btn btn-outline-primary btn-icon btn-sm btn-ficha-cli" data-id="${c.id}" title="Ficha del Cliente">
+           <button class="btn btn-outline-primary btn-icon btn-sm btn-ficha-cli" data-id="${c.id}" title="Ficha del Cliente" aria-label="Ver ficha del cliente">
             <i class="ti ti-user-check"></i>
           </button>
-          <button class="btn btn-outline-secondary btn-icon btn-sm btn-edit-cli" data-id="${c.id}" title="Editar">
+          <button class="btn btn-outline-secondary btn-icon btn-sm btn-edit-cli" data-id="${c.id}" title="Editar" aria-label="Editar cliente">
             <i class="ti ti-edit"></i>
           </button>
         </td>

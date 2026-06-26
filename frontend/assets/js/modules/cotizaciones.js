@@ -53,7 +53,7 @@ export async function initCotizaciones(container) {
             <div class="tab-pane active show" id="tab-historial-cot" role="tabpanel">
               <div class="row g-3 mb-4">
                 <div class="col-md-4">
-                  <input type="text" id="filtro-cot-buscar" class="form-control" placeholder="Buscar por número o cliente...">
+                  <input type="text" id="filtro-cot-buscar" class="form-control" placeholder="Buscar por número o cliente…" spellcheck="false">
                 </div>
                 <div class="col-md-3">
                   <select id="filtro-cot-estado" class="form-select">
@@ -83,7 +83,7 @@ export async function initCotizaciones(container) {
                     </tr>
                   </thead>
                   <tbody id="cotizaciones-table-body">
-                    <tr><td colspan="6" class="text-center py-4 text-secondary">Cargando cotizaciones...</td></tr>
+                    <tr><td colspan="6" class="text-center py-4 text-secondary">Cargando cotizaciones…</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -129,7 +129,7 @@ export async function initCotizaciones(container) {
 
                 <div class="mb-3">
                   <label class="form-label">Notas y Términos</label>
-                  <textarea id="cot-notas" class="form-control" rows="2" placeholder="Notas internas o condiciones comerciales..."></textarea>
+                  <textarea id="cot-notas" class="form-control" rows="2" placeholder="Notas internas o condiciones comerciales…" spellcheck="false"></textarea>
                 </div>
 
                 <div class="card p-3 mb-3 bg-light">
@@ -151,7 +151,7 @@ export async function initCotizaciones(container) {
                       <input type="number" id="cot-add-precio" class="form-control" placeholder="0" min="0">
                     </div>
                     <div class="col-md-1 d-flex align-items-end">
-                      <button type="button" id="btn-add-item-cot" class="btn btn-success w-100"><i class="ti ti-plus"></i></button>
+                      <button type="button" id="btn-add-item-cot" class="btn btn-success w-100" aria-label="Agregar ítem a cotización"><i class="ti ti-plus"></i></button>
                     </div>
                   </div>
                 </div>
@@ -270,7 +270,7 @@ export async function initCotizaciones(container) {
           <td class="text-end font-weight-medium">${formatter.format(item.precioUnitario)}</td>
           <td class="text-end fw-bold text-dark">${formatter.format(subtotal)}</td>
           <td>
-            <button type="button" class="btn btn-sm btn-link link-danger btn-remove-item-cot" data-idx="${idx}"><i class="ti ti-trash"></i></button>
+            <button type="button" class="btn btn-sm btn-link link-danger btn-remove-item-cot" data-idx="${idx}" aria-label="Eliminar ítem"><i class="ti ti-trash"></i></button>
           </td>
         </tr>
       `;

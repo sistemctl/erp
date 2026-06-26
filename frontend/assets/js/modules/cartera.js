@@ -66,7 +66,7 @@ export async function initCartera(container) {
               </tr>
             </thead>
             <tbody id="cartera-table-body">
-              <tr><td colspan="9" class="text-center py-4 text-secondary">Cargando datos de cartera...</td></tr>
+              <tr><td colspan="9" class="text-center py-4 text-secondary">Cargando datos de cartera…</td></tr>
             </tbody>
           </table>
         </div>

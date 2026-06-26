@@ -58,7 +58,7 @@ export async function initInventario(container) {
             </div>
             <div class="col-md-6 mt-3 mt-md-0">
               <label class="form-label">Buscador</label>
-              <input type="text" id="search-inventario" class="form-control" placeholder="Buscar por nombre o código de barras...">
+              <input type="text" id="search-inventario" class="form-control" placeholder="Buscar por nombre o código de barras…" spellcheck="false">
             </div>
           </div>
         </div>
@@ -83,7 +83,7 @@ export async function initInventario(container) {
             </thead>
             <tbody id="inventario-table-body">
               <tr>
-                <td colspan="9" class="text-center py-4">Cargando inventario...</td>
+                 <td colspan="9" class="text-center py-4">Cargando inventario…</td>
               </tr>
             </tbody>
           </table>
@@ -112,13 +112,13 @@ export async function initInventario(container) {
                 <div class="col-lg-6">
                   <div class="mb-3">
                     <label class="form-label">Código de Barras</label>
-                    <input type="text" id="prod-codigo" class="form-control" required placeholder="Ej: 0190199543210">
+                    <input type="text" id="prod-codigo" class="form-control" required placeholder="Ej: 0190199543210" spellcheck="false">
                   </div>
                 </div>
               </div>
               <div class="mb-3">
                 <label class="form-label">Descripción</label>
-                <textarea id="prod-descripcion" class="form-control" rows="3" placeholder="Detalle técnico del equipo..."></textarea>
+                 <textarea id="prod-descripcion" class="form-control" rows="3" placeholder="Detalle técnico del equipo…" spellcheck="false"></textarea>
               </div>
               <div class="mb-3">
                 <label class="form-label">URL de la Imagen (Foto del Producto)</label>
@@ -164,7 +164,7 @@ export async function initInventario(container) {
                     <span class="badge bg-blue-lt" id="modal-seriales-counter">0 detectados</span>
                   </label>
                   <div class="input-group">
-                    <textarea id="modal-reg-imei" class="form-control" rows="2" placeholder="Ej:&#10;ATTECH001&#10;ATTECH002"></textarea>
+                    <textarea id="modal-reg-imei" class="form-control" rows="2" placeholder="Ej:&#10;ATTECH001&#10;ATTECH002" spellcheck="false"></textarea>
                     <button type="button" id="modal-btn-add-seriales" class="btn btn-primary px-3">Agregar</button>
                   </div>
                 </div>
@@ -309,7 +309,7 @@ export async function initInventario(container) {
             <form id="form-crear-categoria" class="mb-4">
               <label class="form-label">Nueva Categoría</label>
               <div class="input-group">
-                <input type="text" id="cat-nombre-input" class="form-control" placeholder="Nombre de la categoría..." required>
+                 <input type="text" id="cat-nombre-input" class="form-control" placeholder="Nombre de la categoría…" required spellcheck="false">
                 <button type="submit" class="btn btn-primary">
                   <i class="ti ti-plus me-1"></i> Agregar
                 </button>
@@ -327,7 +327,7 @@ export async function initInventario(container) {
                 </thead>
                 <tbody id="lista-categorias-body">
                   <tr>
-                    <td colspan="2" class="text-center py-3 text-secondary">Cargando...</td>
+                     <td colspan="2" class="text-center py-3 text-secondary">Cargando…</td>
                   </tr>
                 </tbody>
               </table>
@@ -370,7 +370,7 @@ export async function initInventario(container) {
         <tr>
           <td><code class="fw-bold text-dark">${s.serie}</code></td>
           <td class="text-end px-3">
-            <button type="button" class="btn btn-icon btn-ghost-danger btn-sm btn-delete-modal-serial" data-id="${s.id}" title="Eliminar Serial">
+             <button type="button" class="btn btn-icon btn-ghost-danger btn-sm btn-delete-modal-serial" data-id="${s.id}" title="Eliminar Serial" aria-label="Eliminar serial">
               <i class="ti ti-trash"></i>
             </button>
           </td>
@@ -646,7 +646,7 @@ export async function initInventario(container) {
             <tr>
               <td>${c.nombre}</td>
               <td class="text-end">
-                <button class="btn btn-icon btn-ghost-danger btn-sm btn-eliminar-categoria" data-id="${c.id}">
+                 <button class="btn btn-icon btn-ghost-danger btn-sm btn-eliminar-categoria" data-id="${c.id}" aria-label="Eliminar categoría">
                   <i class="ti ti-trash"></i>
                 </button>
               </td>

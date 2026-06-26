@@ -115,7 +115,7 @@ export async function initConfig(container) {
                     </tr>
                   </thead>
                   <tbody id="sedes-tbody">
-                    <tr><td colspan="5" class="text-center py-3">Cargando sedes...</td></tr>
+                     <tr><td colspan="5" class="text-center py-3">Cargando sedes…</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -140,7 +140,7 @@ export async function initConfig(container) {
                     </tr>
                   </thead>
                   <tbody id="usuarios-tbody">
-                    <tr><td colspan="6" class="text-center py-3">Cargando usuarios...</td></tr>
+                     <tr><td colspan="6" class="text-center py-3">Cargando usuarios…</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -175,15 +175,15 @@ export async function initConfig(container) {
                 <div class="row g-3 mb-4">
                   <div class="col-md-6">
                     <label class="form-label">Twilio Account SID</label>
-                    <input type="text" id="cfg-twilio-sid" class="form-control" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxx">
+                    <input type="text" id="cfg-twilio-sid" class="form-control" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxx" spellcheck="false">
                   </div>
                   <div class="col-md-6">
                     <label class="form-label">Twilio Auth Token</label>
-                    <input type="password" id="cfg-twilio-token" class="form-control" placeholder="••••••••••••••••••••••••••••">
+                    <input type="password" id="cfg-twilio-token" class="form-control" placeholder="••••••••••••••••••••••••••••" spellcheck="false">
                   </div>
                   <div class="col-md-6">
-                    <label class="form-label">Número Remitente (Twilio Sender Number / whatsapp:+1...)</label>
-                    <input type="text" id="cfg-twilio-from" class="form-control" placeholder="Ej: +14155238886">
+                    <label class="form-label">Número Remitente (Twilio Sender Number / whatsapp:+1…)</label>
+                    <input type="text" id="cfg-twilio-from" class="form-control" placeholder="Ej: +14155238886" spellcheck="false">
                   </div>
                 </div>
 
@@ -194,17 +194,17 @@ export async function initConfig(container) {
 
                 <div class="mb-3">
                   <label class="form-label">Mensaje: <strong>Recibido / Ingreso a Taller</strong></label>
-                  <textarea id="cfg-tpl-recibido" class="form-control" rows="2" placeholder="Plantilla al registrar el equipo..."></textarea>
+                  <textarea id="cfg-tpl-recibido" class="form-control" rows="2" placeholder="Plantilla al registrar el equipo…"></textarea>
                 </div>
 
                 <div class="mb-3">
                   <label class="form-label">Mensaje: <strong>Listo para Retiro</strong></label>
-                  <textarea id="cfg-tpl-listo" class="form-control" rows="2" placeholder="Plantilla al finalizar la reparación..."></textarea>
+                  <textarea id="cfg-tpl-listo" class="form-control" rows="2" placeholder="Plantilla al finalizar la reparación…"></textarea>
                 </div>
 
                 <div class="mb-3">
                   <label class="form-label">Mensaje: <strong>Entregado a Cliente</strong></label>
-                  <textarea id="cfg-tpl-entregado" class="form-control" rows="2" placeholder="Plantilla al entregar y facturar..."></textarea>
+                  <textarea id="cfg-tpl-entregado" class="form-control" rows="2" placeholder="Plantilla al entregar y facturar…"></textarea>
                 </div>
 
                 <button type="submit" class="btn btn-primary"><i class="ti ti-device-floppy me-1"></i> Guardar Plantillas y Pasarela</button>
@@ -226,7 +226,7 @@ export async function initConfig(container) {
                     </tr>
                   </thead>
                   <tbody id="notif-log-tbody">
-                    <tr><td colspan="6" class="text-center py-4">Cargando bitácora de envíos...</td></tr>
+                     <tr><td colspan="6" class="text-center py-4">Cargando bitácora de envíos…</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -320,7 +320,7 @@ export async function initConfig(container) {
             </div>
             <div class="mb-3">
               <label class="form-label fw-bold">Nombre de Usuario</label>
-              <input type="text" id="usr-email" class="form-control" required placeholder="Ej: juanperez">
+               <input type="text" id="usr-email" class="form-control" required placeholder="Ej: juanperez" spellcheck="false">
             </div>
             <div class="mb-3">
               <label class="form-label fw-bold" id="lbl-usr-password">Contraseña</label>

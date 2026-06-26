@@ -136,7 +136,7 @@ async function router() {
   contentContainer.innerHTML = `
     <div class="container-xl text-center py-5">
       <div class="spinner-border text-primary" role="status"></div>
-      <div class="mt-2 text-secondary">Cargando módulo...</div>
+      <div class="mt-2 text-secondary">Cargando módulo…</div>
     </div>
   `;
 
@@ -262,7 +262,7 @@ function renderLoginView(container) {
         <form id="login-form" autocomplete="off" novalidate>
           <div class="mb-3">
             <label class="form-label"><i class="ti ti-user me-1"></i> Nombre de Usuario</label>
-            <input type="text" id="login-email" class="form-control" placeholder="Nombre de usuario..." required autocomplete="username">
+            <input type="text" id="login-email" class="form-control" placeholder="Nombre de usuario…" required autocomplete="username" spellcheck="false">
           </div>
           <div class="mb-4">
             <label class="form-label"><i class="ti ti-lock me-1"></i> Contraseña</label>
@@ -288,7 +288,7 @@ function renderLoginView(container) {
 
     errorDiv.classList.add('d-none');
     btn.disabled = true;
-    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Ingresando...`;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Ingresando…`;
 
     try {
       const { login } = await import('./auth.js');

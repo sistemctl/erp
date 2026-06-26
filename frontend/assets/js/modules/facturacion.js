@@ -36,7 +36,7 @@ export async function initFacturacion(container) {
           <form id="form-filtros-facturacion" class="row g-3">
             <div class="col-md-3">
               <label class="form-label">Buscar</label>
-              <input type="text" id="filtro-buscar" class="form-control" placeholder="No. Factura o Cliente...">
+              <input type="text" id="filtro-buscar" class="form-control" placeholder="No. Factura o Cliente…" spellcheck="false">
             </div>
             <div class="col-md-2">
               <label class="form-label">Estado</label>
@@ -67,7 +67,7 @@ export async function initFacturacion(container) {
               <input type="date" id="filtro-hasta" class="form-control">
             </div>
             <div class="col-md-1 d-flex align-items-end">
-              <button type="submit" class="btn btn-primary w-100"><i class="ti ti-search"></i></button>
+              <button type="submit" class="btn btn-primary w-100" aria-label="Buscar factura"><i class="ti ti-search"></i></button>
             </div>
           </form>
         </div>
@@ -139,14 +139,14 @@ export async function initFacturacion(container) {
             <span class="badge ${badgeClass} px-2 py-1">${f.estado.toUpperCase()}</span>
           </td>
           <td class="text-end">
-            <button class="btn btn-outline-primary btn-icon btn-sm btn-ver-factura" data-id="${f.id}" title="Ver Detalle">
+             <button class="btn btn-outline-primary btn-icon btn-sm btn-ver-factura" data-id="${f.id}" title="Ver Detalle" aria-label="Ver detalle de factura">
               <i class="ti ti-eye"></i>
             </button>
-            <button class="btn btn-outline-secondary btn-icon btn-sm btn-pdf-factura" data-id="${f.id}" title="Descargar PDF">
+            <button class="btn btn-outline-secondary btn-icon btn-sm btn-pdf-factura" data-id="${f.id}" title="Descargar PDF" aria-label="Descargar PDF de factura">
               <i class="ti ti-file-text"></i>
             </button>
             ${isAdminOrGerente && f.estado !== 'anulada' ? `
-              <button class="btn btn-outline-danger btn-icon btn-sm btn-anular-factura" data-id="${f.id}" title="Anular Factura (Nota Crédito)">
+              <button class="btn btn-outline-danger btn-icon btn-sm btn-anular-factura" data-id="${f.id}" title="Anular Factura (Nota Crédito)" aria-label="Anular factura">
                 <i class="ti ti-trash"></i>
               </button>
             ` : ''}
