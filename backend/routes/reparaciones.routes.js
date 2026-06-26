@@ -26,19 +26,19 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // Reporte de rentabilidad (debe ir antes de /:id para no ser interpretado como parámetro)
-router.get('/rentabilidad/reporte', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'contador']), reparacionesController.getRentabilidadReport);
+router.get('/rentabilidad/reporte', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'contador']), reparacionesController.getRentabilidadReport);
 
 // Endpoints principales
-router.get('/', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'tecnico', 'cajero']), reparacionesController.getOrdenes);
-router.post('/', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'cajero']), reparacionesController.createOrden);
-router.get('/:id', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'tecnico', 'cajero']), reparacionesController.getOrdenById);
-router.put('/:id', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'tecnico']), reparacionesController.updateOrden);
-router.put('/:id/estado', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'tecnico']), reparacionesController.updateEstado);
-router.post('/:id/repuestos', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'tecnico']), reparacionesController.addRepuestos);
-router.post('/:id/fotos', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'tecnico']), upload.array('fotos', 10), reparacionesController.uploadFotos);
+router.get('/', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'tecnico', 'cajero']), reparacionesController.getOrdenes);
+router.post('/', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'cajero']), reparacionesController.createOrden);
+router.get('/:id', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'tecnico', 'cajero']), reparacionesController.getOrdenById);
+router.put('/:id', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'tecnico']), reparacionesController.updateOrden);
+router.put('/:id/estado', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'tecnico']), reparacionesController.updateEstado);
+router.post('/:id/repuestos', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'tecnico']), reparacionesController.addRepuestos);
+router.post('/:id/fotos', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'tecnico']), upload.array('fotos', 10), reparacionesController.uploadFotos);
 
 // Comprobantes
-router.get('/:id/orden-pdf', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'tecnico', 'cajero']), reparacionesController.getOrdenPdf);
-router.get('/:id/etiqueta-qr', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'tecnico', 'cajero']), reparacionesController.getEtiquetaQr);
+router.get('/:id/orden-pdf', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'tecnico', 'cajero']), reparacionesController.getOrdenPdf);
+router.get('/:id/etiqueta-qr', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'tecnico', 'cajero']), reparacionesController.getEtiquetaQr);
 
 module.exports = router;

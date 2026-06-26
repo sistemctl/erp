@@ -152,7 +152,7 @@ export async function initNomina(container) {
                 </div>
                 <div class="col-6 mb-3">
                   <label class="form-label">Email</label>
-                   <input type="email" id="emp-email" class="form-control" placeholder="Ej: diana@techstore.com" spellcheck="false">
+                  <input type="email" id="emp-email" class="form-control" placeholder="Ej: diana@techstore.com" spellcheck="false">
                 </div>
               </div>
               <div class="row">
@@ -456,6 +456,7 @@ export async function initNomina(container) {
   });
 
   // Soft delete employee
+  async function desvincularEmpleado(id) {
     const verificado = await showConfirm('Desvincular Empleado', '¿Está seguro de que desea desvincular a este empleado del sistema? Esto cambiará su estado a inactivo.');
     if (!verificado) {
       return;

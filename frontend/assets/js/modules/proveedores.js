@@ -4,7 +4,7 @@ import { showConfirm } from '../utils/toast.js';
 
 export async function initProveedores(container) {
   const usuario = getUsuario();
-  const isAdminOrContador = ['admin', 'contador'].includes(usuario.rol);
+  const isAdminOrContador = ['admin', 'superadmin', 'contador'].includes(usuario.rol);
   let proveedores = [];
 
   async function loadProveedores() {

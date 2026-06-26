@@ -14,13 +14,13 @@ router.get('/categorias', authMiddleware, productosController.getCategorias);
 router.get('/barcode/:codigo', authMiddleware, productosController.getProductoByBarcode);
 
 // Rutas de administración de catálogo
-router.post('/categorias', authMiddleware, rolesMiddleware(['admin', 'gerente_sede']), productosController.createCategoria);
-router.delete('/categorias/:id', authMiddleware, rolesMiddleware(['admin', 'gerente_sede']), productosController.deleteCategoria);
-router.post('/', authMiddleware, rolesMiddleware(['admin', 'gerente_sede']), productosController.createProducto);
-router.put('/:id', authMiddleware, rolesMiddleware(['admin', 'gerente_sede']), productosController.updateProducto);
-router.delete('/:id', authMiddleware, rolesMiddleware(['admin', 'gerente_sede']), productosController.deleteProducto);
+router.post('/categorias', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede']), productosController.createCategoria);
+router.delete('/categorias/:id', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede']), productosController.deleteCategoria);
+router.post('/', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede']), productosController.createProducto);
+router.put('/:id', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede']), productosController.updateProducto);
+router.delete('/:id', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede']), productosController.deleteProducto);
 
 // Importar catálogo por CSV
-router.post('/importar-csv', authMiddleware, rolesMiddleware(['admin', 'gerente_sede']), upload.single('archivo'), productosController.importarCSV);
+router.post('/importar-csv', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede']), upload.single('archivo'), productosController.importarCSV);
 
 module.exports = router;
