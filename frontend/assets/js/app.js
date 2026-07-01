@@ -1,5 +1,7 @@
 import { isAuthenticated, getUsuario, logout } from './auth.js';
 import { showToast } from './utils/toast.js';
+import { applyThemeFromCache, initThemeFromServer } from './utils/theme.js';
+import { applyDocumentBranding, getCachedBrand, resolveAssetUrl } from './utils/branding.js';
 
 // Anular global alert del navegador con una notificación Toast Premium animada
 window.alert = (message) => {
@@ -21,7 +23,7 @@ window.alert = (message) => {
 const modulosPorRol = {
   superadmin: [
     { name: 'Dashboard', hash: '#/dashboard', icon: 'ti-dashboard' },
-    { name: 'POS / Ventas', hash: '#/pos', icon: 'ti-shopping-cart' },
+    { name: 'Punto de venta', hash: '#/pos', icon: 'ti-shopping-cart' },
     { name: 'Historial Ventas', hash: '#/ventas', icon: 'ti-receipt' },
     { name: 'Clientes CRM', hash: '#/clientes', icon: 'ti-users-group' },
     { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
@@ -35,12 +37,11 @@ const modulosPorRol = {
     { name: 'Cotizaciones', hash: '#/cotizaciones', icon: 'ti-file-invoice' },
     { name: 'Trade-In', hash: '#/tradein', icon: 'ti-refresh' },
     { name: 'Cartera', hash: '#/cartera', icon: 'ti-wallet' },
-    { name: 'Auditoría', hash: '#/auditlog', icon: 'ti-shield-lock' },
     { name: 'Configuración', hash: '#/config', icon: 'ti-settings' }
   ],
   admin: [
     { name: 'Dashboard', hash: '#/dashboard', icon: 'ti-dashboard' },
-    { name: 'POS / Ventas', hash: '#/pos', icon: 'ti-shopping-cart' },
+    { name: 'Punto de venta', hash: '#/pos', icon: 'ti-shopping-cart' },
     { name: 'Historial Ventas', hash: '#/ventas', icon: 'ti-receipt' },
     { name: 'Clientes CRM', hash: '#/clientes', icon: 'ti-users-group' },
     { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
@@ -53,12 +54,11 @@ const modulosPorRol = {
     { name: 'Proveedores', hash: '#/proveedores', icon: 'ti-building-factory' },
     { name: 'Cotizaciones', hash: '#/cotizaciones', icon: 'ti-file-invoice' },
     { name: 'Trade-In', hash: '#/tradein', icon: 'ti-refresh' },
-    { name: 'Cartera', hash: '#/cartera', icon: 'ti-wallet' },
-    { name: 'Auditoría', hash: '#/auditlog', icon: 'ti-shield-lock' }
+    { name: 'Cartera', hash: '#/cartera', icon: 'ti-wallet' }
   ],
   gerente_sede: [
     { name: 'Dashboard', hash: '#/dashboard', icon: 'ti-dashboard' },
-    { name: 'POS / Ventas', hash: '#/pos', icon: 'ti-shopping-cart' },
+    { name: 'Punto de venta', hash: '#/pos', icon: 'ti-shopping-cart' },
     { name: 'Historial Ventas', hash: '#/ventas', icon: 'ti-receipt' },
     { name: 'Clientes CRM', hash: '#/clientes', icon: 'ti-users-group' },
     { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
@@ -73,7 +73,7 @@ const modulosPorRol = {
     { name: 'Cartera', hash: '#/cartera', icon: 'ti-wallet' }
   ],
   cajero: [
-    { name: 'POS / Ventas', hash: '#/pos', icon: 'ti-shopping-cart' },
+    { name: 'Punto de venta', hash: '#/pos', icon: 'ti-shopping-cart' },
     { name: 'Historial Ventas', hash: '#/ventas', icon: 'ti-receipt' },
     { name: 'Clientes CRM', hash: '#/clientes', icon: 'ti-users-group' },
     { name: 'Facturación', hash: '#/facturacion', icon: 'ti-file-text' },
@@ -95,14 +95,65 @@ const modulosPorRol = {
   ]
 };
 
+const ROL_META = {
+  superadmin: { label: 'Superadmin', tone: 'violet' },
+  admin: { label: 'Administrador', tone: 'blue' },
+  gerente_sede: { label: 'Gerente de sede', tone: 'cyan' },
+  cajero: { label: 'Cajero', tone: 'green' },
+  tecnico: { label: 'Técnico', tone: 'amber' },
+  contador: { label: 'Contador', tone: 'slate' },
+};
+
+function getInitials(nombre) {
+  return (nombre || 'U')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join('');
+}
+
+function getModuleLabel(rawHash, rol) {
+  const hash = (rawHash || '#/dashboard').split('?')[0] || '#/dashboard';
+  const params = new URLSearchParams((rawHash || '').split('?')[1] || '');
+  if (hash === '#/config' && params.get('tab') === 'auditoria') return 'Auditoría';
+  const modulos = modulosPorRol[rol] || [];
+  const match = modulos.find((m) => {
+    const base = m.hash.split('?')[0];
+    return m.hash === rawHash || base === hash;
+  });
+  if (match) return match.name;
+  const labels = {
+    '#/config': 'Configuración',
+    '#/series': 'Series / IMEI',
+    '#/dashboard': 'Dashboard',
+  };
+  return labels[hash] || 'Inicio';
+}
+
+function updateTopbarContext(rawHash) {
+  const usuario = getUsuario();
+  if (!usuario) return;
+  const titleEl = document.getElementById('topbar-module-title');
+  const kickerEl = document.getElementById('topbar-module-kicker');
+  if (!titleEl) return;
+  const hash = (rawHash || '#/dashboard').split('?')[0] || '#/dashboard';
+  const label = getModuleLabel(rawHash, usuario.rol);
+  titleEl.textContent = label;
+  if (kickerEl) {
+    kickerEl.textContent = hash === '#/dashboard' ? 'Panel principal' : 'Módulo activo';
+  }
+}
+
 // Router principal
 async function router() {
-  const hash = window.location.hash || '#/dashboard';
+  const rawHash = window.location.hash || '#/dashboard';
+  const hash = rawHash.split('?')[0] || '#/dashboard';
   const appContainer = document.getElementById('app');
 
   // 1. Verificar si está logueado
   if (!isAuthenticated()) {
-    renderLoginView(appContainer);
+    await renderLoginView(appContainer);
     return;
   }
 
@@ -112,7 +163,7 @@ async function router() {
     // Token existe pero datos de usuario son inválidos — limpiar y mostrar login
     localStorage.removeItem('token');
     localStorage.removeItem('usuario');
-    renderLoginView(appContainer);
+    await renderLoginView(appContainer);
     return;
   }
 
@@ -130,6 +181,7 @@ async function router() {
 
   // Actualizar el estado del menú activo en el sidebar
   updateActiveMenu(hash);
+  updateTopbarContext(rawHash);
 
   // 3. Renderizar el módulo específico
   const contentContainer = document.getElementById('main-content');
@@ -213,6 +265,9 @@ async function router() {
         const { initCartera } = await import('./modules/cartera.js');
         await initCartera(contentContainer);
         break;
+      case '#/auditlog':
+        window.location.hash = '#/config?tab=auditoria';
+        return;
       case '#/config':
         const { initConfig } = await import('./modules/config.js');
         await initConfig(contentContainer);
@@ -246,59 +301,177 @@ async function router() {
 }
 
 // Vista de Login
-function renderLoginView(container) {
-  container.className = "";
+async function renderLoginView(container) {
+  const colorScheme = localStorage.getItem('theme') || 'light';
+  document.body.setAttribute('data-bs-theme', colorScheme);
+
+  let brand = getCachedBrand();
+  try {
+    const { apiFetch } = await import('./api.js');
+    const { applyTheme, applyThemeFromCache } = await import('./utils/theme.js');
+    const remote = await apiFetch('/config/branding');
+    brand = applyDocumentBranding({
+      empresa: remote?.empresa || brand.empresa,
+      logoUrl: remote?.logoUrl || brand.logoUrl
+    });
+    if (remote?.temaInterfaz && Object.keys(remote.temaInterfaz).length > 0) {
+      applyTheme(remote.temaInterfaz);
+    } else {
+      applyThemeFromCache();
+    }
+  } catch (_) {
+    const { applyThemeFromCache } = await import('./utils/theme.js');
+    applyThemeFromCache();
+  }
+
+  const logoMarkClass = brand.logoUrl
+    ? 'login-panel__logo-mark login-panel__logo-mark--has-img'
+    : 'login-panel__logo-mark';
+  const logoInner = brand.logoUrl
+    ? `<img src="${brand.logoUrl}" alt="${brand.empresa}" class="login-panel__logo-img">`
+    : `<i class="ti ti-building-warehouse" aria-hidden="true"></i>`;
+  const stageLogo = brand.logoUrl
+    ? `<div class="login-panel__stage-brand"><img src="${brand.logoUrl}" alt="" class="login-panel__stage-logo"></div>`
+    : '';
+
+  container.className = 'login-page-wrap';
   container.innerHTML = `
-    <div class="login-bg">
-      <div class="login-card animate__animated animate__fadeIn">
-        <div class="text-center mb-4">
-          <h1 class="text-white fs-1 fw-bold mb-1"><i class="ti ti-device-laptop me-2 text-primary"></i>TechStore <span class="text-primary">ERP</span></h1>
-          <div class="text-muted small">Sistema de Gestión Integrada</div>
-        </div>
-        
-        <h3 class="text-center mb-4 fw-bold" style="color: rgba(255,255,255,0.9);">Iniciar Sesión</h3>
-        <div id="login-error" class="alert alert-danger d-none bg-danger-lt border-0 text-white py-2 small mb-3"></div>
-        
-        <form id="login-form" autocomplete="off" novalidate>
-          <div class="mb-3">
-            <label class="form-label"><i class="ti ti-user me-1"></i> Nombre de Usuario</label>
-            <input type="text" id="login-email" class="form-control" placeholder="Nombre de usuario…" required autocomplete="username" spellcheck="false">
+    <div class="login-page">
+      <div class="login-panel">
+        <div class="login-panel__form">
+          <header class="login-panel__brand">
+            <div class="${logoMarkClass}">
+              ${logoInner}
+            </div>
+            <div class="login-panel__brand-text">
+              <div class="login-panel__product">${brand.empresa}</div>
+              <div class="login-panel__company">Gestión Integrada · ERP</div>
+            </div>
+          </header>
+
+          <div class="login-panel__welcome">
+            <p class="login-panel__eyebrow">Acceso al sistema</p>
+            <h1 class="login-panel__title">Bienvenido</h1>
+            <p class="login-panel__subtitle">Ingresa con tu usuario corporativo para continuar.</p>
           </div>
-          <div class="mb-4">
-            <label class="form-label"><i class="ti ti-lock me-1"></i> Contraseña</label>
-            <input type="password" id="login-password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
-          </div>
-          <div class="form-footer mt-2">
-            <button type="submit" id="login-btn" class="btn btn-primary w-100 py-2 fs-3">
-              <i class="ti ti-login me-2"></i> Ingresar al Sistema
+
+          <div id="login-error" class="login-panel__error d-none" role="alert"></div>
+
+          <form id="login-form" class="login-panel__form-fields" autocomplete="off" novalidate>
+            <div class="login-panel__field">
+              <label class="login-panel__label" for="login-email">Usuario</label>
+              <div class="login-panel__input-wrap">
+                <i class="ti ti-user login-panel__input-icon" aria-hidden="true"></i>
+                <input type="text" id="login-email" class="login-panel__input" placeholder="correo o nombre de usuario" required autocomplete="username" spellcheck="false">
+              </div>
+            </div>
+            <div class="login-panel__field">
+              <label class="login-panel__label" for="login-password">Contraseña</label>
+              <div class="login-panel__input-wrap">
+                <i class="ti ti-lock login-panel__input-icon" aria-hidden="true"></i>
+                <input type="password" id="login-password" class="login-panel__input" placeholder="Tu contraseña" required autocomplete="current-password">
+              </div>
+            </div>
+            <button type="submit" id="login-btn" class="login-panel__submit">
+              <span>Iniciar sesión</span>
+              <i class="ti ti-arrow-right" aria-hidden="true"></i>
             </button>
+          </form>
+
+          <footer class="login-panel__footer">Acceso restringido a personal autorizado</footer>
+        </div>
+
+        <aside class="login-panel__stage" aria-label="Vista de inventario">
+          ${stageLogo}
+          <div class="login-panel__stage-bg" aria-hidden="true"></div>
+          <div class="login-panel__stage-glow" aria-hidden="true"></div>
+
+          <div class="login-inv" aria-hidden="true">
+            <div class="login-inv__badge">
+              <span class="login-inv__live-dot"></span>
+              Inventario en tiempo real
+            </div>
+
+            <div class="login-inv__warehouse">
+              <div class="login-inv__rack">
+                <div class="login-inv__shelf">
+                  ${[1, 2, 3].map((row) => `
+                    <div class="login-inv__row">
+                      ${[1, 2, 3].map((col) => `
+                        <div class="login-inv__slot login-inv__slot--r${row}c${col}">
+                          <span class="login-inv__box"></span>
+                          <span class="login-inv__qty"></span>
+                        </div>
+                      `).join('')}
+                    </div>
+                  `).join('')}
+                </div>
+                <div class="login-inv__scanner"></div>
+                <div class="login-inv__beam"></div>
+              </div>
+
+              <div class="login-inv__float login-inv__float--sku">
+                <i class="ti ti-barcode"></i>
+                <span>SKU escaneado</span>
+              </div>
+              <div class="login-inv__float login-inv__float--stock">
+                <i class="ti ti-package"></i>
+                <span>+12 uds</span>
+              </div>
+              <div class="login-inv__float login-inv__float--imei">
+                <i class="ti ti-qrcode"></i>
+                <span>IMEI validado</span>
+              </div>
+            </div>
+
+            <div class="login-inv__ticker" aria-hidden="true">
+              <div class="login-inv__ticker-track">
+                <span>Entrada de mercancía · Bodega principal</span>
+                <span>Traslado confirmado · Sede Centro → Norte</span>
+                <span>Alerta stock bajo · Audífonos Pro</span>
+                <span>Serie registrada · Control PS5</span>
+                <span>Entrada de mercancía · Bodega principal</span>
+                <span>Traslado confirmado · Sede Centro → Norte</span>
+                <span>Alerta stock bajo · Audífonos Pro</span>
+                <span>Serie registrada · Control PS5</span>
+              </div>
+            </div>
           </div>
-        </form>
+
+          <div class="login-panel__stage-copy">
+            <h2 class="login-panel__stage-title">Tu almacén, siempre bajo control</h2>
+            <p class="login-panel__stage-text">
+              Stock por sede, series e IMEI, movimientos y alertas de mínimo — todo sincronizado mientras operas ventas y taller.
+            </p>
+          </div>
+        </aside>
       </div>
     </div>
   `;
 
   const form = document.getElementById('login-form');
+  const btn = document.getElementById('login-btn');
+  const submitDefaultHtml = btn.innerHTML;
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = document.getElementById('login-email').value;
     const password = document.getElementById('login-password').value;
     const errorDiv = document.getElementById('login-error');
-    const btn = document.getElementById('login-btn');
 
     errorDiv.classList.add('d-none');
     btn.disabled = true;
-    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Ingresando…`;
+    btn.innerHTML = 'Ingresando…';
 
     try {
       const { login } = await import('./auth.js');
       await login(email, password);
-      router(); // Recargar la página con el Shell base
+      router();
     } catch (err) {
-      errorDiv.textContent = err.message || 'Error al conectar con el servidor.';
+      errorDiv.textContent = err.message || 'No se pudo conectar. Verifica usuario y contraseña.';
       errorDiv.classList.remove('d-none');
       btn.disabled = false;
-      btn.textContent = 'Ingresar';
+      btn.innerHTML = submitDefaultHtml;
     }
   });
 }
@@ -316,17 +489,27 @@ async function renderBaseShell(container) {
     console.error('Error al obtener la configuración de la empresa:', err);
   }
 
-  // Dividir el nombre de la empresa para estilizarlo en la barra lateral
+  if (config?.empresa) {
+    config = applyDocumentBranding({
+      empresa: config.empresa,
+      logoUrl: config.logoUrl
+    });
+  }
+
+  const logoSrc = resolveAssetUrl(config.logoUrl);
+  const rolMeta = ROL_META[usuario.rol] || { label: usuario.rol.replace(/_/g, ' '), tone: 'slate' };
+  const userInitials = getInitials(usuario.nombre);
+  const currentHash = window.location.hash || '#/dashboard';
+  const currentHashBase = currentHash.split('?')[0] || '#/dashboard';
+  const initialModule = getModuleLabel(currentHash, usuario.rol);
+  const initialKicker = currentHashBase === '#/dashboard' ? 'Panel principal' : 'Módulo activo';
   const palabras = (config.empresa || 'TechStore Colombia').split(' ');
   const primeraPalabra = palabras[0] || 'TechStore';
   const restoNombre = palabras.slice(1).join(' ') || '';
 
-  // Actualizar el título del documento
-  document.title = `${config.empresa || 'TechStore Colombia'} - ERP`;
-
   const logoHtml = `
     <div class="d-flex align-items-center">
-      ${config.logoUrl ? `<img src="${config.logoUrl}" alt="${config.empresa}" class="me-2 sidebar-logo">` : ''}
+      ${logoSrc ? `<img src="${logoSrc}" alt="${config.empresa}" class="me-2 sidebar-logo">` : ''}
       <div>
         <span class="fs-2 fw-bold text-primary">${primeraPalabra}</span> <span class="fs-3 fw-light text-reset">${restoNombre}</span>
       </div>
@@ -348,7 +531,7 @@ async function renderBaseShell(container) {
 
   container.innerHTML = `
     <!-- Sidebar -->
-    <aside id="sidebar-container" class="navbar navbar-vertical navbar-expand-lg navbar-dark d-print-none">
+    <aside id="sidebar-container" class="navbar navbar-vertical navbar-expand-lg d-print-none">
       <div class="container-fluid">
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu">
           <span class="navbar-toggler-icon"></span>
@@ -368,29 +551,52 @@ async function renderBaseShell(container) {
 
     <!-- Topbar & Main Wrapper -->
     <div class="page-wrapper">
-      <!-- Topbar -->
-      <header class="navbar navbar-expand-md navbar-light d-none d-lg-flex d-print-none">
-        <div class="container-xl">
-          <div class="navbar-nav ms-auto">
-            <!-- Theme Toggle -->
-            <div class="d-none d-md-flex me-3">
-              <a href="?theme=dark" class="nav-link px-0 hide-theme-dark" title="Modo Oscuro" data-bs-toggle="tooltip" data-bs-placement="bottom">
-                <i class="ti ti-moon fs-2"></i>
-              </a>
-              <a href="?theme=light" class="nav-link px-0 hide-theme-light" title="Modo Claro" data-bs-toggle="tooltip" data-bs-placement="bottom">
-                <i class="ti ti-sun fs-2"></i>
-              </a>
+      <header class="navbar erp-topbar d-none d-lg-flex d-print-none">
+        <div class="container-xl erp-topbar-inner">
+          <div class="erp-topbar-context" aria-live="polite">
+            <span class="erp-topbar-accent" aria-hidden="true"></span>
+            <div class="erp-topbar-context-text">
+              <p class="erp-topbar-kicker" id="topbar-module-kicker">${initialKicker}</p>
+              <h2 class="erp-topbar-title" id="topbar-module-title">${initialModule}</h2>
             </div>
-            <!-- Profile dropdown -->
+          </div>
+
+          <div class="erp-topbar-actions">
+            <div class="erp-theme-switch" role="group" aria-label="Tema de la interfaz">
+              <button type="button" class="erp-theme-btn" data-theme="light" title="Modo claro" aria-label="Activar modo claro">
+                <i class="ti ti-sun" aria-hidden="true"></i>
+              </button>
+              <button type="button" class="erp-theme-btn" data-theme="dark" title="Modo oscuro" aria-label="Activar modo oscuro">
+                <i class="ti ti-moon" aria-hidden="true"></i>
+              </button>
+            </div>
+
+            <span class="erp-topbar-divider" aria-hidden="true"></span>
+
             <div class="nav-item dropdown">
-              <a href="#" class="nav-link d-flex lh-1 text-reset p-0" data-bs-toggle="dropdown">
-                <div class="d-none d-xl-block ps-2">
-                  <div>${usuario.nombre}</div>
-                  <div class="mt-1 small text-secondary">${usuario.rol.toUpperCase()} | ${usuario.sedeNombre}</div>
+              <button type="button" class="erp-user-chip" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Menú de usuario">
+                <span class="erp-user-avatar" aria-hidden="true">${userInitials}</span>
+                <span class="erp-user-meta">
+                  <span class="erp-user-name">${usuario.nombre}</span>
+                  <span class="erp-user-role-row">
+                    <span class="erp-role-badge erp-role-badge--${rolMeta.tone}">${rolMeta.label}</span>
+                    <span class="erp-user-sede">${usuario.sedeNombre || 'Sin sede'}</span>
+                  </span>
+                </span>
+                <i class="ti ti-chevron-down erp-user-chevron" aria-hidden="true"></i>
+              </button>
+              <div class="dropdown-menu dropdown-menu-end erp-user-dropdown">
+                <div class="erp-user-dropdown-header">
+                  <span class="erp-user-avatar erp-user-avatar--lg" aria-hidden="true">${userInitials}</span>
+                  <div>
+                    <div class="erp-user-dropdown-name">${usuario.nombre}</div>
+                    <div class="erp-user-dropdown-email">${usuario.email || ''}</div>
+                  </div>
                 </div>
-              </a>
-              <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow">
-                <a href="#" id="logout-btn" class="dropdown-item text-danger">Cerrar Sesión</a>
+                <div class="dropdown-divider"></div>
+                <a href="#" id="logout-btn" class="dropdown-item text-danger">
+                  <i class="ti ti-logout me-2" aria-hidden="true"></i>Cerrar sesión
+                </a>
               </div>
             </div>
           </div>
@@ -415,7 +621,9 @@ async function renderBaseShell(container) {
 function updateActiveMenu(hash) {
   const links = document.querySelectorAll('#sidebar-menu .nav-link');
   links.forEach(l => {
-    if (l.getAttribute('data-hash') === hash) {
+    const linkHash = l.getAttribute('data-hash') || '';
+    const linkBase = linkHash.split('?')[0];
+    if (linkHash === hash || linkBase === hash) {
       l.parentElement.classList.add('active');
     } else {
       l.parentElement.classList.remove('active');
@@ -437,25 +645,27 @@ function setupThemeToggler() {
   const currentTheme = localStorage.getItem('theme') || 'light';
   document.body.setAttribute('data-bs-theme', currentTheme);
 
-  // Toggle buttons display
-  if (currentTheme === 'dark') {
-    document.querySelector('.hide-theme-dark')?.classList.add('d-none');
-    document.querySelector('.hide-theme-light')?.classList.remove('d-none');
-  } else {
-    document.querySelector('.hide-theme-dark')?.classList.remove('d-none');
-    document.querySelector('.hide-theme-light')?.classList.add('d-none');
-  }
+  document.querySelectorAll('.erp-theme-btn[data-theme]').forEach((el) => {
+    const theme = el.getAttribute('data-theme');
+    el.classList.toggle('is-active', theme === currentTheme);
+    el.setAttribute('aria-pressed', theme === currentTheme ? 'true' : 'false');
+  });
 
-  // Setup click listeners
-  document.querySelectorAll('[href*="?theme="]').forEach(el => {
+  document.querySelectorAll('[href*="?theme="], .erp-theme-btn[data-theme]').forEach((el) => {
+    if (el.dataset.themeBound) return;
+    el.dataset.themeBound = '1';
     el.addEventListener('click', (e) => {
       e.preventDefault();
-      const nextTheme = el.getAttribute('href').split('=')[1];
+      const nextTheme = el.getAttribute('data-theme') || el.getAttribute('href')?.split('=')[1];
+      if (!nextTheme) return;
       localStorage.setItem('theme', nextTheme);
       document.body.setAttribute('data-bs-theme', nextTheme);
       setupThemeToggler();
+      applyThemeFromCache();
     });
   });
+
+  applyThemeFromCache();
 }
 
 // Con type="module" + defer, el DOM ya está listo cuando este script ejecuta.
@@ -463,4 +673,15 @@ function setupThemeToggler() {
 window.addEventListener('hashchange', router);
 
 // Ejecutar router inmediatamente (el DOM ya está listo)
-router();
+applyThemeFromCache();
+applyDocumentBranding(getCachedBrand());
+
+(async () => {
+  if (isAuthenticated()) {
+    try {
+      const { apiFetch } = await import('./api.js');
+      await initThemeFromServer(apiFetch);
+    } catch (_) { /* use cache */ }
+  }
+  router();
+})();

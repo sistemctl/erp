@@ -1,27 +1,31 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
+import { erpHeader } from '../utils/module-shell.js';
 
 export async function initTradeIn(container) {
   const usuario = getUsuario();
-  const sedeId = usuario.sedeId;
+  const needsSedePicker = !usuario.sedeId || ['admin', 'superadmin'].includes(usuario.rol);
 
   let clientes = [];
+  let sedes = [];
   try {
     clientes = await apiFetch('/clientes').catch(() => []);
+    if (needsSedePicker) {
+      sedes = await apiFetch('/config/sedes').catch(() => []);
+    }
   } catch (e) {
     console.error(e);
   }
 
+  const defaultSedeId = usuario.sedeId || (sedes[0]?.id || '');
+
   container.innerHTML = `
-    <div class="container-xl">
-      <div class="page-header d-print-none mb-4">
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title">Trade-In (Equipos Usados como Parte de Pago)</h2>
-            <div class="text-secondary mt-1">Recepción, valoración y reingreso de equipos usados al inventario</div>
-          </div>
-        </div>
-      </div>
+    <div class="container-xl erp-module">
+      ${erpHeader({
+        eyebrow: 'Trade-In',
+        title: 'Equipos como parte de pago',
+        subtitle: 'Recepción, valoración y reingreso al inventario'
+      })}
 
       <div class="row row-cards">
         <!-- FORMULARIO DE VALORACIÓN -->
@@ -37,6 +41,15 @@ export async function initTradeIn(container) {
                     ${clientes.map(c => `<option value="${c.id}">${c.nombre} (${c.documento || 'Sin doc'})</option>`).join('')}
                   </select>
                 </div>
+
+                ${needsSedePicker ? `
+                <div class="mb-3">
+                  <label class="form-label required">Sede destino (inventario)</label>
+                  <select id="ti-sede" class="form-select" required>
+                    ${sedes.length === 0 ? '<option value="">Sin sedes</option>' : sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                  </select>
+                </div>
+                ` : ''}
 
                 <div class="mb-3">
                   <label class="form-label">Tipo de Equipo</label>
@@ -128,6 +141,15 @@ export async function initTradeIn(container) {
       estadoFisico: document.getElementById('ti-estado').value,
       valoracion: parseFloat(document.getElementById('ti-valoracion').value)
     };
+
+    if (needsSedePicker) {
+      const sedeVal = document.getElementById('ti-sede')?.value;
+      if (!sedeVal) {
+        alert('Debe seleccionar la sede destino.');
+        return;
+      }
+      payload.sedeId = sedeVal;
+    }
 
     try {
       const res = await apiFetch('/trade-in', {

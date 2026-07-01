@@ -11,14 +11,17 @@ const {
   MovimientoInventario,
   Factura,
   Caja,
+  ConfiguracionSistema,
   sequelize
 } = require('../models');
 const { Op } = require('sequelize');
 const PDFDocument = require('pdfkit');
 const qr = require('qrcode');
+const { buildPublicAppUrl } = require('../utils/public-url');
 const fs = require('fs');
 const path = require('path');
 const twilioService = require('../services/twilio.service');
+const { resolveQuerySede, resolveActionSede } = require('../utils/sede');
 
 // --- CRUD ÓRDENES ---
 
@@ -26,7 +29,7 @@ exports.getOrdenes = async (req, res, next) => {
   try {
     const { estado, tecnico, sede, buscar, desde, hasta } = req.query;
     const where = {};
-    const querySedeId = sede || req.usuario.sedeId;
+    const querySedeId = resolveQuerySede(sede, req.usuario);
 
     if (estado) where.estado = estado;
     if (tecnico) where.tecnicoId = tecnico;
@@ -101,10 +104,14 @@ exports.createOrden = async (req, res, next) => {
       costoManoObra,
       diasGarantia,
       fechaEstimadaEntrega,
-      observaciones
+      observaciones,
+      sedeId: bodySedeId
     } = req.body;
 
-    const sedeId = req.usuario.sedeId;
+    const sedeId = await resolveActionSede(bodySedeId, req.usuario, Sede, transaction);
+    if (!sedeId) {
+      return res.status(400).json({ error: 'Debe seleccionar la sede de ingreso para la orden de reparación.' });
+    }
 
     if (!clienteId || !tipoEquipo || !marca || !modelo || !problemaReportado) {
       return res.status(400).json({ error: 'Faltan campos obligatorios para registrar la orden.' });
@@ -251,12 +258,12 @@ exports.updateEstado = async (req, res, next) => {
 
     if (estado === 'entregado') {
       const caja = await Caja.findOne({
-        where: { sedeId: req.usuario.sedeId, estado: 'abierta' },
+        where: { sedeId: orden.sedeId, estado: 'abierta' },
         transaction
       });
 
       if (!caja) {
-        throw new Error('Debe abrir caja en su sede correspondiente antes de entregar y cobrar la reparación.');
+        throw new Error('Debe abrir caja en la sede de la orden antes de entregar y cobrar la reparación.');
       }
 
       const totalNum = parseFloat(orden.totalCobrado || 0);
@@ -317,7 +324,7 @@ exports.updateEstado = async (req, res, next) => {
           numeroFactura,
           ordenReparacionId: id,
           clienteId: orden.clienteId,
-          sedeId: req.usuario.sedeId,
+          sedeId: orden.sedeId,
           subtotal: totalNum / 1.19,
           iva: (totalNum / 1.19) * 0.19,
           total: totalNum,
@@ -362,7 +369,6 @@ exports.addRepuestos = async (req, res, next) => {
   try {
     const { id } = req.params; // ID de OrdenReparacion
     const { productoId, cantidad } = req.body;
-    const sedeId = req.usuario.sedeId;
 
     if (!productoId || !cantidad || parseInt(cantidad) <= 0) {
       return res.status(400).json({ error: 'Parámetros de repuesto incompletos o cantidad inválida.' });
@@ -372,6 +378,8 @@ exports.addRepuestos = async (req, res, next) => {
     if (!orden) {
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
     }
+
+    const sedeId = orden.sedeId;
 
     const producto = await Producto.findByPk(productoId, { transaction });
     if (!producto) {
@@ -504,6 +512,10 @@ exports.getOrdenPdf = async (req, res, next) => {
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
     }
 
+    const config = await ConfiguracionSistema.findOne();
+    const empresa = config?.empresa || 'TechStore Colombia S.A.S.';
+    const nit = config?.nit || 'N/A';
+
     const doc = new PDFDocument({ margin: 50 });
     
     // Set headers for download
@@ -512,8 +524,8 @@ exports.getOrdenPdf = async (req, res, next) => {
     doc.pipe(res);
 
     // Header de la Empresa
-    doc.fontSize(20).text('TECHSTORE COLOMBIA S.A.S.', { align: 'center', fw: 'bold' });
-    doc.fontSize(10).text(`NIT: 901.456.789-0 | Sede: ${orden.sede.nombre}`, { align: 'center' });
+    doc.fontSize(20).text(empresa.toUpperCase(), { align: 'center', fw: 'bold' });
+    doc.fontSize(10).text(`NIT: ${nit} | Sede: ${orden.sede.nombre}`, { align: 'center' });
     doc.text(`Dirección: ${orden.sede.direccion} | Tel: ${orden.sede.telefono}`, { align: 'center' });
     doc.moveDown(2);
 
@@ -557,14 +569,14 @@ exports.getOrdenPdf = async (req, res, next) => {
     doc.fontSize(8).text('TÉRMINOS Y CONDICIONES DE GARANTÍA:', { underline: true });
     doc.text('1. El diagnóstico inicial se realiza en un plazo de 24 a 48 horas hábiles.');
     doc.text(`2. Los repuestos instalados cuentan con una garantía de ${orden.diasGarantia || 30} días a partir de la entrega.`);
-    doc.text('3. TechStore Colombia no se hace responsable por pérdida de datos. Respalde su información.');
+    doc.text(`3. ${empresa} no se hace responsable por pérdida de datos. Respalde su información.`);
     doc.text('4. Pasados 30 días del aviso de retiro, el equipo entrará en proceso de abandono.');
     doc.moveDown(3);
 
     // Firmas
     doc.fontSize(10);
     doc.text('_______________________                  _______________________', { align: 'center' });
-    doc.text('Firma Recibido (TechStore)                  Firma Cliente conforme', { align: 'center' });
+    doc.text(`Firma Recibido (${empresa})                  Firma Cliente conforme`, { align: 'center' });
 
     doc.end();
   } catch (error) {
@@ -585,7 +597,7 @@ exports.getEtiquetaQr = async (req, res, next) => {
 
     // URL a donde apuntará el escaneo QR del lector
     // Permite que el técnico abra directamente la orden escaneando la etiqueta
-    const scanUrl = `http://localhost:3000/#/reparaciones?buscar=${orden.numeroOrden}`;
+    const scanUrl = `${buildPublicAppUrl(req)}/#/reparaciones?buscar=${orden.numeroOrden}`;
     
     // Generar imagen de código QR y hacer stream como PNG
     res.setHeader('Content-Type', 'image/png');

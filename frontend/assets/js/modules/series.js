@@ -1,10 +1,11 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { showToast } from '../utils/toast.js';
+import { erpHeader } from '../utils/module-shell.js';
 
 export async function initSeries(container) {
   const usuario = getUsuario();
-  const isAdminOrGerente = ['admin', 'gerente_sede'].includes(usuario.rol);
+  const isAdminOrGerente = ['admin', 'superadmin', 'gerente_sede'].includes(usuario.rol);
   let sedes = [];
   let productos = [];
 
@@ -15,25 +16,20 @@ export async function initSeries(container) {
     console.error('Error al precargar datos en módulo series:', e);
   }
 
+  const defaultSedeId = usuario.sedeId || (sedes[0]?.id || '');
+
   container.innerHTML = `
-    <div class="container-xl">
-      <div class="page-header d-print-none mb-4">
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title">Gestión de Números de Serie / IMEI</h2>
-            <div class="text-secondary mt-1">Control de trazabilidad e historial de dispositivos por número único</div>
-          </div>
-          <div class="col-auto ms-auto d-print-none">
-            <div class="btn-list">
-              ${isAdminOrGerente ? `
-                <button id="btn-nueva-serie" class="btn btn-primary">
-                  <i class="ti ti-plus me-2"></i> Registrar IMEI/Serie
-                </button>
-              ` : ''}
-            </div>
-          </div>
-        </div>
-      </div>
+    <div class="container-xl erp-module">
+      ${erpHeader({
+        eyebrow: 'Series',
+        title: 'IMEI y trazabilidad',
+        subtitle: 'Historial de dispositivos por número único',
+        actionsHtml: isAdminOrGerente ? `
+          <button id="btn-nueva-serie" class="btn btn-primary">
+            <i class="ti ti-plus me-2"></i> Registrar IMEI
+          </button>
+        ` : ''
+      })}
 
       <!-- Buscador -->
       <div class="row mb-4">
@@ -123,7 +119,7 @@ export async function initSeries(container) {
               <div class="mb-3">
                 <label class="form-label">Sede de Ingreso</label>
                 <select id="reg-sede" class="form-select" required>
-                  ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                  ${sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
                 </select>
               </div>
               
@@ -291,8 +287,8 @@ export async function initSeries(container) {
       document.getElementById('form-create-serie').reset();
       document.getElementById('seriales-counter').textContent = '0 detectados';
       logsDiv.innerHTML = '<div class="text-center py-2 text-secondary-50">Esperando escaneos…</div>';
-      // Pre-seleccionar sede del usuario
-      document.getElementById('reg-sede').value = usuario.sedeId;
+      // Pre-seleccionar sede del usuario o la primera disponible
+      document.getElementById('reg-sede').value = usuario.sedeId || sedes[0]?.id || '';
       
       // Resetear a pestaña Carga Masiva
       const firstTab = new bootstrap.Tab(tabBulk);

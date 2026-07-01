@@ -2,6 +2,8 @@ import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { getLocalDateStr } from '../utils/date.js';
 import { showToast, showConfirm } from '../utils/toast.js';
+import { erpHeader } from '../utils/module-shell.js';
+import { erpAction } from '../utils/action-buttons.js';
 
 export async function initCaja(container) {
   const usuario = getUsuario();
@@ -14,20 +16,20 @@ export async function initCaja(container) {
 
   try {
     sedes = await apiFetch('/config/sedes').catch(() => []);
+    if (!currentSedeId && sedes.length > 0) {
+      currentSedeId = sedes[0].id;
+    }
   } catch (e) {
     console.error('Error precargando sedes:', e);
   }
 
   container.innerHTML = `
-    <div class="container-xl">
-      <div class="page-header d-print-none mb-4">
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title">Control y Cuadre de Caja Diaria</h2>
-            <div class="text-secondary mt-1">Monitoreo de ingresos, retiros físicos y cierres diarios por sede</div>
-          </div>
-        </div>
-      </div>
+    <div class="container-xl erp-module">
+      ${erpHeader({
+        eyebrow: 'Caja',
+        title: 'Control y cuadre diario',
+        subtitle: 'Ingresos, retiros físicos y cierres por sede'
+      })}
 
       <!-- Navigation tabs -->
       <div class="card mb-4 d-print-none">
@@ -41,6 +43,11 @@ export async function initCaja(container) {
             <li class="nav-item" role="presentation">
               <a href="#tab-historial-cajas" class="nav-link" data-bs-toggle="tab" aria-selected="false" role="tab" tabindex="-1">
                 <i class="ti ti-history me-1"></i> Historial de Cierres
+              </a>
+            </li>
+            <li class="nav-item" role="presentation">
+              <a href="#tab-analisis-gastos" class="nav-link" data-bs-toggle="tab" aria-selected="false" role="tab" tabindex="-1">
+                <i class="ti ti-chart-donut me-1"></i> Análisis de Gastos
               </a>
             </li>
           </ul>
@@ -73,6 +80,10 @@ export async function initCaja(container) {
 
             <!-- TAB 2: HISTORIAL DE CIERRES -->
             <div class="tab-pane" id="tab-historial-cajas" role="tabpanel">
+              <div class="alert alert-info py-2 mb-4 d-print-none">
+                <i class="ti ti-info-circle me-1"></i>
+                Consulte cierres por rango de fechas. Haga clic en una fila o en <strong>Ver análisis</strong> para ver el desglose exacto por método de pago de ese día.
+              </div>
               <form id="form-filtros-historial-caja" class="row g-3 mb-4">
                 ${['admin', 'superadmin'].includes(usuario.rol) ? `
                   <div class="col-md-4">
@@ -97,13 +108,18 @@ export async function initCaja(container) {
               </form>
 
               <div class="table-responsive">
-                <table class="table table-vcenter card-table table-hover table-striped">
+                <table class="table table-vcenter card-table table-hover table-striped caja-historial-table">
                   <thead>
                     <tr>
                       <th>Fecha</th>
                       <th>Sede</th>
-                      <th>Apertura CC</th>
-                      <th class="text-end">Base Apertura</th>
+                      <th>Cajero</th>
+                      <th class="text-end">Efectivo</th>
+                      <th class="text-end">Nequi</th>
+                      <th class="text-end">Daviplata</th>
+                      <th class="text-end">Tarjeta</th>
+                      <th class="text-end">Transf.</th>
+                      <th class="text-end">Total cobrado</th>
                       <th class="text-end">Egresos</th>
                       <th class="text-end">Diferencia</th>
                       <th class="text-center">Estado</th>
@@ -111,9 +127,89 @@ export async function initCaja(container) {
                     </tr>
                   </thead>
                   <tbody id="historial-cajas-table-body">
-                    <tr><td colspan="8" class="text-center py-4 text-secondary">Haga clic en Consultar para cargar el historial de cajas.</td></tr>
+                    <tr><td colspan="13" class="text-center py-4 text-secondary">Seleccione fechas y haga clic en Consultar.</td></tr>
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            <!-- TAB 3: ANÁLISIS DE GASTOS -->
+            <div class="tab-pane" id="tab-analisis-gastos" role="tabpanel">
+              <form id="form-analisis-gastos" class="row g-3 mb-4">
+                ${isAdminOrContador ? `
+                  <div class="col-md-3">
+                    <label class="form-label">Sede</label>
+                    <select id="analisis-gastos-sede" class="form-select">
+                      ${sedes.map(s => `<option value="${s.id}" ${s.id === currentSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                    </select>
+                  </div>
+                ` : `<input type="hidden" id="analisis-gastos-sede" value="${currentSedeId}">`}
+                <div class="col-md-3">
+                  <label class="form-label">Período</label>
+                  <select id="analisis-gastos-periodo" class="form-select">
+                    <option value="hoy">Hoy</option>
+                    <option value="semana">Últimos 7 días</option>
+                    <option value="mes" selected>Último mes</option>
+                    <option value="año">Último año</option>
+                  </select>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                  <button type="submit" class="btn btn-primary w-100"><i class="ti ti-refresh me-1"></i> Actualizar</button>
+                </div>
+              </form>
+
+              <div class="row g-4">
+                <div class="col-lg-4">
+                  <div class="card">
+                    <div class="card-body">
+                      <h3 class="card-title">Por categoría</h3>
+                      <div id="caja-gastos-total" class="fw-bold fs-3 text-danger mb-2">—</div>
+                      <div style="position:relative;height:240px">
+                        <canvas id="caja-chart-gastos"></canvas>
+                      </div>
+                      <div id="caja-gastos-empty" class="text-secondary small text-center py-3 d-none">
+                        Sin egresos en el período. Registre retiros en Caja activa.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-lg-8">
+                  <div class="card">
+                    <div class="card-header"><h3 class="card-title mb-0">Resumen por categoría</h3></div>
+                    <div class="table-responsive">
+                      <table class="table table-vcenter card-table table-sm mb-0">
+                        <thead>
+                          <tr>
+                            <th>Categoría</th>
+                            <th class="text-center">Movimientos</th>
+                            <th class="text-end">Total</th>
+                            <th class="text-end">% del total</th>
+                          </tr>
+                        </thead>
+                        <tbody id="caja-gastos-categorias-tbody">
+                          <tr><td colspan="4" class="text-center py-4 text-secondary">Seleccione período y actualice.</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div class="card mt-3">
+                    <div class="card-header"><h3 class="card-title mb-0">Movimientos registrados</h3></div>
+                    <div class="table-responsive" style="max-height:280px;overflow-y:auto">
+                      <table class="table table-vcenter card-table table-hover table-sm mb-0">
+                        <thead class="sticky-top bg-white">
+                          <tr>
+                            <th>Fecha</th>
+                            <th>Categoría</th>
+                            <th>Motivo</th>
+                            <th>Cajero</th>
+                            <th class="text-end">Monto</th>
+                          </tr>
+                        </thead>
+                        <tbody id="caja-gastos-detalle-tbody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -265,6 +361,88 @@ export async function initCaja(container) {
 
   const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
+  const METODOS_PAGO_CAJA = [
+    { key: 'totalVentasEfectivo', label: 'Efectivo', icon: 'ti-cash', tone: 'green' },
+    { key: 'totalVentasNequi', label: 'Nequi', icon: 'ti-device-mobile', tone: 'purple' },
+    { key: 'totalVentasDaviplata', label: 'Daviplata', icon: 'ti-wallet', tone: 'pink' },
+    { key: 'totalVentasTarjeta', label: 'Tarjeta', icon: 'ti-credit-card', tone: 'blue' },
+    { key: 'totalVentasTransferencia', label: 'Transferencia', icon: 'ti-building-bank', tone: 'cyan' }
+  ];
+
+  const HISTORIAL_COLS = 13;
+  let historialCache = [];
+
+  const calcTotalIngresos = (cajaData) =>
+    METODOS_PAGO_CAJA.reduce((sum, m) => sum + parseFloat(cajaData[m.key] || 0), 0);
+
+  const buildDesglosePagosHtml = (cajaData, opts = {}) => {
+    const {
+      title = 'Ingresos del día por método de pago',
+      totalLabel = 'Total cobrado',
+      showNote = true,
+      embedded = false
+    } = opts;
+
+    const montos = METODOS_PAGO_CAJA.map(m => ({
+      ...m,
+      monto: parseFloat(cajaData[m.key] || 0)
+    }));
+    const totalIngresos = montos.reduce((sum, m) => sum + m.monto, 0);
+
+    const tarjetas = montos.map(m => {
+      const pct = totalIngresos > 0 ? Math.round((m.monto / totalIngresos) * 100) : 0;
+      return `
+        <div class="col-sm-6 col-lg-4 col-xl">
+          <div class="caja-metodo-card">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <span class="avatar avatar-sm bg-${m.tone}-lt text-${m.tone}"><i class="ti ${m.icon}"></i></span>
+              <span class="caja-metodo-label">${m.label}</span>
+            </div>
+            <div class="caja-metodo-monto">${formatter.format(m.monto)}</div>
+            <div class="caja-metodo-bar mt-2">
+              <div class="caja-metodo-bar-fill bg-${m.tone}" style="width: ${pct}%"></div>
+            </div>
+            <div class="caja-metodo-pct text-secondary">${pct}% del total</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const inner = `
+      <div class="${embedded ? '' : 'card-header'} d-flex flex-wrap align-items-center justify-content-between gap-2 ${embedded ? 'mb-3' : ''}">
+        <h3 class="${embedded ? 'h4' : 'card-title'} mb-0"><i class="ti ti-chart-pie me-1"></i> ${title}</h3>
+        <div class="text-end">
+          <div class="text-secondary small">${totalLabel}</div>
+          <div class="fw-bold fs-4 text-primary">${formatter.format(totalIngresos)}</div>
+        </div>
+      </div>
+      <div class="${embedded ? '' : 'card-body'}">
+        <div class="row g-3">${tarjetas}</div>
+        ${showNote ? `
+          <p class="text-secondary small mb-0 mt-3">
+            Incluye ventas del POS, cobros de reparaciones y abonos de cartera de esta sesión.
+            Base de apertura: ${formatter.format(parseFloat(cajaData.montoApertura || 0))} · Egresos: ${formatter.format(parseFloat(cajaData.totalEgresos || 0))}.
+          </p>
+        ` : ''}
+      </div>
+    `;
+
+    return embedded
+      ? `<div class="caja-desglose-embedded">${inner}</div>`
+      : `<div class="card mb-4">${inner}</div>`;
+  };
+
+  const setDefaultHistorialFechas = () => {
+    const hasta = getLocalDateStr();
+    const desdeDate = new Date();
+    desdeDate.setDate(desdeDate.getDate() - 30);
+    const desde = desdeDate.toISOString().split('T')[0];
+    const elDesde = document.getElementById('hist-caja-desde');
+    const elHasta = document.getElementById('hist-caja-hasta');
+    if (elDesde && !elDesde.value) elDesde.value = desde;
+    if (elHasta && !elHasta.value) elHasta.value = hasta;
+  };
+
   // Cargar categorías de egreso en el select
   const loadCategorias = async () => {
     try {
@@ -367,6 +545,8 @@ export async function initCaja(container) {
             </div>
           </div>
         </div>
+
+        ${buildDesglosePagosHtml(data)}
 
         <div class="mb-4 btn-list text-start">
           <button id="btn-pos-egreso" class="btn btn-danger">
@@ -562,6 +742,11 @@ export async function initCaja(container) {
       }
 
       loadCajaStatus();
+
+      if (res.caja?.id) {
+        showToast('Ver análisis', 'Abriendo el desglose del cierre en Historial…', 'info');
+        await abrirHistorialConCaja(res.caja.id, res.caja.fecha);
+      }
     } catch (err) {
       showToast('Error', err.message, 'error');
     }
@@ -569,10 +754,66 @@ export async function initCaja(container) {
 
   // --- TAB 2: HISTORIAL DE CIERRES ---
   const tbodyHist = document.getElementById('historial-cajas-table-body');
-  document.getElementById('form-filtros-historial-caja').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    tbodyHist.innerHTML = `<tr><td colspan="8" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>`;
-    
+
+  const renderHistorialRows = (historyData, highlightId = null) => {
+    historialCache = historyData;
+
+    tbodyHist.innerHTML = historyData.map(c => {
+      const statusBadge = c.estado === 'abierta' ? 'bg-yellow-lt' : 'bg-success-lt';
+      const totalCobrado = calcTotalIngresos(c);
+      const isHighlight = highlightId && String(c.id) === String(highlightId);
+
+      return `
+        <tr class="caja-historial-row ${isHighlight ? 'caja-historial-row-highlight' : ''}" data-id="${c.id}" role="button" tabindex="0">
+          <td><strong>${c.fecha}</strong></td>
+          <td>${c.sede ? c.sede.nombre : 'N/A'}</td>
+          <td class="text-truncate" style="max-width: 120px;">${c.usuarioCierre ? c.usuarioCierre.nombre : (c.usuarioApertura ? c.usuarioApertura.nombre : 'N/A')}</td>
+          <td class="text-end text-nowrap small">${formatter.format(c.totalVentasEfectivo)}</td>
+          <td class="text-end text-nowrap small">${formatter.format(c.totalVentasNequi)}</td>
+          <td class="text-end text-nowrap small">${formatter.format(c.totalVentasDaviplata)}</td>
+          <td class="text-end text-nowrap small">${formatter.format(c.totalVentasTarjeta)}</td>
+          <td class="text-end text-nowrap small">${formatter.format(c.totalVentasTransferencia)}</td>
+          <td class="text-end fw-bold text-primary text-nowrap">${formatter.format(totalCobrado)}</td>
+          <td class="text-end text-danger text-nowrap small">${formatter.format(c.totalEgresos)}</td>
+          <td class="text-end fw-bold text-nowrap ${parseFloat(c.diferencia) >= 0 ? 'text-success' : 'text-danger'}">${formatter.format(c.diferencia)}</td>
+          <td class="text-center"><span class="badge ${statusBadge} px-2 py-1">${c.estado.toUpperCase()}</span></td>
+          <td class="text-end erp-td-actions">
+            ${erpAction('chart', { className: 'btn-ver-past-caja', attrs: { 'data-id': c.id }, label: 'Ver' })}
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    tbodyHist.querySelectorAll('.caja-historial-row').forEach(row => {
+      const open = () => openPastCajaDetalle(row.dataset.id, historialCache);
+      row.addEventListener('click', (e) => {
+        if (e.target.closest('.btn-ver-past-caja')) return;
+        open();
+      });
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          open();
+        }
+      });
+    });
+
+    tbodyHist.querySelectorAll('.btn-ver-past-caja').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openPastCajaDetalle(btn.dataset.id, historialCache);
+      });
+    });
+
+    if (highlightId) {
+      const row = tbodyHist.querySelector(`tr[data-id="${highlightId}"]`);
+      row?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  const loadHistorialCajas = async (highlightId = null) => {
+    tbodyHist.innerHTML = `<tr><td colspan="${HISTORIAL_COLS}" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>`;
+
     try {
       const histSede = document.getElementById('hist-caja-sede') ? document.getElementById('hist-caja-sede').value : '';
       const desde = document.getElementById('hist-caja-desde').value;
@@ -587,93 +828,219 @@ export async function initCaja(container) {
       const historyData = await apiFetch(`/caja/historial${query}`);
 
       if (historyData.length === 0) {
-        tbodyHist.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-secondary">No se encontraron cierres de caja en el rango seleccionado.</td></tr>`;
+        tbodyHist.innerHTML = `<tr><td colspan="${HISTORIAL_COLS}" class="text-center py-4 text-secondary">No se encontraron cierres de caja en el rango seleccionado.</td></tr>`;
         return;
       }
 
-      tbodyHist.innerHTML = historyData.map(c => {
-        let statusBadge = 'bg-success-lt';
-        if (c.estado === 'abierta') statusBadge = 'bg-yellow-lt';
+      renderHistorialRows(historyData, highlightId);
 
-        return `
-          <tr>
-            <td><strong>${c.fecha}</strong></td>
-            <td>${c.sede ? c.sede.nombre : 'N/A'}</td>
-            <td>${c.usuarioCierre ? c.usuarioCierre.nombre : (c.usuarioApertura ? c.usuarioApertura.nombre : 'N/A')}</td>
-            <td class="text-end font-weight-medium">${formatter.format(c.montoApertura)}</td>
-            <td class="text-end text-danger">${formatter.format(c.totalEgresos)}</td>
-            <td class="text-end fw-bold ${parseFloat(c.diferencia) >= 0 ? 'text-success' : 'text-danger'}">${formatter.format(c.diferencia)}</td>
-            <td class="text-center"><span class="badge ${statusBadge} px-2 py-1">${c.estado.toUpperCase()}</span></td>
-            <td class="text-end">
-              <button class="btn btn-outline-primary btn-sm btn-ver-past-caja" data-id="${c.id}">
-                <i class="ti ti-eye me-1"></i>Detalle
-              </button>
-            </td>
-          </tr>
-        `;
-      }).join('');
-
-      document.querySelectorAll('.btn-ver-past-caja').forEach(btn => {
-        btn.addEventListener('click', () => openPastCajaDetalle(btn.dataset.id, historyData));
-      });
-
+      if (highlightId) {
+        openPastCajaDetalle(highlightId, historialCache);
+      }
     } catch (err) {
-      tbodyHist.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
+      tbodyHist.innerHTML = `<tr><td colspan="${HISTORIAL_COLS}" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
     }
+  };
+
+  const abrirHistorialConCaja = async (cajaId, fecha) => {
+    const tabEl = document.querySelector('a[href="#tab-historial-cajas"]');
+    if (tabEl) bootstrap.Tab.getOrCreateInstance(tabEl).show();
+
+    if (fecha) {
+      document.getElementById('hist-caja-desde').value = fecha;
+      document.getElementById('hist-caja-hasta').value = fecha;
+    }
+    await loadHistorialCajas(cajaId);
+  };
+
+  document.getElementById('form-filtros-historial-caja').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await loadHistorialCajas();
+  });
+
+  document.querySelector('a[href="#tab-historial-cajas"]')?.addEventListener('shown.bs.tab', () => {
+    setDefaultHistorialFechas();
   });
 
   async function openPastCajaDetalle(id, historyList) {
     const c = historyList.find(item => String(item.id) === String(id));
     if (!c) return;
 
+    const totalCobrado = calcTotalIngresos(c);
+    const saldoEfectivoTeorico = parseFloat(c.montoApertura) + parseFloat(c.totalVentasEfectivo) - parseFloat(c.totalEgresos);
+    const cierreHora = c.horaCierre ? new Date(c.horaCierre).toLocaleString('es-CO') : '—';
+
     const content = document.getElementById('detalle-past-caja-content');
     content.innerHTML = `
       <div class="modal-header">
-        <h5 class="modal-title">Cierre de Caja: <strong>${c.fecha}</strong></h5>
+        <h5 class="modal-title">Análisis de caja — <strong>${c.fecha}</strong></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <div class="row mb-3">
-          <div class="col-6">
-            <span class="text-secondary small">Sede:</span>
+        <div class="row g-3 mb-4">
+          <div class="col-sm-6 col-md-3">
+            <span class="text-secondary small">Sede</span>
             <div class="fw-bold">${c.sede ? c.sede.nombre : 'N/A'}</div>
           </div>
-          <div class="col-6 text-end">
-            <span class="text-secondary small">Estado:</span>
+          <div class="col-sm-6 col-md-3">
+            <span class="text-secondary small">Cierre por</span>
+            <div class="fw-bold">${c.usuarioCierre ? c.usuarioCierre.nombre : 'N/A'}</div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <span class="text-secondary small">Hora de cierre</span>
+            <div class="fw-bold">${cierreHora}</div>
+          </div>
+          <div class="col-sm-6 col-md-3">
+            <span class="text-secondary small">Estado</span>
             <div><span class="badge bg-green-lt px-2 py-1">${c.estado.toUpperCase()}</span></div>
           </div>
         </div>
 
-        <table class="table table-striped table-sm">
-          <tbody>
-            <tr><th>Base Apertura</th><td class="text-end fw-bold text-primary">${formatter.format(c.montoApertura)}</td></tr>
-            <tr><th>Ventas Efectivo</th><td class="text-end">${formatter.format(c.totalVentasEfectivo)}</td></tr>
-            <tr><th>Ventas Nequi</th><td class="text-end">${formatter.format(c.totalVentasNequi)}</td></tr>
-            <tr><th>Ventas Daviplata</th><td class="text-end">${formatter.format(c.totalVentasDaviplata)}</td></tr>
-            <tr><th>Ventas Tarjeta</th><td class="text-end">${formatter.format(c.totalVentasTarjeta)}</td></tr>
-            <tr><th>Ventas Transferencias</th><td class="text-end">${formatter.format(c.totalVentasTransferencia)}</td></tr>
-            <tr><th class="text-danger">Total Egresos (Retiros)</th><td class="text-end text-danger">-${formatter.format(c.totalEgresos)}</td></tr>
-            <tr class="table-light fw-bold"><th>Diferencia / Arqueo</th><td class="text-end ${parseFloat(c.diferencia) >= 0 ? 'text-success' : 'text-danger'}">${formatter.format(c.diferencia)}</td></tr>
-          </tbody>
-        </table>
+        ${buildDesglosePagosHtml(c, {
+          title: 'Desglose por método de pago',
+          totalLabel: 'Total cobrado ese día',
+          showNote: false,
+          embedded: true
+        })}
+
+        <div class="card mt-3">
+          <div class="card-header"><h4 class="card-title mb-0">Cuadre y arqueo</h4></div>
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+              <tbody>
+                <tr><th class="ps-3">Base de apertura</th><td class="text-end pe-3 fw-semibold">${formatter.format(c.montoApertura)}</td></tr>
+                <tr><th class="ps-3">Efectivo físico teórico al cierre</th><td class="text-end pe-3">${formatter.format(saldoEfectivoTeorico)}</td></tr>
+                <tr><th class="ps-3">Total ingresos (todos los métodos)</th><td class="text-end pe-3 fw-bold text-primary">${formatter.format(totalCobrado)}</td></tr>
+                <tr><th class="ps-3 text-danger">Egresos / retiros</th><td class="text-end pe-3 text-danger">-${formatter.format(c.totalEgresos)}</td></tr>
+                <tr class="table-light"><th class="ps-3">Diferencia de arqueo</th><td class="text-end pe-3 fw-bold ${parseFloat(c.diferencia) >= 0 ? 'text-success' : 'text-danger'}">${formatter.format(c.diferencia)}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
 
         ${c.observaciones ? `
           <div class="mt-3">
-            <span class="text-secondary small">Observaciones del Cierre:</span>
-            <blockquote class="blockquote border-left pl-3 mt-1 bg-light p-2 small">${c.observaciones}</blockquote>
+            <span class="text-secondary small">Observaciones del cierre</span>
+            <div class="bg-light rounded p-2 small mt-1">${c.observaciones}</div>
           </div>
         ` : ''}
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary w-100" data-bs-dismiss="modal">Cerrar</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
       </div>
     `;
 
     modalDetallePast.show();
   }
 
+  let cajaGastosChart = null;
+  const GASTOS_COLORS = ['#2563eb', '#dc2626', '#d97706', '#059669', '#7c3aed', '#0891b2', '#db2777', '#64748b'];
+
+  const loadAnalisisGastos = async () => {
+    const sedeEl = document.getElementById('analisis-gastos-sede');
+    const sedeId = sedeEl ? sedeEl.value : currentSedeId;
+    const periodo = document.getElementById('analisis-gastos-periodo')?.value || 'mes';
+
+    try {
+      const data = await apiFetch(`/dashboard/gastos-por-categoria?sede=${sedeId}&periodo=${periodo}`);
+      const cats = data.porCategoria || [];
+      const total = data.totalGeneral || 0;
+
+      const totalEl = document.getElementById('caja-gastos-total');
+      if (totalEl) totalEl.textContent = total > 0 ? `Total: ${formatter.format(total)}` : 'Sin gastos';
+
+      const canvas = document.getElementById('caja-chart-gastos');
+      const emptyEl = document.getElementById('caja-gastos-empty');
+      emptyEl?.classList.toggle('d-none', total > 0);
+      canvas?.classList.toggle('d-none', total === 0);
+
+      if (cajaGastosChart) {
+        cajaGastosChart.destroy();
+        cajaGastosChart = null;
+      }
+
+      if (total > 0 && canvas) {
+        cajaGastosChart = new Chart(canvas.getContext('2d'), {
+          type: 'doughnut',
+          data: {
+            labels: cats.map(c => c.nombre),
+            datasets: [{
+              data: cats.map(c => c.total),
+              backgroundColor: cats.map((_, i) => GASTOS_COLORS[i % GASTOS_COLORS.length])
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => ` ${ctx.label}: ${formatter.format(ctx.parsed)}`
+                }
+              }
+            }
+          }
+        });
+      }
+
+      const catTbody = document.getElementById('caja-gastos-categorias-tbody');
+      if (catTbody) {
+        if (cats.length === 0) {
+          catTbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-secondary">Sin egresos en el período.</td></tr>`;
+        } else {
+          catTbody.innerHTML = cats.map(c => {
+            const pct = total > 0 ? ((c.total / total) * 100).toFixed(1) : 0;
+            return `
+              <tr>
+                <td class="fw-semibold">${c.nombre}</td>
+                <td class="text-center">${c.cantidad}</td>
+                <td class="text-end fw-bold text-danger">${formatter.format(c.total)}</td>
+                <td class="text-end text-secondary">${pct}%</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+
+      const detTbody = document.getElementById('caja-gastos-detalle-tbody');
+      if (detTbody) {
+        const detalle = data.detalle || [];
+        detTbody.innerHTML = detalle.length === 0
+          ? `<tr><td colspan="5" class="text-center py-3 text-secondary">Sin movimientos.</td></tr>`
+          : detalle.map(e => `
+            <tr>
+              <td class="text-nowrap">${new Date(e.fecha).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}</td>
+              <td><span class="badge bg-secondary-lt">${e.categoria}</span></td>
+              <td class="text-truncate" style="max-width:160px">${e.motivo}</td>
+              <td class="small">${e.usuario}</td>
+              <td class="text-end fw-bold text-danger">${formatter.format(e.monto)}</td>
+            </tr>
+          `).join('');
+      }
+    } catch (err) {
+      showToast('Error', err.message, 'error');
+    }
+  };
+
+  document.getElementById('form-analisis-gastos')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    loadAnalisisGastos();
+  });
+
+  document.querySelector('a[href="#tab-analisis-gastos"]')?.addEventListener('shown.bs.tab', () => {
+    loadAnalisisGastos();
+  });
+
   // Carga inicial
   await loadLimites();
   await loadCategorias();
+  setDefaultHistorialFechas();
   await loadCajaStatus();
+
+  const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  if (hashParams.get('accion') === 'egreso' && activeCaja) {
+    document.getElementById('form-egreso')?.reset();
+    modalEgreso.show();
+  }
 }

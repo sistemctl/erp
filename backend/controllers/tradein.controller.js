@@ -1,4 +1,5 @@
 const { TradeIn, Producto, Categoria, StockSede, NumeroSerie, Cliente, Sede, Usuario, sequelize } = require('../models');
+const { resolveQuerySede, resolveActionSede } = require('../utils/sede');
 
 // --- GET ALL TRADE-INS ---
 exports.getTradeIns = async (req, res, next) => {
@@ -6,7 +7,7 @@ exports.getTradeIns = async (req, res, next) => {
     const { sede, cliente } = req.query;
     const where = {};
 
-    const querySedeId = sede || (req.usuario.rol !== 'admin' ? req.usuario.sedeId : null);
+    const querySedeId = resolveQuerySede(sede, req.usuario);
     if (querySedeId) {
       where.sedeId = querySedeId;
     }
@@ -36,9 +37,13 @@ exports.getTradeIns = async (req, res, next) => {
 exports.registrarTradeIn = async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
-    const { clienteId, tipoEquipo, marca, modelo, imei, estadoFisico, valoracion, ventaId } = req.body;
-    const sedeId = req.usuario.sedeId;
+    const { clienteId, tipoEquipo, marca, modelo, imei, estadoFisico, valoracion, ventaId, sedeId: bodySedeId } = req.body;
+    const sedeId = await resolveActionSede(bodySedeId, req.usuario, Sede, transaction);
     const usuarioId = req.usuario.userId;
+
+    if (!sedeId) {
+      return res.status(400).json({ error: 'Debe seleccionar una sede para el trade-in.' });
+    }
 
     if (!clienteId || !tipoEquipo || !marca || !modelo || !estadoFisico || !valoracion) {
       return res.status(400).json({ error: 'Datos de trade-in incompletos.' });

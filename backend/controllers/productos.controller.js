@@ -1,5 +1,6 @@
 const { Producto, Categoria, Sede, StockSede, NumeroSerie, MovimientoInventario, sequelize } = require('../models');
 const { Op } = require('sequelize');
+const { generateInternalBarcode, normalizeCodigoBarras } = require('../utils/internal-barcode');
 
 // --- CRUD PRODUCTOS ---
 
@@ -48,8 +49,13 @@ exports.createProducto = async (req, res, next) => {
       imagenUrl
     } = req.body;
 
+    let codigoFinal = normalizeCodigoBarras(codigoBarras);
+    if (!codigoFinal) {
+      codigoFinal = await generateInternalBarcode(transaction);
+    }
+
     // Verificar código duplicado (incluyendo inactivos)
-    const existe = await Producto.findOne({ where: { codigoBarras } });
+    const existe = await Producto.findOne({ where: { codigoBarras: codigoFinal }, transaction });
     if (existe) {
       if (existe.activo) {
         return res.status(400).json({ error: 'El código de barras ya está asignado a otro producto activo.' });
@@ -99,7 +105,7 @@ exports.createProducto = async (req, res, next) => {
 
     const producto = await Producto.create({
       nombre,
-      codigoBarras,
+      codigoBarras: codigoFinal,
       descripcion,
       precioVenta,
       precioCosto,
@@ -156,30 +162,37 @@ exports.updateProducto = async (req, res, next) => {
       }
     }
 
-    const { ajusteStock, sedeId } = req.body;
-    if (req.usuario.rol === 'admin' && typeof ajusteStock === 'number' && sedeId) {
+    const { ajusteStock, sedeId, ...productData } = req.body;
+
+    const rolesAjusteStock = ['admin', 'superadmin'];
+    if (rolesAjusteStock.includes(req.usuario.rol) && sedeId && ajusteStock !== undefined && ajusteStock !== null) {
+      const stockNuevo = parseInt(ajusteStock, 10);
+      if (Number.isNaN(stockNuevo) || stockNuevo < 0) {
+        return res.status(400).json({ error: 'La cantidad de existencias debe ser un número mayor o igual a 0.' });
+      }
+
       const [stockSede] = await StockSede.findOrCreate({
         where: { productoId: id, sedeId },
         defaults: { cantidad: 0 }
       });
 
-      const cantidadAnterior = parseInt(stockSede.cantidad);
-      if (cantidadAnterior !== ajusteStock) {
-        await stockSede.update({ cantidad: ajusteStock });
+      const cantidadAnterior = parseInt(stockSede.cantidad, 10);
+      if (cantidadAnterior !== stockNuevo) {
+        await stockSede.update({ cantidad: stockNuevo });
 
         await MovimientoInventario.create({
           productoId: id,
           sedeId,
-          tipo: ajusteStock > cantidadAnterior ? 'entrada' : 'salida',
-          cantidad: Math.abs(ajusteStock - cantidadAnterior),
-          motivo: `Ajuste manual de inventario por Administrador`,
+          tipo: stockNuevo > cantidadAnterior ? 'entrada' : 'salida',
+          cantidad: Math.abs(stockNuevo - cantidadAnterior),
+          motivo: `Ajuste manual de inventario por ${req.usuario.rol}`,
           usuarioId: req.usuario.userId
         });
       }
     }
 
     const valorAnterior = producto.toJSON();
-    await producto.update(req.body);
+    await producto.update(productData);
 
     if (req.logAudit) {
       await req.logAudit({
@@ -322,8 +335,13 @@ exports.importarCSV = async (req, res, next) => {
         row[header] = values[idx];
       });
 
-      if (!row.nombre || !row.codigoBarras || !row.precioVenta || !row.precioCosto || !row.categoriaNombre) {
+      if (!row.nombre || !row.precioVenta || !row.precioCosto || !row.categoriaNombre) {
         continue; // Saltar filas incompletas
+      }
+
+      let codigoFila = normalizeCodigoBarras(row.codigoBarras);
+      if (!codigoFila) {
+        codigoFila = await generateInternalBarcode(transaction);
       }
 
       // Buscar o crear la categoría
@@ -336,14 +354,14 @@ exports.importarCSV = async (req, res, next) => {
       }
 
       // Evitar duplicados de código de barras
-      const existe = await Producto.findOne({ where: { codigoBarras: row.codigoBarras, activo: true } });
+      const existe = await Producto.findOne({ where: { codigoBarras: codigoFila, activo: true }, transaction });
       if (existe) {
         continue; // Saltar duplicados
       }
 
       const producto = await Producto.create({
         nombre: row.nombre,
-        codigoBarras: row.codigoBarras,
+        codigoBarras: codigoFila,
         descripcion: row.descripcion || '',
         precioVenta: parseFloat(row.precioVenta),
         precioCosto: parseFloat(row.precioCosto),
@@ -384,6 +402,17 @@ exports.importarCSV = async (req, res, next) => {
     });
   } catch (error) {
     await transaction.rollback();
+    next(error);
+  }
+};
+
+// --- GENERAR CÓDIGO INTERNO (sin persistir) ---
+
+exports.generarCodigoInterno = async (req, res, next) => {
+  try {
+    const codigoBarras = await generateInternalBarcode();
+    return res.json({ codigoBarras });
+  } catch (error) {
     next(error);
   }
 };

@@ -1,25 +1,24 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
+import { erpHeader } from '../utils/module-shell.js';
 
 export async function initCartera(container) {
   const usuario = getUsuario();
   const sedeId = usuario.sedeId;
+  let activeAbonoSedeId = null;
 
   let morosidadFiltro = '';
   let activeCpcId = null;
 
   container.innerHTML = `
-    <div class="container-xl">
-      <div class="page-header d-print-none mb-4">
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title">Cartera y Cuentas por Cobrar</h2>
-            <div class="text-secondary mt-1">Monitoreo de créditos, plazos de pago y recaudo por sede</div>
-          </div>
-        </div>
-      </div>
+    <div class="container-xl erp-module">
+      ${erpHeader({
+        eyebrow: 'Cartera',
+        title: 'Cuentas por cobrar',
+        subtitle: 'Créditos, plazos de pago y recaudo por sede'
+      })}
 
-      <div class="card mb-4 d-print-none">
+      <div class="card mb-4 d-print-none erp-filter-card">
         <div class="card-body">
           <div class="row g-3">
             <div class="col-md-4">
@@ -180,7 +179,7 @@ export async function initCartera(container) {
             <td class="text-center"><span class="badge ${statusBadge} px-2 py-1">${item.estado.toUpperCase()}</span></td>
             <td class="text-end">
               ${parseFloat(item.saldoPendiente) > 0 ? `
-                <button class="btn btn-primary btn-sm btn-abono-cpc" data-id="${item.id}" data-saldo="${item.saldoPendiente}">
+                <button class="btn btn-primary btn-sm btn-abono-cpc" data-id="${item.id}" data-saldo="${item.saldoPendiente}" data-sede="${item.factura ? item.factura.sedeId || '' : ''}">
                   <i class="ti ti-plus me-1"></i>Abonar
                 </button>
               ` : `
@@ -194,6 +193,7 @@ export async function initCartera(container) {
       document.querySelectorAll('.btn-abono-cpc').forEach(btn => {
         btn.addEventListener('click', (e) => {
           activeCpcId = btn.dataset.id;
+          activeAbonoSedeId = btn.dataset.sede || null;
           document.getElementById('form-abono-cartera').reset();
           document.getElementById('abono-saldo-pendiente').value = formatter.format(btn.dataset.saldo);
           document.getElementById('abono-monto').max = btn.dataset.saldo;
@@ -217,6 +217,10 @@ export async function initCartera(container) {
       metodo: document.getElementById('abono-metodo').value,
       observaciones: document.getElementById('abono-observaciones').value.trim()
     };
+
+    if (activeAbonoSedeId) {
+      payload.sedeId = activeAbonoSedeId;
+    }
 
     try {
       await apiFetch(`/cartera/${activeCpcId}/abono`, {

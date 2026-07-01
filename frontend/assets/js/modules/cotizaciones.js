@@ -1,5 +1,8 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
+import { erpHeader } from '../utils/module-shell.js';
+import { erpAction, erpActions } from '../utils/action-buttons.js';
+import { renderCotizacionDocumento, printCotizacionDocumento } from '../utils/cotizacion-document.js';
 
 export async function initCotizaciones(container) {
   const usuario = getUsuario();
@@ -20,16 +23,15 @@ export async function initCotizaciones(container) {
     console.error('Error precargando datos en cotizaciones:', e);
   }
 
+  const defaultSedeId = usuario.sedeId || (sedes[0]?.id || '');
+
   container.innerHTML = `
-    <div class="container-xl">
-      <div class="page-header d-print-none mb-4">
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title">Cotizaciones y Presupuestos</h2>
-            <div class="text-secondary mt-1">Gestión de presupuestos comerciales para clientes</div>
-          </div>
-        </div>
-      </div>
+    <div class="container-xl erp-module">
+      ${erpHeader({
+        eyebrow: 'Cotizaciones',
+        title: 'Presupuestos comerciales',
+        subtitle: 'Elaboración y seguimiento de ofertas para clientes'
+      })}
 
       <!-- Navigation tabs -->
       <div class="card mb-4 d-print-none">
@@ -98,7 +100,7 @@ export async function initCotizaciones(container) {
                       <label class="form-label">Sede</label>
                       <select id="cot-sede" class="form-select" required>
                         <option value="">-- Seleccionar Sede --</option>
-                        ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                        ${sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
                       </select>
                     </div>
                     <div class="col-md-4 mb-3">
@@ -139,7 +141,7 @@ export async function initCotizaciones(container) {
                       <label class="form-label small text-secondary">Producto del Catálogo</label>
                       <select id="cot-add-producto" class="form-select">
                         <option value="">-- Seleccionar Producto (Opcional) --</option>
-                        ${productos.map(p => `<option value="${p.id}" data-precio="${p.precioVenta}" data-nombre="${p.nombre}">${p.nombre} ($ ${new Intl.NumberFormat('es-CO').format(p.precioVenta)})</option>`).join('')}
+                        ${productos.map(p => `<option value="${p.id}" data-precio="${p.precioVenta}" data-nombre="${p.nombre}" data-tiene-iva="${p.tieneIVA ? '1' : '0'}">${p.nombre} ($ ${new Intl.NumberFormat('es-CO').format(p.precioVenta)})</option>`).join('')}
                       </select>
                     </div>
                     <div class="col-md-4">
@@ -190,7 +192,7 @@ export async function initCotizaciones(container) {
 
     <!-- Modal Detalle Cotizacion -->
     <div class="modal modal-blur fade" id="modal-detalle-cot" tabindex="-1" role="dialog" aria-hidden="true">
-      <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
         <div class="modal-content" id="detalle-cot-content"></div>
       </div>
     </div>
@@ -228,12 +230,15 @@ export async function initCotizaciones(container) {
     }
 
     const prodId = prodSelect.value || null;
+    const opt = prodSelect.options[prodSelect.selectedIndex];
+    const tieneIVA = prodId ? opt.getAttribute('data-tiene-iva') === '1' : true;
 
     cotizacionCart.push({
       productoId: prodId,
       descripcion: desc,
       cantidad: 1,
-      precioUnitario: precio
+      precioUnitario: precio,
+      tieneIVA
     });
 
     // Limpiar inputs
@@ -262,7 +267,7 @@ export async function initCotizaciones(container) {
         <tr>
           <td>
             <strong>${item.descripcion}</strong>
-            ${item.productoId ? '<br><span class="badge bg-blue-lt">Catálogo</span>' : '<br><span class="badge bg-yellow-lt">Manual/Servicio</span>'}
+            ${item.productoId ? `<br><span class="badge bg-blue-lt">Catálogo</span>${item.tieneIVA === false ? ' <span class="badge bg-secondary-lt">Sin IVA</span>' : ''}` : '<br><span class="badge bg-yellow-lt">Manual/Servicio</span>'}
           </td>
           <td>
             <input type="number" class="form-control form-control-sm input-cot-qty" data-idx="${idx}" value="${item.cantidad}" min="1">
@@ -378,15 +383,11 @@ export async function initCotizaciones(container) {
             <td>${new Date(c.fechaVencimiento).toLocaleDateString()}</td>
             <td class="text-end fw-bold text-dark">${formatter.format(c.total)}</td>
             <td class="text-center"><span class="badge ${statusBadge} px-2 py-1">${c.estado.toUpperCase()}</span></td>
-            <td class="text-end">
-              <div class="btn-list justify-content-end">
-                <button class="btn btn-outline-primary btn-sm btn-view-cot" data-id="${c.id}">
-                  <i class="ti ti-eye me-1"></i>Ver
-                </button>
-                <button class="btn btn-outline-secondary btn-sm btn-pdf-cot" data-id="${c.id}" data-num="${c.numeroCotizacion}">
-                  <i class="ti ti-file-text me-1"></i>PDF
-                </button>
-              </div>
+            <td class="text-end erp-td-actions">
+              ${erpActions(`
+                ${erpAction('view', { className: 'btn-view-cot', attrs: { 'data-id': c.id } })}
+                ${erpAction('pdf', { className: 'btn-pdf-cot', attrs: { 'data-id': c.id, 'data-num': c.numeroCotizacion } })}
+              `)}
             </td>
           </tr>
         `;
@@ -439,85 +440,71 @@ export async function initCotizaciones(container) {
     modalDetalle.show();
 
     try {
-      const c = await apiFetch(`/cotizaciones/${id}`);
-      let statusBadge = 'bg-secondary-lt';
-      if (c.estado === 'aprobada') statusBadge = 'bg-success-lt';
-      else if (c.estado === 'enviada') statusBadge = 'bg-blue-lt';
-      else if (c.estado === 'rechazada') statusBadge = 'bg-red-lt';
+      const [c, config] = await Promise.all([
+        apiFetch(`/cotizaciones/${id}`),
+        apiFetch('/config/sistema').catch(() => ({}))
+      ]);
 
       content.innerHTML = `
-        <div class="modal-header">
-          <h5 class="modal-title">Detalle de Cotización: <strong>${c.numeroCotizacion}</strong></h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <div class="modal-header d-print-none">
+          <h5 class="modal-title">Cotización <strong>${c.numeroCotizacion}</strong></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
         </div>
-        <div class="modal-body">
-          <div class="row mb-3">
-            <div class="col-6">
-              <span class="text-secondary small">Cliente:</span>
-              <div class="fw-bold">${c.cliente ? c.cliente.nombre : 'Cliente General'}</div>
-              <div class="text-secondary small">${c.cliente ? c.cliente.documento || '' : ''}</div>
-            </div>
-            <div class="col-6 text-end">
-              <span class="text-secondary small">Vence el:</span>
-              <div class="fw-bold">${new Date(c.fechaVencimiento).toLocaleDateString()}</div>
-              <div><span class="badge ${statusBadge} px-2 py-1">${c.estado.toUpperCase()}</span></div>
-            </div>
-          </div>
-
-          <table class="table table-striped table-sm">
-            <thead>
-              <tr>
-                <th>Ítem / Descripción</th>
-                <th class="text-center">Cant.</th>
-                <th class="text-end">Precio Unitario</th>
-                <th class="text-end">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${c.items.map(item => `
-                <tr>
-                  <td>
-                    <strong>${item.descripcion}</strong>
-                    ${item.productoId ? '<br><span class="badge bg-blue-lt">Catálogo</span>' : '<br><span class="badge bg-yellow-lt">Manual/Servicio</span>'}
-                  </td>
-                  <td class="text-center">${item.cantidad}</td>
-                  <td class="text-end">${formatter.format(item.precioUnitario)}</td>
-                  <td class="text-end fw-bold">${formatter.format(item.subtotal)}</td>
-                </tr>
-              `).join('')}
-              <tr class="table-light fw-bold">
-                <td colspan="3" class="text-end">TOTAL:</td>
-                <td class="text-end text-primary font-weight-bold">${formatter.format(c.total)}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          ${c.notas ? `
-            <div class="mt-3">
-              <span class="text-secondary small">Condiciones y Notas:</span>
-              <blockquote class="blockquote border-left pl-3 mt-1 bg-light p-2 small">${c.notas}</blockquote>
-            </div>
-          ` : ''}
+        <div class="modal-body cot-doc-modal-body">
+          ${renderCotizacionDocumento(c, config)}
         </div>
-        <div class="modal-footer">
+        <div class="modal-footer d-print-none">
           ${c.estado !== 'aprobada' ? `
-            <button id="btn-cobrar-pos-cot" class="btn btn-success me-auto">
-              <i class="ti ti-shopping-cart me-1"></i> Cobrar y Procesar en POS
+            <button type="button" id="btn-cobrar-pos-cot" class="btn btn-success me-auto">
+              <i class="ti ti-shopping-cart me-1"></i> Cobrar en POS
             </button>
-          ` : ''}
-          <button class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+          ` : '<span class="me-auto"></span>'}
+          <button type="button" class="btn btn-outline-secondary" id="btn-imprimir-cot">
+            <i class="ti ti-printer me-1"></i> Imprimir
+          </button>
+          <button type="button" class="btn btn-primary" id="btn-pdf-cot-modal" data-id="${c.id}" data-num="${c.numeroCotizacion}">
+            <i class="ti ti-file-text me-1"></i> Descargar PDF
+          </button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
         </div>
       `;
 
-      if (document.getElementById('btn-cobrar-pos-cot')) {
-        document.getElementById('btn-cobrar-pos-cot').addEventListener('click', () => {
-          // Guardar cotización pendiente en localStorage para que el modulo POS la lea
-          localStorage.setItem('pendingCotizacionId', c.id);
-          modalDetalle.hide();
-          window.location.hash = '#/pos';
-        });
-      }
+      document.getElementById('btn-imprimir-cot')?.addEventListener('click', () => printCotizacionDocumento());
 
+      document.getElementById('btn-pdf-cot-modal')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const cotId = btn.dataset.id;
+        const num = btn.dataset.num;
+        try {
+          btn.disabled = true;
+          btn.innerHTML = '<i class="ti ti-loader-2 me-1"></i>Generando…';
+          const token = localStorage.getItem('token');
+          const response = await fetch(`/api/cotizaciones/${cotId}/pdf`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!response.ok) throw new Error('No se pudo generar el PDF.');
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `cotizacion_${num}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          window.URL.revokeObjectURL(url);
+        } catch (err) {
+          alert(err.message);
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="ti ti-file-text me-1"></i> Descargar PDF';
+        }
+      });
+
+      document.getElementById('btn-cobrar-pos-cot')?.addEventListener('click', () => {
+        localStorage.setItem('pendingCotizacionId', c.id);
+        modalDetalle.hide();
+        window.location.hash = '#/pos';
+      });
     } catch (err) {
       content.innerHTML = `<div class="modal-body text-danger py-4">${err.message}</div>`;
     }

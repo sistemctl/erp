@@ -1,6 +1,9 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { showConfirm } from '../utils/toast.js';
+import { erpHeader } from '../utils/module-shell.js';
+import { erpAction, erpActions } from '../utils/action-buttons.js';
+import { obtenerPeriodoPagoQuincenal, formatearEtiquetaPeriodo, resumenConfigNomina } from '../utils/nomina-periodo.js';
 
 export async function initNomina(container) {
   const usuario = getUsuario();
@@ -8,7 +11,7 @@ export async function initNomina(container) {
 
   if (!isAdminOrContador) {
     container.innerHTML = `
-      <div class="container-xl py-5">
+      <div class="container-xl erp-module py-5">
         <div class="alert alert-danger">
           <h4 class="alert-title">Acceso Denegado</h4>
           <div class="text-secondary">Usted no cuenta con permisos para gestionar la nómina de la empresa.</div>
@@ -21,12 +24,14 @@ export async function initNomina(container) {
   let empleados = [];
   let nominas = [];
   let sedes = [];
+  let configNomina = {};
 
   async function loadInitialData() {
     try {
       empleados = await apiFetch('/empleados');
       nominas = await apiFetch('/nomina');
       sedes = await apiFetch('/config/sedes').catch(() => []);
+      configNomina = await apiFetch('/config/sistema').catch(() => ({}));
     } catch (e) {
       console.error('Error al precargar datos de nómina:', e);
     }
@@ -35,15 +40,12 @@ export async function initNomina(container) {
   await loadInitialData();
 
   container.innerHTML = `
-    <div class="container-xl">
-      <div class="page-header d-print-none mb-4">
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title">Gestión de Nómina y Personal</h2>
-            <div class="text-secondary mt-1">Administración de contratos, liquidaciones bajo ley colombiana y control de pagos</div>
-          </div>
-        </div>
-      </div>
+    <div class="container-xl erp-module">
+      ${erpHeader({
+        eyebrow: 'Nómina',
+        title: 'Personal y liquidaciones',
+        subtitle: 'Contratos, pagos y liquidaciones bajo normativa colombiana'
+      })}
 
       <!-- Navigation tabs -->
       <div class="card mb-4 d-print-none">
@@ -224,25 +226,26 @@ export async function initNomina(container) {
               <div class="mb-3">
                 <label class="form-label required">Colaborador</label>
                 <select id="calc-empleado" class="form-select" required>
-                  <option value="">-- Seleccionar Colaborador Activo --</option>
+                  <option value="">-- Seleccionar colaborador activo --</option>
                   ${empleados.filter(e => e.activo).map(e => `<option value="${e.id}">${e.nombre} (${e.cargo || 'N/A'})</option>`).join('')}
                 </select>
               </div>
-              <div class="row">
-                <div class="col-6 mb-3">
-                  <label class="form-label required">Frecuencia Pago</label>
-                  <select id="calc-tipo-periodo" class="form-select" required>
-                    <option value="quincenal">Quincenal</option>
-                    <option value="mensual">Mensual</option>
-                  </select>
-                </div>
-                <div class="col-6 mb-3">
-                  <label class="form-label required">Período (YYYY-MM-DD o YYYY-MM)</label>
-                  <input type="text" id="calc-periodo" class="form-control" required placeholder="Ej: 2026-06-15 o 2026-06">
+
+              <div class="alert alert-light border mb-3 py-2" id="calc-periodo-panel">
+                <div class="d-flex align-items-start gap-2">
+                  <i class="ti ti-calendar-event text-primary mt-1" aria-hidden="true"></i>
+                  <div>
+                    <div class="fw-bold small text-uppercase text-secondary mb-1">Período automático</div>
+                    <div class="small text-secondary mb-1" id="calc-periodo-regla">${resumenConfigNomina(configNomina)}</div>
+                    <div id="calc-periodo-etiqueta" class="fw-semibold text-dark">—</div>
+                    <div id="calc-periodo-estado" class="small text-secondary mt-1"></div>
+                  </div>
                 </div>
               </div>
+              <input type="hidden" id="calc-periodo" name="periodo">
+              <input type="hidden" id="calc-tipo-periodo" name="tipoPeriodo" value="quincenal">
 
-              <h4 class="text-primary mt-3 mb-2">Devengados Adicionales (COP)</h4>
+              <h4 class="text-primary mt-2 mb-2">Devengados adicionales (COP)</h4>
               <div class="row">
                 <div class="col-6 mb-3">
                   <label class="form-label">Horas Extras</label>
@@ -297,6 +300,36 @@ export async function initNomina(container) {
 
   const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
+  let periodoPagoActual = obtenerPeriodoPagoQuincenal(new Date(), configNomina);
+
+  function actualizarPeriodoAutomatico() {
+    periodoPagoActual = obtenerPeriodoPagoQuincenal(new Date(), configNomina);
+    document.getElementById('calc-periodo').value = periodoPagoActual.periodo;
+    document.getElementById('calc-tipo-periodo').value = periodoPagoActual.tipoPeriodo;
+    document.getElementById('calc-periodo-etiqueta').textContent = periodoPagoActual.etiqueta;
+    const reglaEl = document.getElementById('calc-periodo-regla');
+    if (reglaEl) reglaEl.textContent = resumenConfigNomina(configNomina);
+
+    const empleadoId = document.getElementById('calc-empleado').value;
+    const estadoEl = document.getElementById('calc-periodo-estado');
+    if (!empleadoId) {
+      estadoEl.textContent = 'Selecciona un colaborador para validar si ya existe liquidación en este período.';
+      estadoEl.className = 'small text-secondary mt-1';
+      return;
+    }
+
+    const yaExiste = nominas.some(
+      (n) => n.empleadoId === empleadoId && n.periodo === periodoPagoActual.periodo
+    );
+    if (yaExiste) {
+      estadoEl.textContent = 'Este colaborador ya tiene una liquidación registrada en este período.';
+      estadoEl.className = 'small text-danger mt-1 fw-semibold';
+    } else {
+      estadoEl.textContent = `Listo para liquidar el período del ${periodoPagoActual.rango}.`;
+      estadoEl.className = 'small text-success mt-1';
+    }
+  }
+
   function renderEmpleadosTable() {
     if (empleados.length === 0) {
       tbodyEmp.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-secondary">No hay empleados registrados.</td></tr>`;
@@ -313,15 +346,11 @@ export async function initNomina(container) {
         <td class="text-center">
           <span class="badge ${e.activo ? 'bg-success-lt' : 'bg-danger-lt'} px-2 py-1">${e.activo ? 'ACTIVO' : 'INACTIVO'}</span>
         </td>
-        <td class="text-end">
-          <button class="btn btn-outline-secondary btn-icon btn-sm btn-edit-emp" data-id="${e.id}" title="Editar" aria-label="Editar empleado">
-            <i class="ti ti-edit"></i>
-          </button>
-          ${e.activo ? `
-            <button class="btn btn-outline-danger btn-icon btn-sm btn-delete-emp" data-id="${e.id}" title="Desvincular" aria-label="Desvincular empleado">
-              <i class="ti ti-user-x"></i>
-            </button>
-          ` : ''}
+        <td class="text-end erp-td-actions">
+          ${erpActions(`
+            ${erpAction('edit', { className: 'btn-edit-emp', attrs: { 'data-id': e.id } })}
+            ${e.activo ? erpAction('unlink', { className: 'btn-delete-emp', attrs: { 'data-id': e.id } }) : ''}
+          `)}
         </td>
       </tr>
     `).join('');
@@ -350,26 +379,20 @@ export async function initNomina(container) {
       return `
         <tr>
           <td><strong>${n.empleado ? n.empleado.nombre : 'N/A'}</strong><div class="small text-secondary">${n.empleado ? n.empleado.cargo : ''}</div></td>
-          <td>${n.periodo}</td>
-          <td><span class="badge bg-purple-lt">${n.tipoPeriodo.toUpperCase()}</span></td>
+          <td>${formatearEtiquetaPeriodo(n.periodo, n.tipoPeriodo, configNomina)}</td>
+          <td><span class="badge bg-purple-lt">${n.tipoPeriodo === 'mensual' ? 'MENSUAL' : 'QUINCENAL'}</span></td>
           <td class="text-end">${formatter.format(n.totalDevengado)}</td>
           <td class="text-end text-danger">-${formatter.format(n.totalDeducciones)}</td>
           <td class="text-end fw-bold text-primary">${formatter.format(n.neto)}</td>
           <td class="text-center">
             <span class="badge ${badgeClass} px-2 py-1">${n.estado.toUpperCase()}</span>
           </td>
-          <td class="text-end">
-            <button class="btn btn-outline-primary btn-icon btn-sm btn-ver-nom" data-id="${n.id}" title="Ver Detalle" aria-label="Ver detalle de nómina">
-              <i class="ti ti-eye"></i>
-            </button>
-            <button class="btn btn-outline-secondary btn-icon btn-sm btn-pdf-nom" data-id="${n.id}" title="Descargar Desprendible PDF" aria-label="Descargar PDF de nómina">
-              <i class="ti ti-file-text"></i>
-            </button>
-            ${n.estado === 'borrador' ? `
-              <button class="btn btn-outline-danger btn-icon btn-sm btn-delete-nom" data-id="${n.id}" title="Eliminar Borrador" aria-label="Eliminar borrador de nómina">
-                <i class="ti ti-trash"></i>
-              </button>
-            ` : ''}
+          <td class="text-end erp-td-actions">
+            ${erpActions(`
+              ${erpAction('view', { className: 'btn-ver-nom', attrs: { 'data-id': n.id } })}
+              ${erpAction('pdf', { className: 'btn-pdf-nom', attrs: { 'data-id': n.id } })}
+              ${n.estado === 'borrador' ? erpAction('delete', { className: 'btn-delete-nom', attrs: { 'data-id': n.id }, label: 'Eliminar' }) : ''}
+            `)}
           </td>
         </tr>
       `;
@@ -473,16 +496,28 @@ export async function initNomina(container) {
   // Open Process Liquidación
   document.getElementById('btn-calcular-nomina').addEventListener('click', () => {
     document.getElementById('form-calcular-nomina').reset();
+    document.getElementById('calc-tipo-periodo').value = 'quincenal';
+    actualizarPeriodoAutomatico();
     modalCalc.show();
   });
+
+  document.getElementById('calc-empleado').addEventListener('change', actualizarPeriodoAutomatico);
 
   // Submit Process Liquidación
   document.getElementById('form-calcular-nomina').addEventListener('submit', async (ev) => {
     ev.preventDefault();
+    actualizarPeriodoAutomatico();
+
+    const empleadoId = document.getElementById('calc-empleado').value;
+    if (nominas.some((n) => n.empleadoId === empleadoId && n.periodo === periodoPagoActual.periodo)) {
+      alert('Este colaborador ya tiene una liquidación en el período actual.');
+      return;
+    }
+
     const payload = {
-      empleadoId: document.getElementById('calc-empleado').value,
-      tipoPeriodo: document.getElementById('calc-tipo-periodo').value,
-      periodo: document.getElementById('calc-periodo').value,
+      empleadoId,
+      tipoPeriodo: periodoPagoActual.tipoPeriodo,
+      periodo: periodoPagoActual.periodo,
       horasExtra: document.getElementById('calc-extras').value || 0,
       recargosNocturnos: document.getElementById('calc-recargos').value || 0,
       dominicales: document.getElementById('calc-dominicales').value || 0,
@@ -519,7 +554,7 @@ export async function initNomina(container) {
           <div class="row mb-3 border-bottom pb-2">
             <div class="col-6">
               <span class="text-secondary small">Período:</span>
-              <div class="fw-bold">${n.periodo} (${n.tipoPeriodo.toUpperCase()})</div>
+              <div class="fw-bold">${formatearEtiquetaPeriodo(n.periodo, n.tipoPeriodo, configNomina)}</div>
             </div>
             <div class="col-6 text-end">
               <span class="text-secondary small">Estado:</span>

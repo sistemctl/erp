@@ -1,5 +1,6 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
+import { erpHeader } from '../utils/module-shell.js';
 
 export async function initVentas(container) {
   const usuario = getUsuario();
@@ -13,7 +14,7 @@ export async function initVentas(container) {
   async function loadInitialData() {
     try {
       ventas = await apiFetch('/ventas');
-      vendedores = await apiFetch('/config/usuarios').then(users => users.filter(u => ['admin', 'superadmin', 'gerente_sede', 'cajero'].includes(u.rol) && u.activo));
+      vendedores = await apiFetch('/config/usuarios-operativos').then(users => users.filter(u => ['admin', 'superadmin', 'gerente_sede', 'cajero'].includes(u.rol)));
       sedes = await apiFetch('/config/sedes').catch(() => []);
     } catch (e) {
       console.error('Error precargando datos en ventas:', e);
@@ -23,15 +24,12 @@ export async function initVentas(container) {
   await loadInitialData();
 
   container.innerHTML = `
-    <div class="container-xl">
-      <div class="page-header d-print-none mb-4">
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title">Módulo de Ventas & Comisiones</h2>
-            <div class="text-secondary mt-1">Historial de transacciones, liquidación de comisiones y reporte de descuentos</div>
-          </div>
-        </div>
-      </div>
+    <div class="container-xl erp-module">
+      ${erpHeader({
+        eyebrow: 'Ventas',
+        title: 'Historial y comisiones',
+        subtitle: 'Transacciones, liquidación de comisiones y reporte de descuentos'
+      })}
 
       <!-- Navigation tabs -->
       <div class="card mb-4 d-print-none">

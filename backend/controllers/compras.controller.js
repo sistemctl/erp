@@ -10,10 +10,14 @@ const {
   Caja,
   EgresoCaja,
   CategoriaEgreso,
+  PagoCompra,
   NumeroSerie,
   sequelize
 } = require('../models');
 const { Op } = require('sequelize');
+const { resolveQuerySede, resolveActionSede } = require('../utils/sede');
+
+const FUENTES_VALIDAS = ['caja_efectivo', 'efectivo_externo', 'transferencia_empresa', 'otro'];
 
 // --- GET ALL COMPRAS ---
 exports.getCompras = async (req, res, next) => {
@@ -21,7 +25,7 @@ exports.getCompras = async (req, res, next) => {
     const { proveedor, sede, estado, estadoPago } = req.query;
     const where = {};
 
-    const querySedeId = sede || (req.usuario.rol !== 'admin' ? req.usuario.sedeId : null);
+    const querySedeId = resolveQuerySede(sede, req.usuario);
     if (querySedeId) {
       where.sedeId = querySedeId;
     }
@@ -40,6 +44,13 @@ exports.getCompras = async (req, res, next) => {
           model: ItemOrdenCompra,
           as: 'items',
           include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras', 'tieneNumeroSerie'] }]
+        },
+        {
+          model: PagoCompra,
+          as: 'pagos',
+          separate: true,
+          order: [['createdAt', 'DESC']],
+          include: [{ model: Usuario, as: 'usuario', attributes: ['nombre'] }]
         }
       ],
       order: [['createdAt', 'DESC']]
@@ -55,12 +66,16 @@ exports.getCompras = async (req, res, next) => {
 exports.createCompra = async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
-    const { proveedorId, fechaEsperada, observaciones, items } = req.body;
-    const sedeId = req.usuario.sedeId;
+    const { proveedorId, fechaEsperada, observaciones, items, sedeId: bodySedeId } = req.body;
+    const sedeId = await resolveActionSede(bodySedeId, req.usuario, Sede, transaction);
     const usuarioId = req.usuario.userId;
 
     if (!proveedorId || !items || items.length === 0) {
       return res.status(400).json({ error: 'Faltan parámetros obligatorios para registrar la compra.' });
+    }
+
+    if (!sedeId) {
+      return res.status(400).json({ error: 'Debe seleccionar la sede destino para la orden de compra.' });
     }
 
     // Calcular total
@@ -250,10 +265,15 @@ exports.registrarPagoCompra = async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const { monto } = req.body;
+    const { monto, fuenteFondos, pagadoPor, referencia } = req.body;
 
     if (!monto || parseFloat(monto) <= 0) {
       return res.status(400).json({ error: 'Monto de pago inválido.' });
+    }
+
+    const fuente = fuenteFondos || 'caja_efectivo';
+    if (!FUENTES_VALIDAS.includes(fuente)) {
+      return res.status(400).json({ error: 'Origen del dinero no válido.' });
     }
 
     const orden = await OrdenCompra.findByPk(id, { transaction });
@@ -267,43 +287,73 @@ exports.registrarPagoCompra = async (req, res, next) => {
     }
 
     const abonoNum = parseFloat(monto);
-    const nuevoSaldo = Math.max(0, saldoActual - abonoNum);
-
-    let nuevoEstadoPago = 'abono_parcial';
-    if (nuevoSaldo === 0) {
-      nuevoEstadoPago = 'pagado';
+    if (abonoNum > saldoActual) {
+      return res.status(400).json({ error: `El monto supera el saldo pendiente (${saldoActual}).` });
     }
+
+    const nuevoSaldo = saldoActual - abonoNum;
+    const nuevoEstadoPago = nuevoSaldo === 0 ? 'pagado' : 'abono_parcial';
 
     await orden.update({
       saldoPendiente: nuevoSaldo,
       estadoPago: nuevoEstadoPago
     }, { transaction });
 
-    // Intentar registrar el Egreso de Caja automáticamente si hay caja abierta en la sede de la compra
-    const caja = await Caja.findOne({
-      where: { sedeId: orden.sedeId, estado: 'abierta' },
-      transaction
-    });
+    const pagoCompra = await PagoCompra.create({
+      ordenCompraId: orden.id,
+      usuarioId: req.usuario.userId,
+      monto: abonoNum,
+      fuenteFondos: fuente,
+      pagadoPor: pagadoPor?.trim() || null,
+      referencia: referencia?.trim() || null
+    }, { transaction });
 
-    if (caja) {
-      // Buscar categoría de egreso correspondiente o crear/usar 'Pago a proveedor'
-      const categoria = await CategoriaEgreso.findOne({
-        where: { nombre: { [Op.iLike]: '%proveedor%' } },
+    let egresoCreado = false;
+
+    if (fuente === 'caja_efectivo') {
+      const caja = await Caja.findOne({
+        where: { sedeId: orden.sedeId, estado: 'abierta' },
+        transaction
+      });
+
+      if (!caja) {
+        await transaction.rollback();
+        return res.status(400).json({
+          error: 'No hay caja abierta en esta sede. Elija otro origen del dinero o abra la caja.'
+        });
+      }
+
+      let categoria = await CategoriaEgreso.findOne({
+        where: { nombre: { [Op.iLike]: '%proveedor%' }, activa: true },
+        transaction
+      });
+      if (!categoria) {
+        categoria = await CategoriaEgreso.findOne({ where: { activa: true }, transaction });
+      }
+      if (!categoria) {
+        await transaction.rollback();
+        return res.status(400).json({ error: 'No hay categorías de egreso configuradas en el sistema.' });
+      }
+
+      const proveedorNombre = await Proveedor.findByPk(orden.proveedorId, {
+        attributes: ['nombre'],
         transaction
       });
 
       const egreso = await EgresoCaja.create({
         cajaId: caja.id,
         monto: abonoNum,
-        categoriaId: categoria ? categoria.id : null,
-        motivo: `Pago / Abono a Proveedor por Orden de Compra ID: ${orden.id}`,
-        usuarioId: req.usuario.userId
+        categoriaId: categoria.id,
+        motivo: `Pago a proveedor ${proveedorNombre?.nombre || ''} — OC ${orden.id.slice(0, 8).toUpperCase()}`,
+        usuarioId: req.usuario.userId,
+        pagoCompraId: pagoCompra.id
       }, { transaction });
 
-      // Actualizar saldos de caja
       await caja.update({
         totalEgresos: parseFloat(caja.totalEgresos) + abonoNum
       }, { transaction });
+
+      egresoCreado = true;
     }
 
     await transaction.commit();
@@ -313,11 +363,32 @@ exports.registrarPagoCompra = async (req, res, next) => {
         accion: 'PAGO_COMPRA',
         modulo: 'Compras',
         registroId: id,
-        valorNuevo: { abono: abonoNum, saldoPendiente: nuevoSaldo, estadoPago: nuevoEstadoPago }
+        valorNuevo: {
+          pagoId: pagoCompra.id,
+          abono: abonoNum,
+          fuenteFondos: fuente,
+          saldoPendiente: nuevoSaldo,
+          estadoPago: nuevoEstadoPago,
+          egresoCaja: egresoCreado
+        }
       });
     }
 
-    return res.json({ message: 'Pago registrado con éxito y egreso cargado a caja.', saldoPendiente: nuevoSaldo, estadoPago: nuevoEstadoPago });
+    const mensajes = {
+      caja_efectivo: egresoCreado
+        ? 'Pago registrado y descontado de la caja abierta.'
+        : 'Pago registrado.',
+      efectivo_externo: 'Pago registrado con dinero externo (sin afectar la caja).',
+      transferencia_empresa: 'Pago registrado por transferencia de la empresa (sin afectar la caja).',
+      otro: 'Pago registrado (sin afectar la caja).'
+    };
+
+    return res.json({
+      message: mensajes[fuente],
+      pago: pagoCompra,
+      saldoPendiente: nuevoSaldo,
+      estadoPago: nuevoEstadoPago
+    });
   } catch (error) {
     await transaction.rollback();
     next(error);

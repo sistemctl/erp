@@ -4,6 +4,6 @@ const notificacionesController = require('../controllers/notificaciones.controll
 const authMiddleware = require('../middleware/auth.middleware');
 const rolesMiddleware = require('../middleware/roles.middleware');
 
-router.get('/', authMiddleware, rolesMiddleware(['admin', 'gerente_sede', 'contador']), notificacionesController.getNotificaciones);
+router.get('/', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'contador']), notificacionesController.getNotificaciones);
 
 module.exports = router;

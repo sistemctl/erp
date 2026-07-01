@@ -1,5 +1,6 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
+import { erpAction, erpActions } from '../utils/action-buttons.js';
 
 export async function initCompras(container) {
   const usuario = getUsuario();
@@ -25,21 +26,102 @@ export async function initCompras(container) {
 
   await loadInitialData();
 
-  container.innerHTML = `
-    <div class="container-xl">
-      <div class="page-header d-print-none mb-4">
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title">Gestión de Compras e Inventario Entrante</h2>
-            <div class="text-secondary mt-1">Órdenes de compra, recepción de mercancías física y control de cuentas por pagar</div>
-          </div>
+  const defaultSedeId = usuario.sedeId || (sedes[0]?.id || '');
+
+  const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+
+  const FUENTE_FONDOS_LABELS = {
+    caja_efectivo: 'Caja (efectivo)',
+    efectivo_externo: 'Dinero externo',
+    transferencia_empresa: 'Transferencia empresa',
+    otro: 'Otro'
+  };
+
+  function badgeOrigen(fuente, monto, extraTitle = '') {
+    const label = FUENTE_FONDOS_LABELS[fuente] || fuente;
+    const title = monto != null
+      ? `${label} — ${formatter.format(monto)}${extraTitle ? ` · ${extraTitle}` : ''}`
+      : label;
+    return `<span class="compras-origen-badge compras-origen-badge--${fuente}" title="${title}">${label}</span>`;
+  }
+
+  function renderOrigenPagoCell(pagos, estadoPago) {
+    if (!pagos || pagos.length === 0) {
+      if (estadoPago === 'pagado' || estadoPago === 'abono_parcial') {
+        return '<span class="compras-sin-detalle" title="Pago anterior al registro de origen">Sin detalle</span>';
+      }
+      return '<span class="compras-sin-detalle">Sin pagos</span>';
+    }
+    return `<div class="compras-origen-stack">${pagos.map((p) => {
+      const extra = [p.pagadoPor, p.referencia].filter(Boolean).join(' · ');
+      return badgeOrigen(p.fuenteFondos, parseFloat(p.monto), extra);
+    }).join('')}</div>`;
+  }
+
+  const ORIGEN_LEYENDA = [
+    { key: 'caja_efectivo', desc: 'Efectivo del turno en caja' },
+    { key: 'transferencia_empresa', desc: 'Cuenta bancaria de la empresa' },
+    { key: 'efectivo_externo', desc: 'Tercero, socio o caja menor' },
+    { key: 'otro', desc: 'Otro medio no clasificado' }
+  ];
+
+  function renderOrigenLeyendaHtml() {
+    return ORIGEN_LEYENDA.map((o) => `
+      <div class="compras-origen-key compras-origen-key--${o.key}">
+        <span class="compras-origen-key__dot" aria-hidden="true"></span>
+        <div class="compras-origen-key__text">
+          <span class="compras-origen-key__label">${FUENTE_FONDOS_LABELS[o.key]}</span>
+          <span class="compras-origen-key__desc">${o.desc}</span>
         </div>
       </div>
+    `).join('');
+  }
 
-      <!-- Navigation tabs -->
-      <div class="card mb-4 d-print-none">
-        <div class="card-header">
-          <ul class="nav nav-tabs card-header-tabs" data-bs-toggle="tabs" role="tablist">
+  function renderHistorialPagosHtml(pagos) {
+    if (!pagos || pagos.length === 0) {
+      return `<p class="text-secondary small mb-0">Aún no hay pagos registrados para esta orden.</p>`;
+    }
+    return `
+      <div class="table-responsive compras-pagos-table">
+        <table class="table table-sm compras-table mb-0">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th class="text-end">Monto</th>
+              <th>Origen del dinero</th>
+              <th>Pagado por</th>
+              <th>Referencia</th>
+              <th>Registró</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pagos.map((p) => `
+              <tr>
+                <td class="text-nowrap">${new Date(p.createdAt).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                <td class="text-end fw-bold text-danger">${formatter.format(p.monto)}</td>
+                <td>${badgeOrigen(p.fuenteFondos)}</td>
+                <td class="small">${p.pagadoPor || '—'}</td>
+                <td class="small text-secondary">${p.referencia || '—'}</td>
+                <td class="small">${p.usuario ? p.usuario.nombre : '—'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  container.innerHTML = `
+    <div class="container-xl erp-module compras-module">
+      <header class="compras-header d-print-none">
+        <div class="compras-header__eyebrow">Abastecimiento</div>
+        <h1 class="compras-header__title">Compras e inventario entrante</h1>
+        <p class="compras-header__sub">Órdenes de compra, recepción de mercancía y cuentas por pagar</p>
+      </header>
+
+      <div class="card compras-shell mb-4 d-print-none">
+        <div class="card-header compras-tabs-head">
+          <ul class="nav nav-tabs card-header-tabs compras-tabs" data-bs-toggle="tabs" role="tablist">
             <li class="nav-item" role="presentation">
               <a href="#tab-ordenes-compra" class="nav-link active" data-bs-toggle="tab" aria-selected="true" role="tab">
                 <i class="ti ti-receipt me-1"></i> Historial de Órdenes
@@ -63,24 +145,40 @@ export async function initCompras(container) {
           <div class="tab-content">
             <!-- TAB 1: HISTORIAL DE ÓRDENES -->
             <div class="tab-pane active show" id="tab-ordenes-compra" role="tabpanel">
-              <div class="table-responsive">
-                <table class="table table-vcenter card-table table-hover table-striped">
-                  <thead>
-                    <tr>
-                      <th>Orden No.</th>
-                      <th>Fecha Emisión</th>
-                      <th>Proveedor</th>
-                      <th>Sede Destino</th>
-                      <th class="text-end">Total</th>
-                      <th class="text-center">Estado Mercancía</th>
-                      <th class="text-center">Estado Pago</th>
-                      <th class="text-end">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody id="compras-table-body">
-                    <!-- Dinámico -->
-                  </tbody>
-                </table>
+              <div class="compras-oc-layout">
+                <div id="compras-oc-summary" class="compras-summary-grid"></div>
+
+                <aside class="compras-origen-panel d-print-none" aria-label="Leyenda de origen del dinero">
+                  <h3 class="compras-origen-panel__title">Origen del dinero en pagos</h3>
+                  <p class="compras-origen-panel__hint">Al abonar una orden, indique si el pago sale de caja o de la empresa.</p>
+                  <div class="compras-origen-keys">
+                    ${renderOrigenLeyendaHtml()}
+                  </div>
+                </aside>
+
+                <div class="compras-table-panel">
+                  <div class="compras-table-panel__head">
+                    <h3 class="compras-table-panel__title">Órdenes de compra</h3>
+                    <span class="compras-table-panel__count" id="compras-oc-count"></span>
+                  </div>
+                  <div class="compras-table-scroll">
+                    <table class="table compras-table mb-0">
+                      <thead>
+                        <tr>
+                          <th>Orden</th>
+                          <th>Fecha</th>
+                          <th>Proveedor</th>
+                          <th>Sede</th>
+                          <th class="text-end">Total</th>
+                          <th>Estado</th>
+                          <th>Origen del pago</th>
+                          <th class="text-end compras-th-actions">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody id="compras-table-body"></tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -89,7 +187,7 @@ export async function initCompras(container) {
               <div class="tab-pane" id="tab-nueva-oc" role="tabpanel">
                 <form id="form-nueva-oc">
                   <div class="row mb-4">
-                    <div class="col-md-5">
+                    <div class="col-md-4">
                       <label class="form-label required">Proveedor</label>
                       <select id="oc-proveedor" class="form-select" required>
                         <option value="">-- Seleccionar Proveedor --</option>
@@ -97,10 +195,16 @@ export async function initCompras(container) {
                       </select>
                     </div>
                     <div class="col-md-3">
+                      <label class="form-label required">Sede destino (inventario)</label>
+                      <select id="oc-sede" class="form-select" required>
+                        ${sedes.length === 0 ? '<option value="">Sin sedes configuradas</option>' : sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                      </select>
+                    </div>
+                    <div class="col-md-2">
                       <label class="form-label">Fecha Esperada</label>
                       <input type="date" id="oc-fecha-esperada" class="form-control">
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                       <label class="form-label">Observaciones</label>
                       <input type="text" id="oc-observaciones" class="form-control" placeholder="Ej: Pedido urgente pantallas">
                     </div>
@@ -235,7 +339,25 @@ export async function initCompras(container) {
               <div class="mb-3">
                 <label class="form-label required">Monto del Pago / Abono ($ COP)</label>
                 <input type="number" id="pago-monto-input" class="form-control" required min="1">
-                <div class="form-hint text-secondary small">Si hay caja abierta en esta sede, este abono se registrará automáticamente como un egreso de caja.</div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label required">Origen del dinero</label>
+                <select id="pago-fuente-fondos" class="form-select" required>
+                  <option value="caja_efectivo">Caja — efectivo del turno</option>
+                  <option value="efectivo_externo">Dinero externo / tercero</option>
+                  <option value="transferencia_empresa" selected>Transferencia de la empresa</option>
+                  <option value="otro">Otro</option>
+                </select>
+                <div id="pago-hint-caja" class="form-hint text-secondary small d-none">Se descontará de la caja abierta en esta sede.</div>
+                <div id="pago-hint-externo" class="form-hint text-secondary small">No afecta el efectivo del turno en caja.</div>
+              </div>
+              <div class="mb-3" id="pago-pagado-por-wrap">
+                <label class="form-label">Pagado por / responsable</label>
+                <input type="text" id="pago-pagado-por" class="form-control" placeholder="Ej: César, socio, caja menor empresa…">
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Referencia (opcional)</label>
+                <input type="text" id="pago-referencia" class="form-control" placeholder="Ej: Transferencia Bancolombia ref. 12345">
               </div>
             </div>
             <div class="modal-footer">
@@ -255,46 +377,104 @@ export async function initCompras(container) {
   const modalVer = new bootstrap.Modal(document.getElementById('modal-ver-compra'));
   const modalPagar = new bootstrap.Modal(document.getElementById('modal-pagar-cuenta'));
 
-  const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+  function estadoMercPill(estado) {
+    const map = {
+      pendiente: 'compras-pill--warn',
+      recibida: 'compras-pill--ok',
+      parcial: 'compras-pill--info',
+      cancelada: 'compras-pill--muted'
+    };
+    const labels = { pendiente: 'Merc. pendiente', recibida: 'Recibida', parcial: 'Parcial', cancelada: 'Cancelada' };
+    return `<span class="compras-pill ${map[estado] || 'compras-pill--muted'}">${labels[estado] || estado}</span>`;
+  }
+
+  function estadoPagoPill(estadoPago) {
+    const map = {
+      pagado: 'compras-pill--ok',
+      abono_parcial: 'compras-pill--warn',
+      pendiente: 'compras-pill--danger'
+    };
+    const labels = { pagado: 'Pagado', abono_parcial: 'Abono parcial', pendiente: 'Por pagar' };
+    return `<span class="compras-pill ${map[estadoPago] || 'compras-pill--muted'}">${labels[estadoPago] || estadoPago}</span>`;
+  }
+
+  function renderComprasSummary() {
+    const summaryEl = document.getElementById('compras-oc-summary');
+    const countEl = document.getElementById('compras-oc-count');
+    if (!summaryEl) return;
+
+    const porFuente = { caja_efectivo: 0, efectivo_externo: 0, transferencia_empresa: 0, otro: 0 };
+    let totalPagado = 0;
+    let pendientePago = 0;
+
+    compras.forEach((c) => {
+      pendientePago += parseFloat(c.saldoPendiente || 0);
+      (c.pagos || []).forEach((p) => {
+        const m = parseFloat(p.monto);
+        totalPagado += m;
+        if (porFuente[p.fuenteFondos] !== undefined) porFuente[p.fuenteFondos] += m;
+      });
+    });
+
+    if (countEl) {
+      countEl.textContent = `${compras.length} orden${compras.length === 1 ? '' : 'es'}`;
+    }
+
+    const topFuente = Object.entries(porFuente).sort((a, b) => b[1] - a[1]).find(([, v]) => v > 0);
+
+    summaryEl.innerHTML = `
+      <div class="compras-stat-card">
+        <span class="compras-stat-card__label">Órdenes registradas</span>
+        <span class="compras-stat-card__value">${compras.length}</span>
+      </div>
+      <div class="compras-stat-card compras-stat-card--accent">
+        <span class="compras-stat-card__label">Total pagado a proveedores</span>
+        <span class="compras-stat-card__value">${formatter.format(totalPagado)}</span>
+      </div>
+      <div class="compras-stat-card">
+        <span class="compras-stat-card__label">Saldo por pagar</span>
+        <span class="compras-stat-card__value compras-stat-card__value--danger">${formatter.format(pendientePago)}</span>
+      </div>
+      <div class="compras-stat-card compras-stat-card--fuente">
+        <span class="compras-stat-card__label">Principal origen del dinero</span>
+        ${topFuente
+          ? `<div class="compras-stat-card__fuente">${badgeOrigen(topFuente[0], topFuente[1])}</div>`
+          : '<span class="compras-stat-card__value compras-stat-card__value--sm">Sin pagos</span>'}
+      </div>
+    `;
+  }
 
   function renderComprasTable() {
+    renderComprasSummary();
+
     if (compras.length === 0) {
-      tbodyCompras.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-secondary">No hay órdenes de compra registradas.</td></tr>`;
+      tbodyCompras.innerHTML = `<tr><td colspan="8" class="text-center py-5 compras-empty">No hay órdenes de compra registradas.</td></tr>`;
       return;
     }
 
     tbodyCompras.innerHTML = compras.map(c => {
-      let badgeClass = 'bg-warning-lt';
-      if (c.estado === 'recibida') badgeClass = 'bg-success-lt';
-      else if (c.estado === 'parcial') badgeClass = 'bg-blue-lt';
-      else if (c.estado === 'cancelada') badgeClass = 'bg-danger-lt';
-
-      let payBadge = 'bg-danger-lt';
-      if (c.estadoPago === 'pagado') payBadge = 'bg-success-lt';
-      else if (c.estadoPago === 'abono_parcial') payBadge = 'bg-warning-lt';
-
       const shortId = c.id.split('-')[0].toUpperCase();
+      const provNombre = c.proveedor ? c.proveedor.nombre : 'N/A';
 
       return `
-        <tr>
-          <td><span class="badge bg-blue text-white">OC-${shortId}</span></td>
-          <td>${new Date(c.createdAt).toLocaleDateString()}</td>
-          <td>${c.proveedor ? c.proveedor.nombre : 'N/A'}</td>
-          <td>${c.sede ? c.sede.nombre : 'N/A'}</td>
-          <td class="text-end fw-bold">${formatter.format(c.total)}</td>
-          <td class="text-center"><span class="badge ${badgeClass} px-2 py-1">${c.estado.toUpperCase()}</span></td>
-          <td class="text-center"><span class="badge ${payBadge} px-2 py-1">${c.estadoPago.toUpperCase()}</span></td>
-          <td class="text-end">
-            <div class="btn-list justify-content-end">
-              <button class="btn btn-outline-primary btn-sm btn-ver-oc" data-id="${c.id}"><i class="ti ti-eye me-1"></i>Ver</button>
-              ${isAdminOrGerente && (c.estado === 'pendiente' || c.estado === 'parcial') ? `
-                <button class="btn btn-outline-success btn-sm btn-recibir-merc" data-id="${c.id}"><i class="ti ti-package me-1"></i>Recibir</button>
-              ` : ''}
-              ${isAdminOrGerente && (c.estado === 'recibida' || c.estado === 'parcial') ? `
-                <button class="btn btn-outline-danger btn-sm btn-devolver-merc" data-id="${c.id}"><i class="ti ti-arrow-back me-1"></i>Devolver</button>
-              ` : ''}
-              ${c.estado === 'cancelada' ? '<span class="text-secondary small">Cancelada</span>' : ''}
-              ${!isAdminOrGerente && c.estado !== 'cancelada' ? '<span class="text-secondary small">Procesada</span>' : ''}
+        <tr class="compras-row">
+          <td><span class="compras-oc-id">OC-${shortId}</span></td>
+          <td class="compras-td-date">${new Date(c.createdAt).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+          <td class="compras-td-prov" title="${provNombre}">${provNombre}</td>
+          <td class="compras-td-sede">${c.sede ? c.sede.nombre : '—'}</td>
+          <td class="text-end compras-td-total">${formatter.format(c.total)}</td>
+          <td class="compras-td-estado">
+            <div class="compras-estado-stack">
+              ${estadoMercPill(c.estado)}
+              ${estadoPagoPill(c.estadoPago)}
+            </div>
+          </td>
+          <td class="compras-td-origen">${renderOrigenPagoCell(c.pagos, c.estadoPago)}</td>
+          <td class="compras-td-actions erp-td-actions">
+            <div class="erp-actions">
+              ${erpAction('view', { className: 'btn-ver-oc', attrs: { 'data-id': c.id } })}
+              ${isAdminOrGerente && (c.estado === 'pendiente' || c.estado === 'parcial') ? erpAction('recv', { className: 'btn-recibir-merc', attrs: { 'data-id': c.id } }) : ''}
+              ${isAdminOrGerente && (c.estado === 'recibida' || c.estado === 'parcial') ? erpAction('return', { className: 'btn-devolver-merc', attrs: { 'data-id': c.id } }) : ''}
             </div>
           </td>
         </tr>
@@ -359,6 +539,12 @@ export async function initCompras(container) {
 
   renderComprasTable();
   renderCppTable();
+
+  const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  if (hashParams.get('tab') === 'cpp') {
+    const cppTab = document.querySelector('a[href="#tab-cuentas-pagar"]');
+    if (cppTab) bootstrap.Tab.getOrCreateInstance(cppTab).show();
+  }
 
   // Nueva OC: Add items to Cart
   const selectProd = document.getElementById('oc-producto-select');
@@ -454,9 +640,16 @@ export async function initCompras(container) {
         return;
       }
 
+      const sedeId = document.getElementById('oc-sede')?.value;
+      if (!sedeId) {
+        alert('Debe seleccionar la sede destino donde ingresará el inventario.');
+        return;
+      }
+
       try {
         const payload = {
           proveedorId: document.getElementById('oc-proveedor').value,
+          sedeId,
           fechaEsperada: document.getElementById('oc-fecha-esperada').value || null,
           observaciones: document.getElementById('oc-observaciones').value || '',
           items: cartItems
@@ -926,6 +1119,9 @@ export async function initCompras(container) {
           </table>
         </div>
 
+        <h6 class="mb-2 mt-4"><i class="ti ti-cash me-1"></i> Historial de pagos y origen del dinero</h6>
+        ${renderHistorialPagosHtml(oc.pagos)}
+
         ${oc.observaciones ? `
           <div class="mb-3">
             <div class="text-secondary small">Observaciones:</div>
@@ -952,6 +1148,10 @@ export async function initCompras(container) {
     document.getElementById('pago-saldo-actual').value = formatter.format(oc.saldoPendiente);
     document.getElementById('pago-monto-input').value = Math.round(oc.saldoPendiente);
     document.getElementById('pago-monto-input').setAttribute('max', oc.saldoPendiente);
+    document.getElementById('pago-fuente-fondos').value = 'transferencia_empresa';
+    document.getElementById('pago-pagado-por').value = '';
+    document.getElementById('pago-referencia').value = '';
+    document.getElementById('pago-fuente-fondos')?.dispatchEvent(new Event('change'));
 
     modalPagar.show();
   }
@@ -961,13 +1161,17 @@ export async function initCompras(container) {
     e.preventDefault();
     const id = document.getElementById('pago-compra-id').value;
     const monto = document.getElementById('pago-monto-input').value;
+    const fuenteFondos = document.getElementById('pago-fuente-fondos').value;
+    const pagadoPor = document.getElementById('pago-pagado-por').value.trim();
+    const referencia = document.getElementById('pago-referencia').value.trim();
 
     try {
-      await apiFetch(`/compras/${id}/pago`, {
+      const res = await apiFetch(`/compras/${id}/pago`, {
         method: 'PUT',
-        body: JSON.stringify({ monto })
+        body: JSON.stringify({ monto, fuenteFondos, pagadoPor: pagadoPor || null, referencia: referencia || null })
       });
       modalPagar.hide();
+      alert(res.message || 'Pago registrado correctamente.');
       await loadInitialData();
       renderComprasTable();
       renderCppTable();
@@ -975,4 +1179,17 @@ export async function initCompras(container) {
       alert('Error al procesar pago: ' + err.message);
     }
   });
+
+  const pagoFuenteSelect = document.getElementById('pago-fuente-fondos');
+  const pagoHintCaja = document.getElementById('pago-hint-caja');
+  const pagoHintExterno = document.getElementById('pago-hint-externo');
+  if (pagoFuenteSelect) {
+    const updatePagoHints = () => {
+      const esCaja = pagoFuenteSelect.value === 'caja_efectivo';
+      pagoHintCaja?.classList.toggle('d-none', !esCaja);
+      pagoHintExterno?.classList.toggle('d-none', esCaja);
+    };
+    pagoFuenteSelect.addEventListener('change', updatePagoHints);
+    updatePagoHints();
+  }
 }

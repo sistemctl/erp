@@ -4,8 +4,12 @@ const configController = require('../controllers/config.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 const rolesMiddleware = require('../middleware/roles.middleware');
 
+// Marca pública (login)
+router.get('/branding', configController.getBranding);
+
 // Rutas accesibles por usuarios autenticados
 router.get('/sedes', authMiddleware, configController.getSedes);
+router.get('/usuarios-operativos', authMiddleware, configController.getUsuariosOperativos);
 router.get('/sistema', authMiddleware, configController.getSistemaConfig);
 
 // Rutas restringidas a administradores

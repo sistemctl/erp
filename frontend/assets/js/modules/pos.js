@@ -3,7 +3,9 @@ import { getUsuario } from '../auth.js';
 import { initBarcodeScanner, destroyBarcodeScanner } from '../utils/barcode.js';
 import { getLocalDateStr } from '../utils/date.js';
 import { showToast } from '../utils/toast.js';
+import { renderPosReceipt } from '../utils/pos-receipt.js';
 
+let posKeydownHandler = null;
 let cart = [];
 let maxDescuentoPermitido = 15;
 let clientes = [];
@@ -12,6 +14,56 @@ let cobrarIva = true;
 let ivaPct = 0.19;
 let currentSedeId = null;
 let sedes = [];
+let empresaConfig = {
+  empresa: 'TechStore Colombia',
+  nit: '',
+  direccion: '',
+  telefono: '',
+  logoUrl: ''
+};
+
+function getSedeNombre(sedes, sedeId, fallback = 'Sede') {
+  const match = sedes.find((s) => String(s.id) === String(sedeId));
+  return match?.nombre || fallback;
+}
+
+function renderPosSessionBar({ usuario, isAdmin, sedes, currentSedeId, cajaAbierta, sedeFallback }) {
+  const sedeNombre = getSedeNombre(sedes, currentSedeId, sedeFallback || usuario.sedeNombre || 'Sede');
+  const cajaOk = cajaAbierta && cajaAbierta.estado !== 'cerrada';
+
+  return `
+    <div class="pos-session-bar d-print-none" role="region" aria-label="Estado de la caja">
+      <div class="pos-session-bar__chips">
+        <span class="pos-session-chip ${cajaOk ? 'pos-session-chip--live' : 'pos-session-chip--warn'}">
+          <i class="ti ${cajaOk ? 'ti-lock-open' : 'ti-lock'}" aria-hidden="true"></i>
+          ${cajaOk ? 'Caja abierta' : 'Caja cerrada'}
+        </span>
+        <span class="pos-session-chip">
+          <i class="ti ti-building-store" aria-hidden="true"></i>
+          ${sedeNombre}
+        </span>
+        <span class="pos-session-chip">
+          <i class="ti ti-user" aria-hidden="true"></i>
+          ${usuario.nombre}
+        </span>
+        ${cajaOk ? `
+          <span class="pos-session-chip pos-session-chip--scan">
+            <i class="ti ti-scan" aria-hidden="true"></i>
+            Escáner listo
+          </span>
+        ` : ''}
+      </div>
+      ${isAdmin ? `
+        <div class="pos-session-bar__admin">
+          <label class="pos-session-bar__label" for="select-pos-sede">Operar en</label>
+          <select id="select-pos-sede" class="form-select form-select-sm pos-session-sede-select" aria-label="Sede para ventas">
+            ${sedes.map((s) => `<option value="${s.id}" ${String(s.id) === String(currentSedeId) ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+          </select>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
 
 export async function initPos(container) {
   const usuario = getUsuario();
@@ -43,6 +95,15 @@ export async function initPos(container) {
     maxDescuentoPermitido = config ? parseFloat(config.descuentoMaximoPct) : 15;
     cobrarIva = config && config.cobrarIvaPos !== undefined ? !!config.cobrarIvaPos : true;
     ivaPct = config && config.ivaDefecto !== undefined ? parseFloat(config.ivaDefecto) / 100 : 0.19;
+    if (config) {
+      empresaConfig = {
+        empresa: config.empresa || 'TechStore Colombia',
+        nit: config.nit || '',
+        direccion: config.direccion || '',
+        telefono: config.telefono || '',
+        logoUrl: config.logoUrl || ''
+      };
+    }
 
     // Cargar clientes para ventas a crédito
     clientes = await apiFetch('/clientes').catch(() => [
@@ -65,24 +126,13 @@ export async function initPos(container) {
 
     if (!cajaAbierta || cajaAbierta.estado === 'cerrada') {
       container.innerHTML = `
-        <div class="container-xl py-5">
-          ${isAdmin ? `
-            <div class="card mb-3 d-print-none shadow-sm">
-              <div class="card-body py-2">
-                <div class="row align-items-center">
-                  <div class="col-md-4">
-                    <label class="form-label small fw-bold mb-1 text-primary">Sede a Operar (POS)</label>
-                    <select id="select-pos-sede" class="form-select form-select-sm">
-                      ${sedes.map(s => `<option value="${s.id}" ${s.id === currentSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ` : ''}
-          <div class="alert alert-warning">
-            <h4 class="alert-title">Caja Cerrada</h4>
-            <div class="text-secondary">Debe realizar la <a href="#/caja" class="alert-link">Apertura de Caja</a> para esta sede antes de operar el Punto de Venta (POS).</div>
+        <div class="container-xl erp-module pos-module">
+          ${renderPosSessionBar({ usuario, isAdmin, sedes, currentSedeId, cajaAbierta: null, sedeFallback: usuario.sedeNombre })}
+          <div class="pos-gate-card">
+            <div class="pos-gate-card__icon" aria-hidden="true"><i class="ti ti-lock"></i></div>
+            <h2 class="pos-gate-card__title">Abre la caja para vender</h2>
+            <p class="pos-gate-card__text">El punto de venta solo funciona con una caja abierta en esta sede. Haz la apertura y vuelve aquí para facturar.</p>
+            <a href="#/caja" class="btn btn-primary">Ir a apertura de caja</a>
           </div>
         </div>
       `;
@@ -101,80 +151,78 @@ export async function initPos(container) {
 
     // Renderizar maquetación del POS
     container.innerHTML = `
-      <div class="container-xl">
-        <div class="row mb-3 d-print-none">
-          <div class="col">
-            <h2 class="page-title">Punto de Venta (POS)</h2>
-            ${isAdmin ? `
-              <div class="row align-items-center mt-2">
-                <div class="col-md-6">
-                  <label class="form-label small fw-bold mb-1 text-primary">Sede a Operar (POS)</label>
-                  <select id="select-pos-sede" class="form-select form-select-sm">
-                    ${sedes.map(s => `<option value="${s.id}" ${s.id === currentSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
-                  </select>
-                </div>
-              </div>
-            ` : `
-              <div class="text-secondary mt-1">Sede: <strong>${usuario.sedeNombre}</strong> | Cajero: <strong>${usuario.nombre}</strong></div>
-            `}
-          </div>
-          <div class="col-auto d-flex align-items-end">
-            <span class="badge bg-green-lt p-2">Lectura de código de barras activa ⚡</span>
-          </div>
-        </div>
+      <div class="container-xl erp-module pos-module">
+        ${renderPosSessionBar({ usuario, isAdmin, sedes, currentSedeId, cajaAbierta, sedeFallback: usuario.sedeNombre })}
 
-        <div class="row row-cards d-print-none">
-          <!-- Columna de búsqueda de productos -->
-          <div class="col-lg-7">
-            <div class="card" style="height: 600px; display: flex; flex-direction: column;">
-              <div class="card-body border-bottom py-3">
+        <div class="pos-workspace d-print-none">
+          <section class="pos-panel pos-panel--catalog" aria-labelledby="pos-catalog-heading">
+            <div class="pos-panel__head">
+              <div>
+                <p class="pos-panel__step">Paso 1</p>
+                <h2 class="pos-panel__title" id="pos-catalog-heading">Agregar productos</h2>
+                <p class="pos-panel__hint">Busca por nombre, toca una tarjeta o escanea el código de barras.</p>
+              </div>
+              <kbd class="pos-kbd-hint" title="Atajo de teclado">F2</kbd>
+            </div>
+            <div class="pos-panel__body pos-panel__body--catalog">
+              <div class="pos-search-wrap">
+                <label class="visually-hidden" for="pos-search-input">Buscar producto</label>
                 <div class="input-icon">
-                  <span class="input-icon-addon"><i class="ti ti-search"></i></span>
-                  <input type="text" id="pos-search-input" class="form-control form-control-lg" placeholder="Buscar producto por nombre o código de barras (F2)…" autocomplete="off" spellcheck="false">
+                  <span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span>
+                  <input type="text" id="pos-search-input" class="form-control form-control-lg pos-search-input" placeholder="Nombre o código de barras…" autocomplete="off" spellcheck="false">
                 </div>
-                <div id="pos-categories-container" class="d-flex flex-nowrap gap-2 mt-2 overflow-x-auto pb-2"></div>
               </div>
-            <!-- Lista de resultados -->
-            <div class="card-body flex-fill" style="overflow-y: auto;" id="pos-search-results">
-              <div class="text-center py-5 text-secondary">Use el buscador superior o escanee un código de barras.</div>
+              <div id="pos-categories-container" class="pos-categories" role="toolbar" aria-label="Filtrar por categoría"></div>
+              <div class="pos-results" id="pos-search-results">
+                <div class="pos-empty">
+                  <i class="ti ti-scan" aria-hidden="true"></i>
+                  <p>Escanea un producto o escribe para buscar en el catálogo.</p>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </section>
 
-        <!-- Columna del Carrito de compra -->
-        <div class="col-lg-5">
-          <div class="card" style="height: 600px; display: flex; flex-direction: column;">
-            <div class="card-header"><h3 class="card-title">Carrito de Venta</h3></div>
-            <!-- Items del carrito -->
-            <div class="card-body flex-fill p-0" style="overflow-y: auto;" id="pos-cart-items">
-              <div class="text-center py-5 text-secondary">El carrito está vacío.</div>
+          <section class="pos-panel pos-panel--sale" aria-labelledby="pos-sale-heading">
+            <div class="pos-panel__head pos-panel__head--sale">
+              <div>
+                <p class="pos-panel__step">Paso 2</p>
+                <h2 class="pos-panel__title" id="pos-sale-heading">Cobrar venta</h2>
+                <p class="pos-panel__hint">Revisa los ítems y presiona cobrar cuando el cliente pague.</p>
+              </div>
+              <span class="pos-cart-count" id="pos-cart-count" aria-live="polite">0 productos</span>
             </div>
-            <!-- Resumen de valores -->
-            <div class="card-body border-top py-3">
-              <div class="d-flex justify-content-between mb-1">
-                <span class="text-secondary">Subtotal:</span>
-                <span id="pos-subtotal" class="fw-semibold">$ 0</span>
+            <div class="pos-panel__body pos-panel__body--sale">
+              <div class="pos-cart-scroll" id="pos-cart-items">
+                <div class="pos-empty pos-empty--compact">
+                  <i class="ti ti-shopping-cart" aria-hidden="true"></i>
+                  <p>Aún no hay productos en esta venta.</p>
+                </div>
               </div>
-              <div class="d-flex justify-content-between mb-1">
-                <span class="text-secondary">Descuento:</span>
-                <span id="pos-descuento" class="fw-semibold text-danger">-$ 0</span>
+              <div class="pos-totals">
+                <div class="pos-totals__row">
+                  <span>Subtotal</span>
+                  <span id="pos-subtotal" class="pos-totals__val">$ 0</span>
+                </div>
+                <div class="pos-totals__row pos-totals__row--muted">
+                  <span>Descuento</span>
+                  <span id="pos-descuento" class="pos-totals__val text-danger">−$ 0</span>
+                </div>
+                <div class="pos-totals__row pos-totals__row--muted">
+                  <span>IVA</span>
+                  <span id="pos-iva" class="pos-totals__val">$ 0</span>
+                </div>
+                <div class="pos-totals__grand">
+                  <span>Total a cobrar</span>
+                  <span id="pos-total" class="pos-totals__grand-val">$ 0</span>
+                </div>
+                <button type="button" id="pos-checkout-btn" class="btn btn-primary btn-lg w-100 pos-checkout-btn" disabled>
+                  <i class="ti ti-cash me-2" aria-hidden="true"></i>Cobrar venta
+                </button>
               </div>
-              <div class="d-flex justify-content-between mb-1">
-                <span class="text-secondary">IVA (19%):</span>
-                <span id="pos-iva" class="fw-semibold">$ 0</span>
-              </div>
-              <div class="d-flex justify-content-between border-top pt-2 mb-3">
-                <span class="h3 mb-0">TOTAL:</span>
-                <span id="pos-total" class="h2 mb-0 text-primary">$ 0</span>
-              </div>
-              <button id="pos-checkout-btn" class="btn btn-primary w-100 btn-lg" disabled>
-                <i class="ti ti-credit-card me-2"></i> Cobrar y Generar Recibo
-              </button>
             </div>
-          </div>
+          </section>
         </div>
       </div>
-    </div>
 
     <!-- Modal Editar Precio del Item (Price Override) -->
     <div class="modal modal-blur fade" id="modal-override" tabindex="-1" role="dialog" aria-hidden="true">
@@ -333,8 +381,8 @@ export async function initPos(container) {
       </div>
     </div>
 
-    <!-- Área de Impresión del Ticket de Venta -->
-    <div id="print-receipt-area" class="d-none d-print-block" style="font-family: monospace; font-size: 12px; width: 300px; padding: 10px;"></div>
+    <!-- Área de impresión ticket POS (80mm) -->
+    <div id="print-receipt-area" class="pos-receipt-print-host d-none d-print-block" aria-hidden="true"></div>
   `;
 
   // Variables y Modales
@@ -414,7 +462,7 @@ export async function initPos(container) {
   const searchProducts = async () => {
     const q = searchInput.value.trim();
 
-    resultsContainer.innerHTML = `<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>`;
+    resultsContainer.innerHTML = `<div class="pos-empty"><div class="spinner-border text-primary" role="status" aria-label="Buscando"></div></div>`;
 
     try {
       // Buscar productos activos que coincidan con la consulta en la sede actual
@@ -429,7 +477,12 @@ export async function initPos(container) {
       });
 
       if (filtered.length === 0) {
-        resultsContainer.innerHTML = `<div class="text-center py-5 text-secondary">No se encontraron productos coincidentes.</div>`;
+        resultsContainer.innerHTML = `
+          <div class="pos-empty">
+            <i class="ti ti-search-off" aria-hidden="true"></i>
+            <p>No hay productos con ese nombre o código en esta sede.</p>
+          </div>
+        `;
         return;
       }
 
@@ -495,16 +548,29 @@ export async function initPos(container) {
 
   searchInput.addEventListener('input', searchProducts);
 
+  if (posKeydownHandler) {
+    document.removeEventListener('keydown', posKeydownHandler);
+  }
+  posKeydownHandler = (e) => {
+    if (e.key !== 'F2') return;
+    const input = document.getElementById('pos-search-input');
+    if (!input) return;
+    e.preventDefault();
+    input.focus();
+    input.select();
+  };
+  document.addEventListener('keydown', posKeydownHandler);
+
   const renderCategoryButtons = () => {
     const catsContainer = document.getElementById('pos-categories-container');
     if (!catsContainer) return;
 
-    const allBtnClass = selectedCategoryId === null ? 'btn-primary' : 'btn-outline-secondary';
-    let buttonsHtml = `<button class="btn btn-xs ${allBtnClass} btn-cat-filter px-2" data-id="all">Todos</button>`;
+    const allBtnClass = selectedCategoryId === null ? 'pos-cat-pill is-active' : 'pos-cat-pill';
+    let buttonsHtml = `<button type="button" class="${allBtnClass} btn-cat-filter" data-id="all">Todos</button>`;
 
     categories.forEach(c => {
-      const btnClass = selectedCategoryId === c.id ? 'btn-primary' : 'btn-outline-secondary';
-      buttonsHtml += `<button class="btn btn-xs ${btnClass} btn-cat-filter px-2" data-id="${c.id}">${c.nombre}</button>`;
+      const btnClass = selectedCategoryId === c.id ? 'pos-cat-pill is-active' : 'pos-cat-pill';
+      buttonsHtml += `<button type="button" class="${btnClass} btn-cat-filter" data-id="${c.id}">${c.nombre}</button>`;
     });
 
     catsContainer.innerHTML = buttonsHtml;
@@ -558,80 +624,87 @@ export async function initPos(container) {
     renderCart();
   }
 
+  function updateCartCount() {
+    const badge = document.getElementById('pos-cart-count');
+    if (!badge) return;
+    const units = cart.reduce((sum, item) => sum + item.cantidad, 0);
+    badge.textContent = units === 1 ? '1 producto' : `${units} productos`;
+  }
+
   function renderCart() {
     const cartContainer = document.getElementById('pos-cart-items');
     const checkoutBtn = document.getElementById('pos-checkout-btn');
 
     if (cart.length === 0) {
-      cartContainer.innerHTML = `<div class="text-center py-5 text-secondary">El carrito está vacío.</div>`;
+      cartContainer.innerHTML = `
+        <div class="pos-empty pos-empty--compact">
+          <i class="ti ti-shopping-cart" aria-hidden="true"></i>
+          <p>Aún no hay productos en esta venta.</p>
+        </div>
+      `;
       checkoutBtn.disabled = true;
       updateTotals(0, 0, 0, 0);
+      updateCartCount();
       return;
     }
 
     checkoutBtn.disabled = false;
     const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
-    cartContainer.className = "card-body flex-fill p-3";
     cartContainer.innerHTML = cart.map((item, idx) => {
-      const imgHtml = item.imagenUrl 
-        ? `<img src="${item.imagenUrl}" class="avatar avatar-md rounded" style="object-fit: cover;" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'24\\' height=\\'24\\' fill=\\'none\\' stroke=\\'%23ccc\\' stroke-width=\\'2\\'><rect width=\\'20\\' height=\\'20\\' x=\\'2\\' y=\\'2\\' rx=\\'2\\'/><circle cx=\\'9\\' cy=\\'9\\' r=\\'2\\'/><path d=\\'m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\\'/></svg>';">` 
-        : `<span class="avatar avatar-md rounded bg-secondary-lt fw-bold">${item.nombre.charAt(0).toUpperCase()}</span>`;
+      const initial = item.nombre.charAt(0).toUpperCase();
+      const mediaHtml = item.imagenUrl
+        ? `<img src="${item.imagenUrl}" class="pos-cart-line__img" alt="" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
+           <span class="pos-cart-line__fallback" hidden aria-hidden="true">${initial}</span>`
+        : `<span class="pos-cart-line__fallback" aria-hidden="true">${initial}</span>`;
+
+      const qtyControl = item.tieneNumeroSerie
+        ? `<span class="pos-qty-fixed" aria-label="Cantidad fija">1 ud.</span>`
+        : `
+          <div class="pos-qty-stepper" role="group" aria-label="Cantidad de ${item.nombre}">
+            <button type="button" class="pos-qty-btn btn-dec-qty" data-idx="${idx}" aria-label="Quitar una unidad">−</button>
+            <input type="number" class="pos-qty-input input-qty-cart" data-idx="${idx}" value="${item.cantidad}" min="1" inputmode="numeric" aria-label="Cantidad">
+            <button type="button" class="pos-qty-btn btn-inc-qty" data-idx="${idx}" aria-label="Agregar una unidad">+</button>
+          </div>
+        `;
 
       return `
-        <div class="card mb-2 shadow-sm border-light animate__animated animate__fadeIn">
-          <div class="card-body p-3">
-            <div class="row align-items-start g-3">
-              <!-- Imagen -->
-              <div class="col-auto">
-                ${imgHtml}
+        <article class="pos-cart-line">
+          <div class="pos-cart-line__media">${mediaHtml}</div>
+          <div class="pos-cart-line__body">
+            <div class="pos-cart-line__head">
+              <h3 class="pos-cart-line__name" title="${item.nombre}">${item.nombre}</h3>
+              <span class="pos-cart-line__subtotal">${formatter.format(item.subtotal)}</span>
+            </div>
+            <div class="pos-cart-line__unit">
+              ${formatter.format(item.precioModificado)} c/u
+              ${item.descuentoPct > 0 ? `<span class="pos-cart-line__disc">−${item.descuentoPct}%</span>` : ''}
+            </div>
+            <div class="pos-cart-line__foot">
+              <div class="pos-cart-line__qty">
+                <span class="pos-cart-line__qty-label">Cant.</span>
+                ${qtyControl}
               </div>
-              
-              <!-- Info del Item -->
-              <div class="col">
-                <div class="font-weight-bold text-dark text-truncate" style="max-width: 170px;" title="${item.nombre}">${item.nombre}</div>
-                <div class="text-secondary small mt-1">
-                  ${formatter.format(item.precioModificado)} 
-                  ${item.descuentoPct > 0 ? `<span class="badge bg-red-lt ms-1">-${item.descuentoPct}%</span>` : ''}
-                </div>
-                <div class="d-flex align-items-center mt-2">
-                  <span class="text-muted small me-2">Cant:</span>
-                  ${item.tieneNumeroSerie ? `
-                    <span class="badge bg-secondary-lt fw-bold px-2 py-1">1</span>
-                  ` : `
-                    <div class="input-group input-group-sm" style="width: 80px;">
-                      <button class="btn btn-outline-secondary btn-icon btn-sm py-0 px-1 btn-dec-qty" data-idx="${idx}" type="button" style="height: 24px; width: 24px; line-height: 1;" aria-label="Disminuir cantidad">-</button>
-                      <input type="number" class="form-control text-center p-0 fw-bold bg-white text-dark input-qty-cart" data-idx="${idx}" value="${item.cantidad}" min="0" style="height: 24px; font-size: 0.85rem; border-left: 0; border-right: 0;">
-                      <button class="btn btn-outline-secondary btn-icon btn-sm py-0 px-1 btn-inc-qty" data-idx="${idx}" type="button" style="height: 24px; width: 24px; line-height: 1;" aria-label="Aumentar cantidad">+</button>
-                    </div>
-                  `}
-                </div>
-                
-                ${item.tieneNumeroSerie ? `
-                  <div class="mt-2">
-                    <div class="input-icon">
-                      <span class="input-icon-addon"><i class="ti ti-barcode text-secondary" style="font-size: 0.8rem;"></i></span>
-                      <input type="text" class="form-control form-control-sm input-imei-cart" data-idx="${idx}" placeholder="Ingresar IMEI/Serie…" value="${item.imei || ''}" required spellcheck="false">
-                    </div>
-                  </div>
-                ` : ''}
-              </div>
-              
-              <!-- Total y Botones -->
-              <div class="col-auto text-end d-flex flex-column align-items-end" style="min-height: 70px; justify-content: space-between;">
-                <div class="font-weight-bold text-primary">${formatter.format(item.subtotal)}</div>
-                <div class="btn-list flex-nowrap mt-2">
-                  <button class="btn btn-icon btn-sm btn-outline-secondary btn-override-item" data-idx="${idx}" title="Descuento / Precio" aria-label="Descuento o precio personalizado">
-                    <i class="ti ti-edit"></i>
-                  </button>
-                  <button class="btn btn-icon btn-sm btn-outline-danger btn-remove-item" data-idx="${idx}" title="Eliminar" aria-label="Eliminar ítem del carrito">
-                    <i class="ti ti-trash"></i>
-                  </button>
-                </div>
+              <div class="pos-cart-line__actions">
+                <button type="button" class="pos-cart-line__action btn-override-item" data-idx="${idx}" title="Cambiar precio o descuento" aria-label="Cambiar precio o descuento">
+                  <i class="ti ti-edit" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="pos-cart-line__action pos-cart-line__action--danger btn-remove-item" data-idx="${idx}" title="Quitar producto" aria-label="Quitar producto">
+                  <i class="ti ti-trash" aria-hidden="true"></i>
+                </button>
               </div>
             </div>
+            ${item.tieneNumeroSerie ? `
+              <div class="pos-cart-line__imei">
+                <label class="visually-hidden" for="imei-${idx}">IMEI o serie</label>
+                <div class="input-icon input-icon-sm">
+                  <span class="input-icon-addon"><i class="ti ti-barcode" aria-hidden="true"></i></span>
+                  <input type="text" id="imei-${idx}" class="form-control form-control-sm input-imei-cart" data-idx="${idx}" placeholder="IMEI o número de serie" value="${item.imei || ''}" required spellcheck="false">
+                </div>
+              </div>
+            ` : ''}
           </div>
-        </div>
+        </article>
       `;
     }).join('');
 
@@ -733,6 +806,7 @@ export async function initPos(container) {
     const totalFinal = (subtotalTotal - descTotal) + ivaTotal;
 
     updateTotals(subtotalTotal, descTotal, ivaTotal, totalFinal);
+    updateCartCount();
   }
 
   function updateTotals(sub, desc, iva, tot) {
@@ -1084,7 +1158,8 @@ export async function initPos(container) {
       modalCheckout.hide();
       
       // Mostrar ticket para impresión
-      renderPrintReceipt(res, body);
+      const itemsVendidos = [...cart];
+      renderPrintReceipt(res, body, itemsVendidos);
 
       // Limpiar carrito
       cart = [];
@@ -1100,51 +1175,32 @@ export async function initPos(container) {
     }
   });
 
-  function renderPrintReceipt(res, body) {
+  function renderPrintReceipt(res, body, items) {
     const area = document.getElementById('print-receipt-area');
-    const date = new Date().toLocaleString();
-    const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+    const sedeActual = sedes.find(s => s.id === currentSedeId);
+    const cliente = body.clienteId
+      ? clientes.find((c) => String(c.id) === String(body.clienteId))
+      : null;
 
-    area.innerHTML = `
-      <div style="text-align: center; margin-bottom: 10px;">
-        <h3 style="margin: 0;">TechStore Colombia</h3>
-        <p style="margin: 2px 0; font-size: 10px;">NIT: 901.456.789-0<br>Sede: ${usuario.sedeNombre}</p>
-        <p style="margin: 2px 0;">----------------------------</p>
-      </div>
-      <div>
-        <p style="margin: 2px 0;"><strong>FACTURA:</strong> ${res.numeroFactura}</p>
-        <p style="margin: 2px 0;"><strong>FECHA:</strong> ${date}</p>
-        <p style="margin: 2px 0;"><strong>CAJERO:</strong> ${usuario.nombre}</p>
-        <p style="margin: 2px 0;">----------------------------</p>
-      </div>
-      <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
-        <thead>
-          <tr style="border-bottom: 1px dashed #000;">
-            <th style="text-align: left;">Art.</th>
-            <th style="text-align: center;">Cant.</th>
-            <th style="text-align: right;">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${cart.map(item => `
-            <tr>
-              <td>${item.nombre}</td>
-              <td style="text-align: center;">${item.cantidad}</td>
-              <td style="text-align: right;">${formatter.format(item.subtotal)}</td>
-            </tr>
-            ${item.imei ? `<tr><td colspan="3" style="font-size: 9px; color: #555;">IMEI: ${item.imei}</td></tr>` : ''}
-          `).join('')}
-        </tbody>
-      </table>
-      <div style="margin-top: 10px; font-size: 11px;">
-        <p style="margin: 2px 0; text-align: right;"><strong>Subtotal:</strong> ${formatter.format(body.subtotal)}</p>
-        <p style="margin: 2px 0; text-align: right;"><strong>Descuento:</strong> -${formatter.format(body.descuentoTotal)}</p>
-        <p style="margin: 2px 0; text-align: right;"><strong>${cobrarIva ? `IVA (${(ivaPct * 100).toFixed(0)}%):` : 'IVA (Exento):'}</strong> ${formatter.format(body.iva)}</p>
-        <p style="margin: 2px 0; text-align: right; font-size: 13px;"><strong>TOTAL:</strong> ${formatter.format(body.total)}</p>
-        <p style="margin: 2px 0;">----------------------------</p>
-        <p style="margin: 2px 0; text-align: center; font-size: 10px;">¡Gracias por su compra!<br>Garantía directa según políticas.</p>
-      </div>
-    `;
+    area.innerHTML = renderPosReceipt({
+      empresaConfig,
+      sedeNombre: sedeActual?.nombre || usuario.sedeNombre || '',
+      sedeDireccion: sedeActual?.direccion || '',
+      cajeroNombre: usuario.nombre,
+      clienteNombre: cliente?.nombre || '',
+      clienteDocumento: cliente?.documento || '',
+      clienteDireccion: cliente?.direccion || '',
+      numeroFactura: res.numeroFactura,
+      fecha: new Date(),
+      items,
+      subtotal: body.subtotal,
+      descuentoTotal: body.descuentoTotal,
+      iva: body.iva,
+      total: body.total,
+      cobrarIva,
+      pagos: body.pagos || [],
+      esCredito: body.esCredito
+    });
   }
 
   if (isAdmin) {
@@ -1164,4 +1220,8 @@ export async function initPos(container) {
 
 export function destroyPos() {
   destroyBarcodeScanner();
+  if (posKeydownHandler) {
+    document.removeEventListener('keydown', posKeydownHandler);
+    posKeydownHandler = null;
+  }
 }

@@ -1,5 +1,6 @@
 const { Caja, EgresoCaja, CategoriaEgreso, Usuario, ConfiguracionSistema, Sede, sequelize } = require('../models');
 const { Op } = require('sequelize');
+const { resolveQuerySede } = require('../utils/sede');
 
 function getLocalDateStr(date = new Date()) {
   const d = new Date(date);
@@ -17,7 +18,7 @@ exports.aperturaCaja = async (req, res, next) => {
     const sedeId = bodySedeId || req.usuario.sedeId;
 
     if (!sedeId) {
-      return res.status(400).json({ error: 'El usuario debe pertenecer a una sede para abrir caja.' });
+      return res.status(400).json({ error: 'Debe seleccionar la sede para abrir caja.' });
     }
 
     if (montoApertura === undefined || parseFloat(montoApertura) < 0) {
@@ -103,7 +104,10 @@ exports.egresoCaja = async (req, res, next) => {
       }
 
       // Buscar administrador que coincida con la contraseña/PIN
-      const administradores = await Usuario.findAll({ where: { rol: 'admin', activo: true }, transaction });
+      const administradores = await Usuario.findAll({
+        where: { rol: { [Op.in]: ['admin', 'superadmin'] }, activo: true },
+        transaction
+      });
       let pinValido = false;
 
       for (const admin of administradores) {
@@ -304,7 +308,7 @@ exports.getHistorialCajas = async (req, res, next) => {
     const { sede, desde, hasta } = req.query;
     const where = {};
     
-    const querySedeId = sede || (req.usuario.rol !== 'admin' ? req.usuario.sedeId : null);
+    const querySedeId = resolveQuerySede(sede, req.usuario);
     if (querySedeId) {
       where.sedeId = querySedeId;
     }

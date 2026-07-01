@@ -1,9 +1,10 @@
 const { Empleado, Sede } = require('../models');
+const { isGlobalRole } = require('../utils/sede');
 
 exports.getEmpleados = async (req, res, next) => {
   try {
     const where = {};
-    if (req.usuario.rol !== 'admin') {
+    if (!isGlobalRole(req.usuario.rol)) {
       where.sedeId = req.usuario.sedeId;
     }
     const empleados = await Empleado.findAll({

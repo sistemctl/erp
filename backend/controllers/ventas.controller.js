@@ -17,6 +17,7 @@ const {
   sequelize
 } = require('../models');
 const { Op } = require('sequelize');
+const { resolveQuerySede } = require('../utils/sede');
 
 exports.procesarVenta = async (req, res, next) => {
   const transaction = await sequelize.transaction();
@@ -88,7 +89,10 @@ exports.procesarVenta = async (req, res, next) => {
         return res.status(401).json({ error: 'La transacción contiene un descuento alto o precio bajo costo. Requiere PIN del Administrador.' });
       }
 
-      const admins = await Usuario.findAll({ where: { rol: 'admin', activo: true }, transaction });
+      const admins = await Usuario.findAll({
+        where: { rol: { [Op.in]: ['admin', 'superadmin'] }, activo: true },
+        transaction
+      });
       let pinValido = false;
 
       for (const admin of admins) {
@@ -386,7 +390,7 @@ exports.getVentas = async (req, res, next) => {
     const { sede, desde, hasta, cliente, usuario, buscar } = req.query;
     const where = {};
 
-    const querySedeId = sede || (req.usuario.rol !== 'admin' ? req.usuario.sedeId : null);
+    const querySedeId = resolveQuerySede(sede, req.usuario);
     if (querySedeId) {
       where.sedeId = querySedeId;
     }

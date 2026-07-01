@@ -1,4 +1,37 @@
 const { Sede, Usuario, ConfiguracionSistema } = require('../models');
+const {
+  clampPort,
+  buildAppUrl,
+  updateEnvPort,
+  DEFAULT_PORT,
+  MIN_PORT,
+  MAX_PORT
+} = require('../utils/server-config');
+const { normalizeLogoUrl } = require('../utils/branding-url');
+const { getPublicOrigin } = require('../utils/public-url');
+
+function attachServidorMeta(configJson, req) {
+  const data = configJson?.toJSON ? configJson.toJSON() : { ...configJson };
+  if (data.logoUrl) data.logoUrl = normalizeLogoUrl(data.logoUrl);
+  const puertoActivo = parseInt(req.app.get('puertoActivo'), 10) || clampPort(process.env.PORT) || DEFAULT_PORT;
+  const puertoConfigurado = clampPort(data.puertoServidor) || DEFAULT_PORT;
+  const urlLocal = buildAppUrl(puertoActivo);
+  const urlPublica = getPublicOrigin(req);
+  return {
+    ...data,
+    puertoServidor: puertoConfigurado,
+    servidor: {
+      puertoActivo,
+      puertoConfigurado,
+      urlActiva: urlPublica || urlLocal,
+      urlLocal,
+      urlPublica,
+      urlConfigurada: buildAppUrl(puertoConfigurado),
+      requiereReinicio: puertoActivo !== puertoConfigurado,
+      tunelActivo: Boolean(urlPublica)
+    }
+  };
+}
 
 // --- SEDES ---
 
@@ -92,6 +125,23 @@ exports.getUsuarios = async (req, res, next) => {
     const usuarios = await Usuario.findAll({
       attributes: ['id', 'nombre', 'email', 'rol', 'sedeId', 'activo', 'createdAt'],
       include: [{ model: Sede, as: 'sede', attributes: ['nombre'] }],
+      order: [['nombre', 'ASC']]
+    });
+    return res.json(usuarios);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getUsuariosOperativos = async (req, res, next) => {
+  try {
+    const { rol } = req.query;
+    const where = { activo: true };
+    if (rol) where.rol = rol;
+
+    const usuarios = await Usuario.findAll({
+      where,
+      attributes: ['id', 'nombre', 'rol', 'sedeId', 'email'],
       order: [['nombre', 'ASC']]
     });
     return res.json(usuarios);
@@ -222,7 +272,21 @@ exports.deleteUsuario = async (req, res, next) => {
   }
 };
 
-// --- CONFIGURACION SISTEMA ---
+/** Datos públicos de marca y apariencia para pantalla de login (sin autenticación). */
+exports.getBranding = async (req, res, next) => {
+  try {
+    const config = await ConfiguracionSistema.findOne({
+      attributes: ['empresa', 'logoUrl', 'temaInterfaz']
+    });
+    return res.json({
+      empresa: config?.empresa || 'ERP',
+      logoUrl: normalizeLogoUrl(config?.logoUrl) || null,
+      temaInterfaz: config?.temaInterfaz || null
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 exports.getSistemaConfig = async (req, res, next) => {
   try {
@@ -238,10 +302,20 @@ exports.getSistemaConfig = async (req, res, next) => {
         egresoMaximoSinPin: 50000.00,
         notificacionesActivas: false,
         ivaDefecto: 19.00,
-        cobrarIvaPos: true
+        cobrarIvaPos: true,
+        nominaFrecuenciaDefault: 'quincenal',
+        nominaDiaCorteQuincena: 15,
+        nominaDiaPago1: 15,
+        nominaDiaPago2: 30,
+        puertoServidor: DEFAULT_PORT,
       });
+    } else if (config.logoUrl) {
+      const normalized = normalizeLogoUrl(config.logoUrl);
+      if (normalized && normalized !== config.logoUrl) {
+        await config.update({ logoUrl: normalized });
+      }
     }
-    return res.json(config);
+    return res.json(attachServidorMeta(config, req));
   } catch (error) {
     next(error);
   }
@@ -251,12 +325,35 @@ exports.updateSistemaConfig = async (req, res, next) => {
   try {
     let config = await ConfiguracionSistema.findOne();
     let valorAnterior = {};
+    const payload = { ...req.body };
+    let requiereReinicio = false;
+    let puertoNuevo = null;
+
+    if (payload.logoUrl !== undefined) {
+      payload.logoUrl = normalizeLogoUrl(payload.logoUrl);
+    }
+
+    if (payload.puertoServidor !== undefined && payload.puertoServidor !== null && payload.puertoServidor !== '') {
+      const puerto = clampPort(payload.puertoServidor);
+      if (!puerto) {
+        return res.status(400).json({
+          error: `Puerto inválido. Use un número entre ${MIN_PORT} y ${MAX_PORT}.`
+        });
+      }
+      payload.puertoServidor = puerto;
+      const puertoActivo = parseInt(req.app.get('puertoActivo'), 10) || clampPort(process.env.PORT) || DEFAULT_PORT;
+      if (puerto !== puertoActivo) {
+        updateEnvPort(puerto);
+        requiereReinicio = true;
+        puertoNuevo = puerto;
+      }
+    }
 
     if (!config) {
-      config = await ConfiguracionSistema.create(req.body);
+      config = await ConfiguracionSistema.create(payload);
     } else {
       valorAnterior = config.toJSON();
-      await config.update(req.body);
+      await config.update(payload);
     }
 
     if (req.logAudit) {
@@ -269,7 +366,13 @@ exports.updateSistemaConfig = async (req, res, next) => {
       });
     }
 
-    return res.json(config);
+    const response = attachServidorMeta(config, req);
+    if (requiereReinicio) {
+      response.requiereReinicio = true;
+      response.mensajeReinicio = `Reinicie el servidor para aplicar el puerto ${puertoNuevo}. Luego abra ${buildAppUrl(puertoNuevo)}`;
+    }
+
+    return res.json(response);
   } catch (error) {
     next(error);
   }
@@ -286,7 +389,7 @@ exports.exportarBackup = async (req, res, next) => {
       'CuentaPorCobrar', 'Abono', 'Cotizacion', 'ItemCotizacion', 'OrdenReparacion', 
       'FotoReparacion', 'RepuestoOrden', 'RentabilidadReparacion', 'TradeIn', 
       'CategoriaEgreso', 'Caja', 'EgresoCaja', 'Nomina', 'Proveedor', 
-      'OrdenCompra', 'ItemOrdenCompra', 'MovimientoInventario', 'Notificacion', 
+      'OrdenCompra', 'ItemOrdenCompra', 'PagoCompra', 'MovimientoInventario', 'Notificacion', 
       'AuditLog', 'ConfiguracionSistema'
     ];
 
@@ -316,7 +419,7 @@ exports.importarBackup = async (req, res, next) => {
       'CuentaPorCobrar', 'Abono', 'Cotizacion', 'ItemCotizacion', 'OrdenReparacion', 
       'FotoReparacion', 'RepuestoOrden', 'RentabilidadReparacion', 'TradeIn', 
       'CategoriaEgreso', 'Caja', 'EgresoCaja', 'Nomina', 'Proveedor', 
-      'OrdenCompra', 'ItemOrdenCompra', 'MovimientoInventario', 'Notificacion', 
+      'OrdenCompra', 'ItemOrdenCompra', 'PagoCompra', 'MovimientoInventario', 'Notificacion', 
       'AuditLog', 'ConfiguracionSistema'
     ];
 

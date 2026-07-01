@@ -1,5 +1,6 @@
 const { CuentaPorCobrar, Abono, Factura, Venta, Cliente, Sede, Usuario, Caja, sequelize } = require('../models');
 const { Op } = require('sequelize');
+const { resolveQuerySede } = require('../utils/sede');
 
 // --- GET ALL CUENTAS POR COBRAR (CARTERA) ---
 exports.getCartera = async (req, res, next) => {
@@ -7,7 +8,7 @@ exports.getCartera = async (req, res, next) => {
     const { sede, cliente, estado, morosidad } = req.query;
     const where = {};
 
-    const querySedeId = sede || (req.usuario.rol !== 'admin' ? req.usuario.sedeId : null);
+    const querySedeId = resolveQuerySede(sede, req.usuario);
     
     const includeFacturaWhere = {};
     if (querySedeId) {
@@ -87,8 +88,24 @@ exports.registrarAbonoCartera = async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const { monto, metodo, observaciones } = req.body;
-    const sedeId = req.usuario.sedeId;
+    const { monto, metodo, observaciones, sedeId: bodySedeId } = req.body;
+
+    const cpc = await CuentaPorCobrar.findByPk(id, {
+      include: [
+        { model: Factura, as: 'factura' }
+      ],
+      transaction
+    });
+
+    if (!cpc) {
+      return res.status(404).json({ error: 'Cuenta por cobrar no encontrada.' });
+    }
+
+    const sedeId = bodySedeId || req.usuario.sedeId || cpc.factura?.sedeId;
+    if (!sedeId) {
+      return res.status(400).json({ error: 'Debe especificar la sede para registrar el abono de cartera.' });
+    }
+
     const usuarioId = req.usuario.userId;
 
     if (!monto || parseFloat(monto) <= 0 || !metodo) {
@@ -105,13 +122,7 @@ exports.registrarAbonoCartera = async (req, res, next) => {
       return res.status(400).json({ error: 'Debe abrir caja antes de registrar abonos de cartera.' });
     }
 
-    // 2. Buscar la cuenta por cobrar
-    const cpc = await CuentaPorCobrar.findByPk(id, {
-      include: [
-        { model: Factura, as: 'factura' }
-      ],
-      transaction
-    });
+    // 2. Buscar la cuenta por cobrar (ya cargada arriba)
 
     if (!cpc) {
       return res.status(404).json({ error: 'Cuenta por cobrar no encontrada.' });

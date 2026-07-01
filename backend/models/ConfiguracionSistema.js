@@ -78,6 +78,32 @@ const ConfiguracionSistema = sequelize.define('ConfiguracionSistema', {
   templateEntregado: {
     type: DataTypes.TEXT,
     defaultValue: "Hola {cliente}, se ha entregado tu {equipo} (orden #{orden}). ¡Gracias por confiar en TechStore!"
+  },
+  temaInterfaz: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    defaultValue: null
+  },
+  nominaFrecuenciaDefault: {
+    type: DataTypes.ENUM('quincenal', 'mensual'),
+    defaultValue: 'quincenal'
+  },
+  nominaDiaCorteQuincena: {
+    type: DataTypes.INTEGER,
+    defaultValue: 15
+  },
+  nominaDiaPago1: {
+    type: DataTypes.INTEGER,
+    defaultValue: 15
+  },
+  nominaDiaPago2: {
+    type: DataTypes.INTEGER,
+    defaultValue: 30
+  },
+  puertoServidor: {
+    type: DataTypes.INTEGER,
+    defaultValue: 3000,
+    allowNull: false
   }
 }, {
   tableName: 'ConfiguracionesSistema'

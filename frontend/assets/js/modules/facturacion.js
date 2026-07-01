@@ -1,6 +1,9 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { showConfirm } from '../utils/toast.js';
+import { erpHeader } from '../utils/module-shell.js';
+import { erpAction, erpActions } from '../utils/action-buttons.js';
+import { renderFacturaDocumento, printFacturaDocumento } from '../utils/factura-document.js';
 
 export async function initFacturacion(container) {
   const usuario = getUsuario();
@@ -20,18 +23,15 @@ export async function initFacturacion(container) {
   await loadData();
 
   container.innerHTML = `
-    <div class="container-xl">
-      <div class="page-header d-print-none mb-4">
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title">Módulo de Facturación</h2>
-            <div class="text-secondary mt-1">Consulta, impresión y anulación de facturas de venta y servicio técnico</div>
-          </div>
-        </div>
-      </div>
+    <div class="container-xl erp-module">
+      ${erpHeader({
+        eyebrow: 'Facturación',
+        title: 'Facturas de venta y servicio',
+        subtitle: 'Consulta, impresión y anulación de comprobantes'
+      })}
 
       <!-- Filtros -->
-      <div class="card mb-4 d-print-none">
+      <div class="card mb-4 d-print-none erp-filter-card">
         <div class="card-body">
           <form id="form-filtros-facturacion" class="row g-3">
             <div class="col-md-3">
@@ -99,7 +99,7 @@ export async function initFacturacion(container) {
 
     <!-- Modal Detalle Factura -->
     <div class="modal modal-blur fade" id="modal-detalle-factura" tabindex="-1" role="dialog" aria-hidden="true">
-      <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
         <div class="modal-content" id="detalle-factura-content">
           <!-- Carga dinámica -->
         </div>
@@ -138,18 +138,12 @@ export async function initFacturacion(container) {
           <td class="text-center">
             <span class="badge ${badgeClass} px-2 py-1">${f.estado.toUpperCase()}</span>
           </td>
-          <td class="text-end">
-             <button class="btn btn-outline-primary btn-icon btn-sm btn-ver-factura" data-id="${f.id}" title="Ver Detalle" aria-label="Ver detalle de factura">
-              <i class="ti ti-eye"></i>
-            </button>
-            <button class="btn btn-outline-secondary btn-icon btn-sm btn-pdf-factura" data-id="${f.id}" title="Descargar PDF" aria-label="Descargar PDF de factura">
-              <i class="ti ti-file-text"></i>
-            </button>
-            ${isAdminOrGerente && f.estado !== 'anulada' ? `
-              <button class="btn btn-outline-danger btn-icon btn-sm btn-anular-factura" data-id="${f.id}" title="Anular Factura (Nota Crédito)" aria-label="Anular factura">
-                <i class="ti ti-trash"></i>
-              </button>
-            ` : ''}
+          <td class="text-end erp-td-actions">
+            ${erpActions(`
+              ${erpAction('view', { className: 'btn-ver-factura', attrs: { 'data-id': f.id } })}
+              ${erpAction('pdf', { className: 'btn-pdf-factura', attrs: { 'data-id': f.id } })}
+              ${isAdminOrGerente && f.estado !== 'anulada' ? erpAction('anular', { className: 'btn-anular-factura', attrs: { 'data-id': f.id } }) : ''}
+            `)}
           </td>
         </tr>
       `;
@@ -205,106 +199,39 @@ export async function initFacturacion(container) {
     modalDetalle.show();
 
     try {
-      const f = await apiFetch(`/facturas/${id}`);
-      const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
-
-      const itemsHtml = f.venta ? f.venta.items.map(item => `
-        <tr>
-          <td>${item.producto.nombre}</td>
-          <td class="text-center">${item.cantidad}</td>
-          <td class="text-end">${formatter.format(item.precioModificado)}</td>
-          <td class="text-end">${formatter.format(item.subtotal)}</td>
-        </tr>
-      `).join('') : (f.ordenReparacion ? `
-        <tr>
-          <td>Mano de Obra Técnica: ${f.ordenReparacion.tipoEquipo} ${f.ordenReparacion.marca}</td>
-          <td class="text-center">1</td>
-          <td class="text-end">${formatter.format(f.ordenReparacion.costoManoObra)}</td>
-          <td class="text-end">${formatter.format(f.ordenReparacion.costoManoObra)}</td>
-        </tr>
-        ${f.ordenReparacion.repuestos.map(rep => `
-          <tr>
-            <td>${rep.producto.nombre}</td>
-            <td class="text-center">${rep.cantidad}</td>
-            <td class="text-end">${formatter.format(rep.costoUnitario)}</td>
-            <td class="text-end">${formatter.format(rep.costoUnitario * rep.cantidad)}</td>
-          </tr>
-        `).join('')}
-      ` : '');
-
-      const pagosHtml = f.venta && f.venta.pagos ? f.venta.pagos.map(p => `
-        <div class="badge bg-green-lt p-2 me-2">${p.metodo.toUpperCase()}: ${formatter.format(p.monto)}</div>
-      `).join('') : '<div class="badge bg-secondary-lt p-2">Efectivo</div>';
+      const [f, config] = await Promise.all([
+        apiFetch(`/facturas/${id}`),
+        apiFetch('/config/sistema').catch(() => ({}))
+      ]);
 
       content.innerHTML = `
-        <div class="modal-header">
-          <h5 class="modal-title">Detalle de Factura: <span class="badge bg-blue text-white">${f.numeroFactura}</span></h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <div class="modal-header d-print-none">
+          <h5 class="modal-title">Factura de venta <strong>${f.numeroFactura}</strong></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
         </div>
-        <div class="modal-body">
-          <div class="row mb-3">
-            <div class="col-md-6">
-              <span class="text-secondary small">Cliente:</span>
-              <div class="fw-bold">${f.cliente ? f.cliente.nombre : 'Cliente General'}</div>
-              <div class="text-secondary small">Doc: ${f.cliente ? f.cliente.documento || 'No registrado' : 'N/A'}</div>
-            </div>
-            <div class="col-md-6 text-md-end">
-              <span class="text-secondary small">Sede:</span>
-              <div class="fw-bold">${f.sede ? f.sede.nombre : 'N/A'}</div>
-              <div class="text-secondary small">Fecha: ${new Date(f.createdAt).toLocaleString()}</div>
-            </div>
-          </div>
-
-          <table class="table table-sm table-striped">
-            <thead>
-              <tr>
-                <th>Ítem / Descripción</th>
-                <th class="text-center" style="width: 80px;">Cant</th>
-                <th class="text-end" style="width: 120px;">Precio Unit.</th>
-                <th class="text-end" style="width: 120px;">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsHtml}
-            </tbody>
-          </table>
-
-          <div class="row justify-content-end mt-4">
-            <div class="col-md-5 border p-3 rounded bg-light-lt">
-              <div class="d-flex justify-content-between mb-1">
-                <span>Subtotal:</span>
-                <span>${formatter.format(f.subtotal)}</span>
-              </div>
-              <div class="d-flex justify-content-between mb-1">
-                <span>IVA (19%):</span>
-                <span>${formatter.format(f.iva)}</span>
-              </div>
-              <div class="d-flex justify-content-between border-top pt-2 fw-bold text-primary fs-3">
-                <span>Total:</span>
-                <span>${formatter.format(f.total)}</span>
-              </div>
-            </div>
-          </div>
-
-          <h5 class="mt-4">Métodos de Pago</h5>
-          <div class="d-flex mt-2">
-            ${pagosHtml}
-          </div>
+        <div class="modal-body cot-doc-modal-body">
+          ${renderFacturaDocumento(f, config)}
         </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
-          <button class="btn btn-primary" id="modal-download-pdf"><i class="ti ti-file-text me-1"></i>Descargar PDF</button>
+        <div class="modal-footer d-print-none">
+          <button type="button" class="btn btn-outline-secondary" id="btn-imprimir-factura">
+            <i class="ti ti-printer me-1"></i> Imprimir
+          </button>
+          <button type="button" class="btn btn-primary" id="modal-download-pdf">
+            <i class="ti ti-file-text me-1"></i> Descargar PDF
+          </button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
         </div>
       `;
 
-      document.getElementById('modal-download-pdf').addEventListener('click', () => downloadPdf(f.id));
+      document.getElementById('btn-imprimir-factura')?.addEventListener('click', () => printFacturaDocumento());
+      document.getElementById('modal-download-pdf')?.addEventListener('click', () => downloadPdf(f.id, f.numeroFactura));
     } catch (err) {
       content.innerHTML = `<div class="alert alert-danger m-3">${err.message}</div>`;
     }
   }
 
   // Download PDF Action
-  async function downloadPdf(id) {
+  async function downloadPdf(id, numero) {
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`/api/facturas/${id}/pdf`, {
@@ -317,10 +244,11 @@ export async function initFacturacion(container) {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `factura_${id}.pdf`;
+      a.download = `factura_${numero || id}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
+      window.URL.revokeObjectURL(url);
     } catch (e) {
       alert(e.message);
     }

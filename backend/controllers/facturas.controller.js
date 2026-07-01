@@ -15,10 +15,13 @@ const {
   Caja,
   CuentaPorCobrar,
   Abono,
-  sequelize
+  sequelize,
+  ConfiguracionSistema
 } = require('../models');
 const { Op } = require('sequelize');
 const PDFDocument = require('pdfkit');
+const { resolveQuerySede } = require('../utils/sede');
+const { generarFacturaPDF } = require('../utils/factura-pdf');
 
 // --- GET ALL FACTURAS ---
 exports.getFacturas = async (req, res, next) => {
@@ -26,7 +29,7 @@ exports.getFacturas = async (req, res, next) => {
     const { sede, estado, cliente, desde, hasta, buscar } = req.query;
     const where = {};
 
-    const querySedeId = sede || (req.usuario.rol !== 'admin' ? req.usuario.sedeId : null);
+    const querySedeId = resolveQuerySede(sede, req.usuario);
     if (querySedeId) {
       where.sedeId = querySedeId;
     }
@@ -84,7 +87,8 @@ exports.getFacturaById = async (req, res, next) => {
               as: 'items',
               include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras'] }]
             },
-            { model: PagoVenta, as: 'pagos' }
+            { model: PagoVenta, as: 'pagos' },
+            { model: Usuario, as: 'usuario', attributes: ['nombre'] }
           ]
         },
         {
@@ -94,7 +98,7 @@ exports.getFacturaById = async (req, res, next) => {
             {
               model: RepuestoOrden,
               as: 'repuestos',
-              include: [{ model: Producto, as: 'producto', attributes: ['nombre'] }]
+              include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras'] }]
             }
           ]
         }
@@ -300,7 +304,8 @@ exports.getFacturaPdf = async (req, res, next) => {
               as: 'items',
               include: [{ model: Producto, as: 'producto' }]
             },
-            { model: PagoVenta, as: 'pagos' }
+            { model: PagoVenta, as: 'pagos' },
+            { model: Usuario, as: 'usuario', attributes: ['nombre'] }
           ]
         },
         {
@@ -321,71 +326,13 @@ exports.getFacturaPdf = async (req, res, next) => {
       return res.status(404).json({ error: 'Factura no encontrada.' });
     }
 
-    const doc = new PDFDocument({ margin: 50 });
+    const config = await ConfiguracionSistema.findOne();
+    const doc = new PDFDocument({ size: 'A4', margin: 0 });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=factura_${factura.numeroFactura}.pdf`);
     doc.pipe(res);
 
-    // Header
-    doc.fontSize(20).text('TECHSTORE COLOMBIA S.A.S.', { align: 'center', bold: true });
-    doc.fontSize(10).text(`NIT: 901.456.789-0 | Sede: ${factura.sede.nombre}`, { align: 'center' });
-    doc.text(`Dirección: ${factura.sede.direccion}`, { align: 'center' });
-    doc.moveDown(2);
-
-    // Factura Info
-    doc.fontSize(14).text(`FACTURA DE VENTA: #${factura.numeroFactura}`, { align: 'center', color: '#2563eb' });
-    doc.fontSize(10).text(`Fecha Emisión: ${new Date(factura.createdAt).toLocaleString()}`, { align: 'center' });
-    doc.text(`Fecha Vencimiento: ${new Date(factura.fechaVencimiento).toLocaleDateString()}`, { align: 'center' });
-    doc.text(`Estado: ${factura.estado.toUpperCase()}`, { align: 'center' });
-    doc.moveDown(1.5);
-
-    // Cliente
-    doc.fontSize(12).text('INFORMACIÓN DEL CLIENTE', { underline: true });
-    doc.fontSize(10).text(`Nombre: ${factura.cliente ? factura.cliente.nombre : 'Cliente General'}`);
-    doc.text(`Cédula/NIT: ${factura.cliente ? factura.cliente.documento || 'No registrado' : 'N/A'}`);
-    doc.text(`Teléfono: ${factura.cliente ? factura.cliente.telefono || 'No registrado' : 'N/A'}`);
-    doc.moveDown(1.5);
-
-    // Detalle Items
-    doc.fontSize(12).text('ITEMS FACTURADOS', { underline: true });
-    doc.moveDown(0.5);
-
-    const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
-
-    if (factura.venta) {
-      doc.fontSize(10);
-      doc.text('Producto / Descripción                  Cant      Precio Unit.      Subtotal', { bold: true });
-      doc.text('---------------------------------------------------------------------------------');
-      for (const item of factura.venta.items) {
-        doc.text(`${item.producto.nombre.substring(0, 35).padEnd(40)} ${String(item.cantidad).padStart(4)} ${formatter.format(item.precioModificado).padStart(17)} ${formatter.format(item.subtotal).padStart(15)}`);
-      }
-    } else if (factura.ordenReparacion) {
-      const orden = factura.ordenReparacion;
-      doc.fontSize(10);
-      doc.text('Servicio / Repuesto                     Cant      Precio Unit.      Subtotal', { bold: true });
-      doc.text('---------------------------------------------------------------------------------');
-      // Mano de obra
-      doc.text(`Mano de Obra Técnica: ${orden.tipoEquipo} ${orden.marca}`.substring(0, 40).padEnd(40) + `    1 ${formatter.format(orden.costoManoObra).padStart(17)} ${formatter.format(orden.costoManoObra).padStart(15)}`);
-      // Repuestos
-      for (const rep of orden.repuestos) {
-        doc.text(`${rep.producto.nombre.substring(0, 35).padEnd(40)} ${String(rep.cantidad).padStart(4)} ${formatter.format(rep.costoUnitario).padStart(17)} ${formatter.format(rep.costoUnitario * rep.cantidad).padStart(15)}`);
-      }
-    }
-
-    doc.text('---------------------------------------------------------------------------------');
-    doc.moveDown(1);
-
-    // Totales
-    doc.fontSize(11);
-    doc.text(`Subtotal:  ${formatter.format(factura.subtotal)}`, { align: 'right' });
-    doc.text(`IVA (19%): ${formatter.format(factura.iva)}`, { align: 'right' });
-    doc.fontSize(12).text(`TOTAL A PAGAR: ${formatter.format(factura.total)}`, { align: 'right', bold: true });
-    doc.moveDown(2);
-
-    // Términos
-    doc.fontSize(8);
-    doc.text('Esta factura se asimila en todos sus efectos legales a una letra de cambio según artículo 774 del código de comercio.', { align: 'center' });
-    doc.text('¡Gracias por su compra en TechStore Colombia!', { align: 'center', bold: true });
+    await generarFacturaPDF(doc, factura, config || {});
 
     doc.end();
   } catch (error) {

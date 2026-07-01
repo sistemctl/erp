@@ -1,24 +1,38 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { showConfirm } from '../utils/toast.js';
+import { applyDocumentBranding } from '../utils/branding.js';
+import { renderAparienciaTabHtml, initConfigApariencia } from './config-apariencia.js';
+import { renderAuditLogTabHtml, renderAuditLogModalHtml, initAuditLogTab } from './auditlog.js';
+import { erpHeader } from '../utils/module-shell.js';
+import { erpAction, erpActions } from '../utils/action-buttons.js';
 
 export async function initConfig(container) {
   const usuario = getUsuario();
-  
-  container.innerHTML = `
-    <div class="container-xl">
-      <!-- Encabezado -->
-      <div class="page-header d-print-none mb-4 animate__animated animate__fadeIn">
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title text-primary"><i class="ti ti-settings me-2"></i>Configuración del Sistema</h2>
-            <div class="text-secondary mt-1">Gestión corporativa, control de accesos por roles, límites de seguridad de caja, respaldos y pasarela de mensajería</div>
-          </div>
+  const isSuperadmin = usuario.rol === 'superadmin';
+
+  if (!isSuperadmin) {
+    container.innerHTML = `
+      <div class="container-xl erp-module py-5">
+        <div class="alert alert-danger">
+          <h4 class="alert-title">Acceso denegado</h4>
+          <div class="text-secondary">No tienes permisos para acceder a la configuración del sistema.</div>
         </div>
       </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="container-xl erp-module">
+      ${erpHeader({
+        eyebrow: 'Configuración',
+        title: 'Sistema y accesos',
+        subtitle: 'Empresa, sedes, usuarios, auditoría, respaldos y mensajería'
+      })}
 
       <!-- Cuerpo con Pestañas -->
-      <div class="card shadow-sm border-0 animate__animated animate__fadeInUp">
+      <div class="card">
         <div class="card-header bg-transparent border-bottom">
           <ul class="nav nav-tabs card-header-tabs" data-bs-toggle="tabs" role="tablist">
             <li class="nav-item" role="presentation">
@@ -35,6 +49,12 @@ export async function initConfig(container) {
             </li>
             <li class="nav-item" role="presentation">
               <a href="#tab-config-log" class="nav-link" data-bs-toggle="tab" role="tab"><i class="ti ti-mail-opened me-1"></i> Historial Envíos</a>
+            </li>
+            <li class="nav-item" role="presentation">
+              <a href="#tab-config-apariencia" class="nav-link" data-bs-toggle="tab" role="tab"><i class="ti ti-palette me-1"></i> Apariencia</a>
+            </li>
+            <li class="nav-item" role="presentation">
+              <a href="#tab-config-auditoria" class="nav-link" data-bs-toggle="tab" role="tab"><i class="ti ti-shield-lock me-1"></i> Auditoría</a>
             </li>
             <li class="nav-item" role="presentation">
               <a href="#tab-config-backup" class="nav-link" data-bs-toggle="tab" role="tab"><i class="ti ti-database me-1"></i> Copia de Seguridad</a>
@@ -89,6 +109,41 @@ export async function initConfig(container) {
                     <span class="form-check-label fw-bold">Cobrar e incluir IVA en el Punto de Venta (POS)</span>
                   </label>
                   <small class="text-secondary d-block mt-1">Si se desactiva, el POS no sumará ningún impuesto adicional sobre el precio de venta del producto (se asume que el precio de venta ya incluye el IVA o que la venta no aplica IVA).</small>
+                </div>
+
+                <h4 class="text-secondary border-bottom pb-2 mt-4 mb-2"><i class="ti ti-cash me-1"></i> Nómina y fechas de pago</h4>
+                <div class="col-md-3">
+                  <label class="form-label fw-bold">Frecuencia de pago</label>
+                  <select id="cfg-nomina-frecuencia" class="form-select">
+                    <option value="quincenal">Quincenal (2 pagos al mes)</option>
+                    <option value="mensual">Mensual</option>
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label fw-bold">Día corte 1.ª quincena</label>
+                  <input type="number" id="cfg-nomina-corte" class="form-control" min="1" max="28" required>
+                  <small class="text-secondary">Del 1 a este día cuenta como 1.ª quincena.</small>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label fw-bold">Día pago 1.ª quincena</label>
+                  <input type="number" id="cfg-nomina-pago1" class="form-control" min="1" max="31" required>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label fw-bold">Día pago 2.ª quincena / mensual</label>
+                  <input type="number" id="cfg-nomina-pago2" class="form-control" min="1" max="31" required>
+                  <small class="text-secondary">Segunda quincena o único pago si es mensual.</small>
+                </div>
+
+                <h4 class="text-secondary border-bottom pb-2 mt-4 mb-2"><i class="ti ti-server me-1"></i> Servidor local</h4>
+                <div class="col-md-4">
+                  <label class="form-label fw-bold" for="cfg-puerto">Puerto HTTP</label>
+                  <input type="number" id="cfg-puerto" class="form-control" min="1024" max="65535" step="1" required>
+                  <small class="text-secondary">Rango permitido: 1024–65535. Por defecto 3000.</small>
+                </div>
+                <div class="col-md-8">
+                  <div id="cfg-servidor-estado" class="alert alert-secondary mb-0 h-100 d-flex flex-column justify-content-center">
+                    <span class="text-secondary">Cargando estado del servidor…</span>
+                  </div>
                 </div>
                 
                 <div class="col-12 mt-4">
@@ -232,7 +287,14 @@ export async function initConfig(container) {
               </div>
             </div>
 
-            <!-- TAB 6: COPIA DE SEGURIDAD (BACKUP & RESTORE) -->
+            ${renderAparienciaTabHtml()}
+
+            <!-- TAB: AUDITORÍA -->
+            <div class="tab-pane" id="tab-config-auditoria" role="tabpanel">
+              ${renderAuditLogTabHtml()}
+            </div>
+
+            <!-- TAB: COPIA DE SEGURIDAD (BACKUP & RESTORE) -->
             <div class="tab-pane" id="tab-config-backup" role="tabpanel">
               <div class="row g-4">
                 <div class="col-md-6">
@@ -358,20 +420,43 @@ export async function initConfig(container) {
         </form>
       </div>
     </div>
+
+    ${renderAuditLogModalHtml()}
   `;
 
   // --- VARIABLES ---
   let sedesList = [];
+  let sistemaConfig = {};
   const modalSedeEl = document.getElementById('modal-sede');
   const bootstrapModalSede = new bootstrap.Modal(modalSedeEl);
   const modalUsuarioEl = document.getElementById('modal-usuario');
   const bootstrapModalUsuario = new bootstrap.Modal(modalUsuarioEl);
 
+  function renderServidorEstado(data) {
+    const el = document.getElementById('cfg-servidor-estado');
+    if (!el) return;
+    const srv = data.servidor || {};
+    const activo = srv.puertoActivo ?? data.puertoServidor ?? 3000;
+    const configurado = srv.puertoConfigurado ?? data.puertoServidor ?? 3000;
+    const urlLocal = srv.urlLocal || `http://localhost:${activo}`;
+    const urlPublica = srv.urlPublica || null;
+    const urlActiva = srv.urlActiva || urlPublica || urlLocal;
+    const pendiente = srv.requiereReinicio || activo !== configurado;
+    const tunelHtml = urlPublica
+      ? `<div class="mt-2 small">Túnel activo: <a href="${urlPublica}" target="_blank" rel="noopener">${urlPublica}</a></div>`
+      : `<div class="mt-2 small text-secondary">Cloudflare: <code>cloudflared tunnel --url http://127.0.0.1:${activo}</code></div>`;
+
+    el.className = `alert mb-0 h-100 d-flex flex-column justify-content-center ${pendiente ? 'alert-warning' : 'alert-success'}`;
+    el.innerHTML = pendiente
+      ? `<strong>Reinicio pendiente.</strong> El servidor corre en el puerto <code>${activo}</code> (${urlLocal}). Tras guardar, reinicie con <code>npm run dev</code> para usar el puerto <code>${configurado}</code>.${tunelHtml}`
+      : `<strong>Servidor activo.</strong> Puerto <code>${activo}</code> — <a href="${urlActiva}" target="_blank" rel="noopener">${urlActiva}</a>${urlPublica ? '' : `<br><span class="small text-secondary">Local: ${urlLocal}</span>`}${tunelHtml}`;
+  }
+
   // --- MÉTODOS GENERALES ---
   const loadConfig = async () => {
     try {
       const data = await apiFetch('/config/sistema');
-      
+      sistemaConfig = data;
       // General
       document.getElementById('cfg-empresa').value = data.empresa || '';
       document.getElementById('cfg-nit').value = data.nit || '';
@@ -382,6 +467,12 @@ export async function initConfig(container) {
       document.getElementById('cfg-descuento-max').value = data.descuentoMaximoPct || 15.00;
       document.getElementById('cfg-egreso-max').value = data.egresoMaximoSinPin || 50000;
       document.getElementById('cfg-cobrar-iva').checked = !!data.cobrarIvaPos;
+      document.getElementById('cfg-nomina-frecuencia').value = data.nominaFrecuenciaDefault || 'quincenal';
+      document.getElementById('cfg-nomina-corte').value = data.nominaDiaCorteQuincena ?? 15;
+      document.getElementById('cfg-nomina-pago1').value = data.nominaDiaPago1 ?? 15;
+      document.getElementById('cfg-nomina-pago2').value = data.nominaDiaPago2 ?? 30;
+      document.getElementById('cfg-puerto').value = data.puertoServidor ?? 3000;
+      renderServidorEstado(data);
 
       // Twilio
       document.getElementById('cfg-notif-activas').checked = !!data.notificacionesActivas;
@@ -430,13 +521,11 @@ export async function initConfig(container) {
               ${s.activa ? 'Activa' : 'Inactiva'}
             </span>
           </td>
-          <td class="text-end">
-            <button class="btn btn-sm btn-light btn-edit-sede" data-index="${index}">
-              <i class="ti ti-edit text-primary me-1"></i> Editar
-            </button>
-            <button class="btn btn-sm btn-light btn-delete-sede text-danger" data-id="${s.id}">
-              <i class="ti ti-trash me-1"></i> Borrar
-            </button>
+          <td class="text-end erp-td-actions">
+            ${erpActions(`
+              ${erpAction('edit', { className: 'btn-edit-sede', attrs: { 'data-index': index } })}
+              ${erpAction('delete', { className: 'btn-delete-sede', attrs: { 'data-id': s.id }, label: 'Borrar' })}
+            `)}
           </td>
         </tr>
       `).join('');
@@ -512,13 +601,21 @@ export async function initConfig(container) {
               ${u.activo ? 'Activo' : 'Suspendido'}
             </span>
           </td>
-          <td class="text-end">
-            <button class="btn btn-sm btn-light btn-edit-usuario" data-id="${u.id}" data-nombre="${u.nombre}" data-email="${u.email}" data-rol="${u.rol}" data-sede="${u.sedeId || ''}" data-activo="${u.activo}">
-              <i class="ti ti-edit text-primary me-1"></i> Editar
-            </button>
-            <button class="btn btn-sm btn-light btn-delete-usuario text-danger" data-id="${u.id}">
-              <i class="ti ti-trash me-1"></i> Borrar
-            </button>
+          <td class="text-end erp-td-actions">
+            ${erpActions(`
+              ${erpAction('edit', {
+                className: 'btn-edit-usuario',
+                attrs: {
+                  'data-id': u.id,
+                  'data-nombre': u.nombre,
+                  'data-email': u.email,
+                  'data-rol': u.rol,
+                  'data-sede': u.sedeId || '',
+                  'data-activo': u.activo,
+                },
+              })}
+              ${erpAction('delete', { className: 'btn-delete-usuario', attrs: { 'data-id': u.id }, label: 'Borrar' })}
+            `)}
           </td>
         </tr>
       `).join('');
@@ -644,33 +741,45 @@ export async function initConfig(container) {
       ivaDefecto: parseFloat(document.getElementById('cfg-iva').value),
       descuentoMaximoPct: parseFloat(document.getElementById('cfg-descuento-max').value),
       egresoMaximoSinPin: parseFloat(document.getElementById('cfg-egreso-max').value),
-      cobrarIvaPos: document.getElementById('cfg-cobrar-iva').checked
+      cobrarIvaPos: document.getElementById('cfg-cobrar-iva').checked,
+      nominaFrecuenciaDefault: document.getElementById('cfg-nomina-frecuencia').value,
+      nominaDiaCorteQuincena: parseInt(document.getElementById('cfg-nomina-corte').value, 10),
+      nominaDiaPago1: parseInt(document.getElementById('cfg-nomina-pago1').value, 10),
+      nominaDiaPago2: parseInt(document.getElementById('cfg-nomina-pago2').value, 10),
+      puertoServidor: parseInt(document.getElementById('cfg-puerto').value, 10),
     };
 
     try {
-      await apiFetch('/config/sistema', {
+      const result = await apiFetch('/config/sistema', {
         method: 'PUT',
         body: JSON.stringify(body)
       });
 
-      // Actualizar visualmente la barra lateral y el título del sitio sin recargar
-      const palabras = body.empresa.split(' ');
+      const brand = applyDocumentBranding({
+        empresa: result.empresa || body.empresa,
+        logoUrl: result.logoUrl ?? body.logoUrl
+      });
+
+      const palabras = brand.empresa.split(' ');
       const primeraPalabra = palabras[0] || 'TechStore';
       const restoNombre = palabras.slice(1).join(' ') || '';
       const brandLink = document.querySelector('#sidebar-container .navbar-brand a');
       if (brandLink) {
         brandLink.innerHTML = `
           <div class="d-flex align-items-center">
-            ${body.logoUrl ? `<img src="${body.logoUrl}" alt="${body.empresa}" class="me-2 sidebar-logo">` : ''}
+            ${brand.logoUrl ? `<img src="${brand.logoUrl}" alt="${brand.empresa}" class="me-2 sidebar-logo">` : ''}
             <div>
               <span class="fs-2 fw-bold text-primary">${primeraPalabra}</span> <span class="fs-3 fw-light text-reset">${restoNombre}</span>
             </div>
           </div>
         `;
       }
-      document.title = `${body.empresa} - ERP`;
 
-      alert('Configuración corporativa y de límites actualizada correctamente.');
+      if (result.requiereReinicio) {
+        alert(result.mensajeReinicio || 'Puerto guardado. Reinicie el servidor para aplicar el cambio.');
+      } else {
+        alert('Configuración corporativa y de límites actualizada correctamente.');
+      }
       loadConfig();
     } catch (err) {
       alert(err.message);
@@ -838,7 +947,23 @@ export async function initConfig(container) {
     loadSedes().then(loadUsuarios);
   });
   document.querySelector('a[href="#tab-config-log"]').addEventListener('shown.bs.tab', loadNotificationsLog);
+  document.querySelector('a[href="#tab-config-apariencia"]')?.addEventListener('shown.bs.tab', () => {
+    initConfigApariencia(sistemaConfig.temaInterfaz);
+  });
+  document.querySelector('a[href="#tab-config-auditoria"]')?.addEventListener('shown.bs.tab', () => {
+    initAuditLogTab();
+  });
 
   // Inicialización
   await loadConfig();
+  initConfigApariencia(sistemaConfig.temaInterfaz);
+
+  const configParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  if (configParams.get('tab') === 'auditoria') {
+    const auditTab = document.querySelector('a[href="#tab-config-auditoria"]');
+    if (auditTab) {
+      bootstrap.Tab.getOrCreateInstance(auditTab).show();
+      await initAuditLogTab();
+    }
+  }
 }

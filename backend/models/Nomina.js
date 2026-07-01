@@ -12,7 +12,7 @@ const Nomina = sequelize.define('Nomina', {
     allowNull: false
   },
   periodo: {
-    type: DataTypes.STRING, // Ej: "2026-06-15" (quincenal) o "2026-06" (mensual)
+    type: DataTypes.STRING, // Quincenal: YYYY-MM-15 (1.ª) o YYYY-MM-30 (2.ª)
     allowNull: false
   },
   tipoPeriodo: {

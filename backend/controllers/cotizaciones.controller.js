@@ -1,6 +1,8 @@
-const { Cotizacion, ItemCotizacion, Cliente, Sede, Usuario, Producto, Venta, OrdenReparacion, sequelize } = require('../models');
+const { Cotizacion, ItemCotizacion, Cliente, Sede, Usuario, Producto, Venta, OrdenReparacion, ConfiguracionSistema, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const PDFDocument = require('pdfkit');
+const { resolveQuerySede, resolveActionSede } = require('../utils/sede');
+const { generarCotizacionPDF } = require('../utils/cotizacion-pdf');
 
 // --- GET ALL COTIZACIONES ---
 exports.getCotizaciones = async (req, res, next) => {
@@ -8,7 +10,7 @@ exports.getCotizaciones = async (req, res, next) => {
     const { sede, estado, cliente, desde, hasta, buscar } = req.query;
     const where = {};
 
-    const querySedeId = sede || (req.usuario.rol !== 'admin' ? req.usuario.sedeId : null);
+    const querySedeId = resolveQuerySede(sede, req.usuario);
     if (querySedeId) {
       where.sedeId = querySedeId;
     }
@@ -60,7 +62,7 @@ exports.getCotizacionById = async (req, res, next) => {
         {
           model: ItemCotizacion,
           as: 'items',
-          include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras', 'precioVenta', 'tieneNumeroSerie'] }]
+          include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras', 'precioVenta', 'tieneNumeroSerie', 'tieneIVA'] }]
         }
       ]
     });
@@ -82,9 +84,8 @@ exports.crearCotizacion = async (req, res, next) => {
     const { clienteId, items, fechaVencimiento, notas, sedeId: bodySedeId } = req.body;
     let sedeId = bodySedeId || req.usuario.sedeId;
 
-    if (!sedeId && req.usuario.rol === 'admin') {
-      const firstSede = await Sede.findOne({ transaction });
-      if (firstSede) sedeId = firstSede.id;
+    if (!sedeId) {
+      sedeId = await resolveActionSede(null, req.usuario, Sede, transaction);
     }
 
     if (!sedeId) {
@@ -197,8 +198,12 @@ exports.generarCotizacionPDF = async (req, res, next) => {
       include: [
         { model: Cliente, as: 'cliente' },
         { model: Sede, as: 'sede' },
-        { model: Usuario, as: 'usuario' },
-        { model: ItemCotizacion, as: 'items' }
+        { model: Usuario, as: 'usuario', attributes: ['nombre'] },
+        {
+          model: ItemCotizacion,
+          as: 'items',
+          include: [{ model: Producto, as: 'producto', attributes: ['codigoBarras', 'nombre', 'tieneIVA'] }]
+        }
       ]
     });
 
@@ -206,62 +211,13 @@ exports.generarCotizacionPDF = async (req, res, next) => {
       return res.status(404).json({ error: 'Cotización no encontrada.' });
     }
 
-    const doc = new PDFDocument({ margin: 50 });
+    const config = await ConfiguracionSistema.findOne();
+    const doc = new PDFDocument({ size: 'A4', margin: 0 });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=cotizacion_${cotizacion.numeroCotizacion}.pdf`);
     doc.pipe(res);
 
-    // Header
-    doc.fontSize(20).text('TECHSTORE COLOMBIA S.A.S.', { align: 'center', bold: true });
-    doc.fontSize(10).text(`NIT: 901.456.789-0 | Sede: ${cotizacion.sede.nombre}`, { align: 'center' });
-    doc.text(`Dirección: ${cotizacion.sede.direccion}`, { align: 'center' });
-    doc.moveDown(2);
-
-    // Cotizacion Info
-    doc.fontSize(14).text(`PRESUPUESTO / COTIZACIÓN: #${cotizacion.numeroCotizacion}`, { align: 'center', color: '#2563eb' });
-    doc.fontSize(10).text(`Fecha Emisión: ${new Date(cotizacion.createdAt).toLocaleDateString()}`, { align: 'center' });
-    doc.text(`Fecha Vence: ${new Date(cotizacion.fechaVencimiento).toLocaleDateString()}`, { align: 'center' });
-    doc.text(`Estado: ${cotizacion.estado.toUpperCase()}`, { align: 'center' });
-    doc.moveDown(1.5);
-
-    // Cliente
-    doc.fontSize(12).text('INFORMACIÓN DEL CLIENTE', { underline: true });
-    doc.fontSize(10).text(`Nombre: ${cotizacion.cliente ? cotizacion.cliente.nombre : 'Cliente General'}`);
-    doc.text(`Cédula/NIT: ${cotizacion.cliente ? cotizacion.cliente.documento || 'No registrado' : 'N/A'}`);
-    doc.text(`Teléfono: ${cotizacion.cliente ? cotizacion.cliente.telefono || 'No registrado' : 'N/A'}`);
-    doc.moveDown(1.5);
-
-    // Detalle Items
-    doc.fontSize(12).text('ITEMS COTIZADOS', { underline: true });
-    doc.moveDown(0.5);
-
-    const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
-
-    doc.fontSize(10);
-    doc.text('Descripción / Item                        Cant      Precio Unit.      Subtotal', { bold: true });
-    doc.text('---------------------------------------------------------------------------------');
-    
-    for (const item of cotizacion.items) {
-      doc.text(`${item.descripcion.substring(0, 35).padEnd(40)} ${String(item.cantidad).padStart(4)} ${formatter.format(item.precioUnitario).padStart(17)} ${formatter.format(item.subtotal).padStart(15)}`);
-    }
-
-    doc.text('---------------------------------------------------------------------------------');
-    doc.moveDown(1);
-
-    // Totales
-    doc.fontSize(12).text(`TOTAL COTIZADO: ${formatter.format(cotizacion.total)}`, { align: 'right', bold: true });
-    doc.moveDown(2);
-
-    if (cotizacion.notas) {
-      doc.fontSize(10).text('Notas / Observaciones:', { underline: true });
-      doc.fontSize(9).text(cotizacion.notas);
-      doc.moveDown(1.5);
-    }
-
-    // Términos
-    doc.fontSize(8);
-    doc.text('Este presupuesto es meramente informativo y tiene una validez limitada según la fecha de vencimiento descrita.', { align: 'center' });
-    doc.text('¡Gracias por cotizar con TechStore Colombia!', { align: 'center', bold: true });
+    await generarCotizacionPDF(doc, cotizacion, config || {});
 
     doc.end();
   } catch (error) {

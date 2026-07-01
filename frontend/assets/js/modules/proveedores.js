@@ -1,6 +1,8 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { showConfirm } from '../utils/toast.js';
+import { erpHeader } from '../utils/module-shell.js';
+import { erpAction, erpActions } from '../utils/action-buttons.js';
 
 export async function initProveedores(container) {
   const usuario = getUsuario();
@@ -18,25 +20,20 @@ export async function initProveedores(container) {
   await loadProveedores();
 
   container.innerHTML = `
-    <div class="container-xl">
-      <div class="page-header d-print-none mb-4">
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title">Directorio de Proveedores</h2>
-            <div class="text-secondary mt-1">Gestión de contactos comerciales y datos bancarios para compras y cuentas por pagar</div>
-          </div>
-          ${isAdminOrContador ? `
-            <div class="col-auto ms-auto">
-              <button id="btn-nuevo-proveedor" class="btn btn-primary">
-                <i class="ti ti-plus me-2"></i> Nuevo Proveedor
-              </button>
-            </div>
-          ` : ''}
-        </div>
-      </div>
+    <div class="container-xl erp-module">
+      ${erpHeader({
+        eyebrow: 'Proveedores',
+        title: 'Directorio comercial',
+        subtitle: 'Contactos y datos bancarios para compras y cuentas por pagar',
+        actionsHtml: isAdminOrContador ? `
+          <button id="btn-nuevo-proveedor" class="btn btn-primary">
+            <i class="ti ti-plus me-2"></i> Nuevo proveedor
+          </button>
+        ` : ''
+      })}
 
       <!-- Buscador -->
-      <div class="card mb-4 d-print-none">
+      <div class="card mb-4 d-print-none erp-filter-card">
         <div class="card-body">
           <div class="input-icon">
             <span class="input-icon-addon"><i class="ti ti-search"></i></span>
@@ -144,13 +141,11 @@ export async function initProveedores(container) {
           ${p.cuentaBancaria ? `<strong>${p.banco || 'Banco'}</strong> - Ahorros: ${p.cuentaBancaria}` : '<span class="text-secondary small">Sin registrar</span>'}
         </td>
         ${isAdminOrContador ? `
-          <td class="text-end">
-            <button class="btn btn-outline-secondary btn-icon btn-sm btn-edit-prov" data-id="${p.id}" title="Editar" aria-label="Editar proveedor">
-              <i class="ti ti-edit"></i>
-            </button>
-            <button class="btn btn-outline-danger btn-icon btn-sm btn-delete-prov" data-id="${p.id}" title="Eliminar" aria-label="Eliminar proveedor">
-              <i class="ti ti-trash"></i>
-            </button>
+          <td class="text-end erp-td-actions">
+            ${erpActions(`
+              ${erpAction('edit', { className: 'btn-edit-prov', attrs: { 'data-id': p.id } })}
+              ${erpAction('delete', { className: 'btn-delete-prov', attrs: { 'data-id': p.id } })}
+            `)}
           </td>
         ` : ''}
       </tr>

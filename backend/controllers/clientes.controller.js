@@ -1,5 +1,6 @@
-const { Cliente } = require('../models');
+const { Cliente, Sede } = require('../models');
 const { Op } = require('sequelize');
+const { resolveActionSede } = require('../utils/sede');
 
 exports.getClientes = async (req, res, next) => {
   try {
@@ -36,12 +37,15 @@ exports.getClienteById = async (req, res, next) => {
 
 exports.createCliente = async (req, res, next) => {
   try {
-    const { nombre, telefono, email, documento, direccion } = req.body;
+    const { nombre, telefono, email, documento, direccion, sedeId: bodySedeId } = req.body;
     if (!nombre) {
       return res.status(400).json({ error: 'El nombre es obligatorio' });
     }
-    
-    const sedeId = req.usuario.sedeId;
+
+    const sedeId = await resolveActionSede(bodySedeId, req.usuario, Sede);
+    if (!sedeId) {
+      return res.status(400).json({ error: 'Debe seleccionar una sede para el cliente.' });
+    }
 
     const cliente = await Cliente.create({
       nombre,

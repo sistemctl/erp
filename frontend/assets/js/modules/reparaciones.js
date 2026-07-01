@@ -1,24 +1,31 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
+import { erpHeader } from '../utils/module-shell.js';
+import { erpAction } from '../utils/action-buttons.js';
 
 export async function initReparaciones(container) {
   const usuario = getUsuario();
   const esTecnico = usuario.rol === 'tecnico';
   const esCajero = usuario.rol === 'cajero';
-  const isAdminOrGerente = ['admin', 'gerente_sede'].includes(usuario.rol);
+  const isAdminOrGerente = ['admin', 'superadmin', 'gerente_sede'].includes(usuario.rol);
+  const needsSedePicker = !usuario.sedeId || ['admin', 'superadmin'].includes(usuario.rol);
 
   let ordenes = [];
   let tecnicos = [];
   let clientes = [];
-  let productos = []; // Catálogo para repuestos
+  let productos = [];
+  let sedes = [];
 
   // Cargar datos iniciales
   async function loadData() {
     try {
       ordenes = await apiFetch('/reparaciones');
-      tecnicos = await apiFetch('/config/usuarios').then(users => users.filter(u => u.rol === 'tecnico' && u.activo));
+      tecnicos = await apiFetch('/config/usuarios-operativos?rol=tecnico').catch(() => []);
       clientes = await apiFetch('/clientes').catch(() => []);
       productos = await apiFetch('/productos').then(prods => prods.filter(p => p.activo !== false));
+      if (needsSedePicker) {
+        sedes = await apiFetch('/config/sedes').catch(() => []);
+      }
     } catch (error) {
       console.error('Error al cargar datos de reparaciones:', error);
     }
@@ -26,35 +33,47 @@ export async function initReparaciones(container) {
 
   await loadData();
 
+  const defaultSedeId = usuario.sedeId || (sedes[0]?.id || '');
+
   container.innerHTML = `
-    <div class="container-xl">
-      <div class="page-header d-print-none mb-4">
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title">Gestión del Taller & Reparaciones</h2>
-            <div class="text-secondary mt-1">Órdenes de servicio técnico por sede y estado de reparación</div>
-          </div>
-          <div class="col-auto ms-auto">
-            <div class="btn-list">
-              <input type="text" id="kanban-search" class="form-control d-inline-block w-auto me-2" placeholder="Buscar por orden, IMEI o cliente…" spellcheck="false">
-              ${!esTecnico ? `
-                <button id="btn-nueva-orden" class="btn btn-primary">
-                  <i class="ti ti-plus me-2"></i> Nueva Orden
-                </button>
-              ` : ''}
+    <div class="container-xl erp-module rep-module">
+      ${erpHeader({
+        eyebrow: 'Taller',
+        title: 'Reparaciones y órdenes',
+        subtitle: 'Servicio técnico por sede y estado de cada orden',
+        actionsHtml: `
+          <div class="rep-header-tools">
+            <div class="rep-search-wrap">
+              <i class="ti ti-search rep-search-wrap__icon" aria-hidden="true"></i>
+              <input type="search" id="kanban-search" class="form-control" placeholder="Buscar orden, IMEI o cliente…" spellcheck="false" autocomplete="off">
             </div>
+            ${!esTecnico ? `
+              <button type="button" id="btn-nueva-orden" class="btn btn-primary">
+                <i class="ti ti-plus me-2"></i> Nueva orden
+              </button>
+            ` : ''}
           </div>
+        `
+      })}
+
+      <div class="rep-toolbar" aria-label="Controles del tablero">
+        <div class="rep-toolbar__views" role="tablist" aria-label="Vista del tablero">
+          <button type="button" class="rep-view-btn is-active" data-view="activas" role="tab" aria-selected="true">En taller</button>
+          <button type="button" class="rep-view-btn" data-view="todas" role="tab" aria-selected="false">Todas</button>
+          <button type="button" class="rep-view-btn" data-view="archivo" role="tab" aria-selected="false">Archivo</button>
         </div>
+        <div class="rep-toolbar__stats" id="rep-board-stats" aria-live="polite"></div>
       </div>
 
-      <!-- Tablero Kanban -->
-      <div class="row row-deck g-3" style="overflow-x: auto; flex-wrap: nowrap; padding-bottom: 15px;">
-        ${renderKanbanColumn('Recibido', 'recibido', 'bg-blue-lt')}
-        ${renderKanbanColumn('En Diagnóstico', 'diagnostico', 'bg-purple-lt')}
-        ${renderKanbanColumn('En Reparación', 'en_reparacion', 'bg-warning-lt')}
-        ${renderKanbanColumn('Listo para entrega', 'listo', 'bg-green-lt')}
-        ${renderKanbanColumn('Entregado', 'entregado', 'bg-secondary-lt')}
-        ${renderKanbanColumn('Cancelado', 'cancelado', 'bg-danger-lt')}
+      <div class="rep-kanban-board rep-kanban-board--view-activas" role="region" aria-label="Tablero de reparaciones">
+        <div class="rep-kanban-track">
+        ${renderKanbanColumn('Recibido', 'recibido', 'rep-kanban-col--recibido', 'active')}
+        ${renderKanbanColumn('En diagnóstico', 'diagnostico', 'rep-kanban-col--diagnostico', 'active')}
+        ${renderKanbanColumn('En reparación', 'en_reparacion', 'rep-kanban-col--reparacion', 'active')}
+        ${renderKanbanColumn('Listo para entrega', 'listo', 'rep-kanban-col--listo', 'active')}
+        ${renderKanbanColumn('Entregado', 'entregado', 'rep-kanban-col--entregado', 'archive')}
+        ${renderKanbanColumn('Cancelado', 'cancelado', 'rep-kanban-col--cancelado', 'archive')}
+        </div>
       </div>
     </div>
 
@@ -103,6 +122,14 @@ export async function initReparaciones(container) {
                 <!-- Detalles del Dispositivo -->
                 <div class="col-md-6">
                   <h4 class="mb-3 text-primary">Detalles del Equipo</h4>
+                  ${needsSedePicker ? `
+                  <div class="mb-3">
+                    <label class="form-label required">Sede de ingreso</label>
+                    <select id="eq-sede" class="form-select" required>
+                      ${sedes.length === 0 ? '<option value="">Sin sedes configuradas</option>' : sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                    </select>
+                  </div>
+                  ` : ''}
                   <div class="row">
                     <div class="col-6 mb-3">
                       <label class="form-label required">Tipo de Equipo</label>
@@ -260,19 +287,56 @@ export async function initReparaciones(container) {
   const modalEntregar = new bootstrap.Modal(document.getElementById('modal-entregar-reparacion'));
 
   // Renderizar columnas de Kanban
-  function renderKanbanColumn(title, statusKey, colorClass) {
+  function renderKanbanColumn(title, statusKey, colorClass, phase = 'active') {
     return `
-      <div class="col-md-2" style="min-width: 280px; max-width: 320px;">
-        <div class="card bg-light-lt">
-          <div class="card-header ${colorClass} py-2 d-flex justify-content-between align-items-center">
-            <h3 class="card-title fw-bold text-dark mb-0">${title}</h3>
-            <span class="badge bg-white text-dark fw-bold px-2 py-1" id="badge-count-${statusKey}">0</span>
-          </div>
-          <div class="card-body p-2 kanban-col" data-status="${statusKey}" style="max-height: 70vh; overflow-y: auto; min-height: 200px;">
-            <!-- Cards -->
-          </div>
+      <div class="rep-kanban-col ${colorClass}" data-phase="${phase}" data-status-col="${statusKey}">
+        <div class="rep-kanban-col__head">
+          <h3 class="rep-kanban-col__title">${title}</h3>
+          <span class="rep-kanban-col__count" id="badge-count-${statusKey}">0</span>
+        </div>
+        <div class="rep-kanban-col__body kanban-col" data-status="${statusKey}">
         </div>
       </div>
+    `;
+  }
+
+  let boardView = 'activas';
+
+  function applyBoardView() {
+    const board = document.querySelector('.rep-kanban-board');
+    if (!board) return;
+
+    board.classList.remove('rep-kanban-board--view-activas', 'rep-kanban-board--view-todas', 'rep-kanban-board--view-archivo');
+    board.classList.add(`rep-kanban-board--view-${boardView}`);
+
+    document.querySelectorAll('.rep-kanban-col').forEach((col) => {
+      const phase = col.dataset.phase;
+      let visible = true;
+      if (boardView === 'activas') visible = phase === 'active';
+      else if (boardView === 'archivo') visible = phase === 'archive';
+      col.classList.toggle('d-none', !visible);
+      col.setAttribute('aria-hidden', String(!visible));
+    });
+
+    document.querySelectorAll('.rep-view-btn').forEach((btn) => {
+      const active = btn.dataset.view === boardView;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-selected', String(active));
+    });
+  }
+
+  function updateBoardStats(counts) {
+    const statsEl = document.getElementById('rep-board-stats');
+    if (!statsEl) return;
+
+    const enTaller = counts.recibido + counts.diagnostico + counts.en_reparacion;
+    const activas = enTaller + counts.listo;
+
+    statsEl.innerHTML = `
+      <span class="rep-stat-pill"><strong>${activas}</strong> activas</span>
+      <span class="rep-stat-pill rep-stat-pill--bench"><strong>${enTaller}</strong> en banco</span>
+      <span class="rep-stat-pill rep-stat-pill--ready"><strong>${counts.listo}</strong> listas</span>
+      <span class="rep-stat-pill rep-stat-pill--done"><strong>${counts.entregado}</strong> entregadas</span>
     `;
   }
 
@@ -300,30 +364,47 @@ export async function initReparaciones(container) {
       if (col) {
         counts[o.estado]++;
         const card = document.createElement('div');
-        card.className = 'card mb-2 card-hover cursor-pointer p-3 border shadow-sm drag-card';
+        card.className = 'rep-card drag-card';
         card.draggable = true;
         card.dataset.id = o.id;
 
         const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
+        const clienteNombre = o.cliente ? o.cliente.nombre : 'Cliente general';
+        const equipoLabel = `${o.tipoEquipo} ${o.marca} ${o.modelo}`.trim();
+
         card.innerHTML = `
-          <div class="d-flex justify-content-between align-items-start mb-2">
-            <span class="badge bg-blue text-white fw-bold">${o.numeroOrden}</span>
-            <span class="text-secondary small">${new Date(o.createdAt).toLocaleDateString()}</span>
+          <div class="rep-card__top">
+            <span class="rep-card__orden">${o.numeroOrden}</span>
+            <span class="rep-card__fecha">${new Date(o.createdAt).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}</span>
           </div>
-          <div class="fw-bold text-dark fs-3 mb-1">${o.tipoEquipo} ${o.marca} ${o.modelo}</div>
-          <div class="text-secondary small mb-2"><i class="ti ti-user me-1"></i>${o.cliente ? o.cliente.nombre : 'Cliente General'}</div>
-          ${o.imei ? `<div class="text-secondary small mb-2"><i class="ti ti-device-mobile me-1"></i>IMEI/Serie: <strong>${o.imei}</strong></div>` : ''}
-          <div class="d-flex justify-content-between align-items-center mt-2 border-top pt-2">
-            <div class="text-secondary small">
-              <i class="ti ti-settings me-1"></i>Téc: <strong>${o.tecnico ? o.tecnico.nombre.split(' ')[0] : 'Sin asignar'}</strong>
+          <div class="rep-card__equipo" title="${equipoLabel}">${equipoLabel}</div>
+          <div class="rep-card__meta" title="${clienteNombre}">
+            <i class="ti ti-user" aria-hidden="true"></i>
+            <span>${clienteNombre}</span>
+          </div>
+          ${o.imei ? `<div class="rep-card__meta" title="IMEI/Serie: ${o.imei}"><i class="ti ti-device-mobile" aria-hidden="true"></i><span>${o.imei}</span></div>` : ''}
+          <div class="rep-card__footer">
+            <div class="rep-card__tec">
+              <i class="ti ti-tool" aria-hidden="true"></i>
+              ${o.tecnico ? o.tecnico.nombre.split(' ')[0] : 'Sin asignar'}
             </div>
-            <div class="fw-bold text-primary">${formatter.format(o.totalCobrado)}</div>
+            <div class="rep-card__total">${formatter.format(o.totalCobrado)}</div>
+          </div>
+          <div class="rep-card__actions">
+            ${erpAction('view', { className: 'btn-ver-orden-rep', attrs: { 'data-id': o.id }, label: 'Ver' })}
           </div>
         `;
 
-        // Abrir detalles en click
-        card.addEventListener('click', () => openDetalle(o.id));
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.erp-action-btn')) return;
+          openDetalle(o.id);
+        });
+
+        card.querySelector('.btn-ver-orden-rep')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openDetalle(o.id);
+        });
 
         // Drag events
         card.addEventListener('dragstart', (e) => {
@@ -344,22 +425,29 @@ export async function initReparaciones(container) {
       const badge = document.getElementById(`badge-count-${status}`);
       if (badge) badge.textContent = count;
     }
+
+    document.querySelectorAll('.kanban-col').forEach((col) => {
+      if (col.querySelector('.rep-card')) return;
+      col.innerHTML = '<div class="rep-kanban-empty">Sin órdenes en esta etapa</div>';
+    });
+
+    updateBoardStats(counts);
   }
 
   // Setup drag & drop columns
   document.querySelectorAll('.kanban-col').forEach(col => {
     col.addEventListener('dragover', (e) => {
       e.preventDefault();
-      col.classList.add('bg-secondary-lt');
+      col.classList.add('rep-kanban-col__body--dragover');
     });
 
     col.addEventListener('dragleave', () => {
-      col.classList.remove('bg-secondary-lt');
+      col.classList.remove('rep-kanban-col__body--dragover');
     });
 
     col.addEventListener('drop', async (e) => {
       e.preventDefault();
-      col.classList.remove('bg-secondary-lt');
+      col.classList.remove('rep-kanban-col__body--dragover');
       const orderId = e.dataTransfer.getData('text/plain');
       const newStatus = col.dataset.status;
 
@@ -386,6 +474,14 @@ export async function initReparaciones(container) {
   });
 
   fillKanban();
+  applyBoardView();
+
+  document.querySelectorAll('.rep-view-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      boardView = btn.dataset.view || 'activas';
+      applyBoardView();
+    });
+  });
 
   // Search input
   document.getElementById('kanban-search').addEventListener('input', (e) => {
@@ -437,9 +533,15 @@ export async function initReparaciones(container) {
 
         if (!nombre) throw new Error('Nombre del cliente es requerido.');
 
+        const cliPayload = { nombre, documento, telefono, email };
+        if (needsSedePicker) {
+          const sedeVal = document.getElementById('eq-sede')?.value;
+          if (sedeVal) cliPayload.sedeId = sedeVal;
+        }
+
         const cli = await apiFetch('/clientes', {
           method: 'POST',
-          body: JSON.stringify({ nombre, documento, telefono, email })
+          body: JSON.stringify(cliPayload)
         });
         clienteId = cli.id;
       }
@@ -458,6 +560,12 @@ export async function initReparaciones(container) {
         tecnicoId: document.getElementById('eq-tecnico').value || null,
         observaciones: document.getElementById('eq-observaciones').value || ''
       };
+
+      if (needsSedePicker) {
+        const sedeVal = document.getElementById('eq-sede')?.value;
+        if (!sedeVal) throw new Error('Debe seleccionar la sede de ingreso.');
+        payload.sedeId = sedeVal;
+      }
 
       const ordenNueva = await apiFetch('/reparaciones', {
         method: 'POST',
@@ -882,6 +990,8 @@ export async function initReparaciones(container) {
       document.getElementById('det-qr-btn').addEventListener('click', async () => {
         try {
           const token = localStorage.getItem('token');
+          const sysConfig = await apiFetch('/config/sistema').catch(() => null);
+          const empresaNombre = sysConfig?.empresa || 'TechStore Colombia';
           const response = await fetch(`/api/reparaciones/${id}/etiqueta-qr`, {
             headers: {
               'Authorization': `Bearer ${token}`
@@ -907,7 +1017,7 @@ export async function initReparaciones(container) {
                 </style>
               </head>
               <body>
-                <h3>TECHSTORE COLOMBIA</h3>
+                <h3>${empresaNombre}</h3>
                 <p><strong>ORDEN DE REPARACIÓN</strong></p>
                 <p>Orden #: <strong>${orden.numeroOrden}</strong></p>
                 <p>Cliente: ${orden.cliente ? orden.cliente.nombre : 'Cliente General'}</p>

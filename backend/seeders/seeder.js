@@ -150,7 +150,11 @@ const runSeeder = async () => {
       notificacionesActivas: false,
       smsActivo: false,
       whatsappActivo: false,
-      ivaDefecto: 19.00
+      ivaDefecto: 19.00,
+      nominaFrecuenciaDefault: 'quincenal',
+      nominaDiaCorteQuincena: 15,
+      nominaDiaPago1: 15,
+      nominaDiaPago2: 30,
     });
     console.log('Configuración global del sistema creada con éxito.');
 

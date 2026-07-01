@@ -35,6 +35,10 @@ const EgresoCaja = sequelize.define('EgresoCaja', {
   autorizadoPor: {
     type: DataTypes.UUID,
     allowNull: true
+  },
+  pagoCompraId: {
+    type: DataTypes.UUID,
+    allowNull: true
   }
 }, {
   tableName: 'EgresosCaja'

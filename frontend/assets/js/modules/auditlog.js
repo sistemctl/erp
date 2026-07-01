@@ -1,33 +1,28 @@
 import { apiFetch } from '../api.js';
+import { erpAction } from '../utils/action-buttons.js';
 
-export async function initAuditLog(container) {
-  container.innerHTML = `
-    <div class="container-xl">
-      <!-- Encabezado de página -->
-      <div class="page-header d-print-none mb-4 animate__animated animate__fadeIn">
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title text-primary"><i class="ti ti-shield-lock me-2"></i>Bitácora de Auditoría (Audit Log)</h2>
-            <div class="text-secondary mt-1">Historial detallado de todas las transacciones, modificaciones de precios y egresos del sistema</div>
-          </div>
-          <div class="col-auto ms-auto d-print-none">
-            <div class="btn-list">
-              <button id="btn-export-csv" class="btn btn-outline-secondary">
-                <i class="ti ti-file-spreadsheet me-1"></i> Exportar CSV
-              </button>
-              <button id="btn-print-pdf" class="btn btn-primary">
-                <i class="ti ti-printer me-1"></i> Imprimir Reporte
-              </button>
-            </div>
-          </div>
+let currentLogs = [];
+let auditTabReady = false;
+
+export function renderAuditLogTabHtml() {
+  return `
+    <div class="audit-tab">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 d-print-none">
+        <div>
+          <h4 class="mb-1 fw-bold">Bitácora de auditoría</h4>
+          <p class="text-secondary small mb-0">Transacciones, cambios de precio y egresos registrados en el sistema.</p>
+        </div>
+        <div class="btn-list">
+          <button type="button" id="btn-export-csv" class="btn btn-outline-secondary btn-sm">
+            <i class="ti ti-file-spreadsheet me-1"></i> Exportar CSV
+          </button>
+          <button type="button" id="btn-print-pdf" class="btn btn-primary btn-sm">
+            <i class="ti ti-printer me-1"></i> Imprimir
+          </button>
         </div>
       </div>
 
-      <!-- Tarjeta de filtros -->
-      <div class="card mb-4 d-print-none shadow-sm border-0">
-        <div class="card-header bg-transparent py-3 border-0">
-          <h3 class="card-title fw-bold text-secondary"><i class="ti ti-filter me-2"></i>Filtros Avanzados</h3>
-        </div>
+      <div class="card mb-3 erp-filter-card d-print-none">
         <div class="card-body py-2">
           <form id="form-audit-filter" class="row g-3">
             <div class="col-md-3">
@@ -81,11 +76,10 @@ export async function initAuditLog(container) {
         </div>
       </div>
 
-      <!-- Tabla de Logs -->
-      <div class="card shadow-sm border-0 animate__animated animate__fadeInUp">
+      <div class="erp-table-panel">
         <div class="table-responsive">
-          <table class="table table-vcenter card-table table-hover">
-            <thead class="bg-light">
+          <table class="table table-vcenter card-table table-hover mb-0">
+            <thead>
               <tr>
                 <th>Fecha / Hora</th>
                 <th>Usuario</th>
@@ -100,7 +94,7 @@ export async function initAuditLog(container) {
               <tr>
                 <td colspan="7" class="text-center py-4 text-secondary">
                   <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
-                   Cargando bitácora de auditoría…
+                  Cargando bitácora de auditoría…
                 </td>
               </tr>
             </tbody>
@@ -108,13 +102,16 @@ export async function initAuditLog(container) {
         </div>
       </div>
     </div>
+  `;
+}
 
-    <!-- Modal para comparar cambios (JSON DIFF) -->
+export function renderAuditLogModalHtml() {
+  return `
     <div class="modal modal-blur fade d-print-none" id="modal-audit-detail" tabindex="-1" role="dialog" aria-hidden="true">
       <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
         <div class="modal-content shadow-lg">
           <div class="modal-header">
-            <h5 class="modal-title fw-bold"><i class="ti ti-eye me-1"></i> Detalles de Auditoría e Historial de Cambios</h5>
+            <h5 class="modal-title fw-bold"><i class="ti ti-eye me-1"></i> Detalles de auditoría</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
@@ -134,214 +131,195 @@ export async function initAuditLog(container) {
                 <strong>ID de Registro:</strong> <code id="audit-det-id"></code>
               </div>
             </div>
-            
             <div class="border-top pt-3">
-              <h4 class="fw-bold mb-2">Comparativa de Cambios</h4>
-              <div id="diff-container" class="table-responsive">
-                <!-- Se inyecta la comparativa dinámica -->
-              </div>
+              <h4 class="fw-bold mb-2">Comparativa de cambios</h4>
+              <div id="diff-container" class="table-responsive"></div>
             </div>
           </div>
           <div class="modal-footer bg-light">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar Detalle</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
           </div>
         </div>
       </div>
     </div>
   `;
+}
 
-  let currentLogs = [];
+async function loadAuditLogs() {
+  const tbody = document.getElementById('audit-log-tbody');
+  if (!tbody) return;
 
-  const loadAuditLogs = async () => {
-    const tbody = document.getElementById('audit-log-tbody');
-    if (!tbody) return;
+  try {
+    const usuario = document.getElementById('filter-usuario')?.value.trim() || '';
+    const modulo = document.getElementById('filter-modulo')?.value || '';
+    const accion = document.getElementById('filter-accion')?.value || '';
+    const desde = document.getElementById('filter-desde')?.value || '';
+    const hasta = document.getElementById('filter-hasta')?.value || '';
 
-    try {
-      const usuario = document.getElementById('filter-usuario').value.trim();
-      const modulo = document.getElementById('filter-modulo').value;
-      const accion = document.getElementById('filter-accion').value;
-      const desde = document.getElementById('filter-desde').value;
-      const hasta = document.getElementById('filter-hasta').value;
+    const queryParams = new URLSearchParams();
+    if (usuario) queryParams.append('usuario', usuario);
+    if (modulo) queryParams.append('modulo', modulo);
+    if (accion) queryParams.append('accion', accion);
+    if (desde) queryParams.append('desde', desde);
+    if (hasta) queryParams.append('hasta', hasta);
 
-      let queryParams = new URLSearchParams();
-      if (usuario) queryParams.append('usuario', usuario);
-      if (modulo) queryParams.append('modulo', modulo);
-      if (accion) queryParams.append('accion', accion);
-      if (desde) queryParams.append('desde', desde);
-      if (hasta) queryParams.append('hasta', hasta);
+    const logs = await apiFetch(`/audit-log?${queryParams.toString()}`);
+    currentLogs = logs;
 
-      const logs = await apiFetch(`/audit-log?${queryParams.toString()}`);
-      currentLogs = logs;
-
-      if (logs.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-secondary">No se encontraron registros de auditoría coincidentes.</td></tr>`;
-        return;
-      }
-
-      tbody.innerHTML = logs.map((log, index) => {
-        let actionBadge = 'bg-secondary-lt';
-        if (log.accion === 'CREATE') actionBadge = 'bg-success-lt';
-        else if (log.accion === 'UPDATE') actionBadge = 'bg-warning-lt';
-        else if (log.accion === 'DELETE') actionBadge = 'bg-danger-lt';
-        else if (log.accion === 'LOGIN') actionBadge = 'bg-info-lt';
-        else if (log.accion === 'PRICE_OVERRIDE') actionBadge = 'bg-purple-lt';
-        else if (log.accion === 'EGRESO_CAJA') actionBadge = 'bg-orange-lt';
-
-        return `
-          <tr>
-            <td>
-              <span class="fw-bold">${new Date(log.createdAt).toLocaleDateString()}</span><br>
-              <span class="text-secondary small">${new Date(log.createdAt).toLocaleTimeString()}</span>
-            </td>
-            <td>
-              <span class="fw-bold">${log.usuario ? log.usuario.nombre : 'Sistema / Externo'}</span><br>
-              <span class="text-secondary small">${log.usuario ? log.usuario.email : ''}</span>
-            </td>
-            <td>
-              <span class="badge ${actionBadge} text-uppercase px-2 py-1">${log.accion}</span>
-            </td>
-            <td><strong class="text-muted">${log.modulo}</strong></td>
-            <td><code class="text-secondary">${log.registroId || 'N/A'}</code></td>
-            <td>
-              <span class="text-secondary fw-bold small">${log.sede ? log.sede.nombre : 'Sede Global / N/A'}</span><br>
-              <code class="text-muted small">${log.ip || 'Localhost'}</code>
-            </td>
-            <td class="d-print-none text-end">
-               <button class="btn btn-light btn-icon btn-sm btn-view-detail" data-index="${index}" title="Ver Comparativa" aria-label="Ver comparativa de auditoría">
-                <i class="ti ti-eye text-primary"></i>
-              </button>
-            </td>
-          </tr>
-        `;
-      }).join('');
-
-      // Agregar escuchas para botones de ver detalle
-      document.querySelectorAll('.btn-view-detail').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const index = btn.getAttribute('data-index');
-          showAuditDetail(currentLogs[index]);
-        });
-      });
-
-    } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger">Error al cargar bitácora: ${err.message}</td></tr>`;
-    }
-  };
-
-  const showAuditDetail = (log) => {
-    document.getElementById('audit-det-modulo').textContent = log.modulo;
-    
-    const badge = document.getElementById('audit-det-accion');
-    badge.textContent = log.accion;
-    badge.className = 'badge ';
-    if (log.accion === 'CREATE') badge.classList.add('bg-success');
-    else if (log.accion === 'UPDATE') badge.classList.add('bg-warning');
-    else if (log.accion === 'DELETE') badge.classList.add('bg-danger');
-    else if (log.accion === 'LOGIN') badge.classList.add('bg-info');
-    else if (log.accion === 'PRICE_OVERRIDE') badge.classList.add('bg-purple');
-    else if (log.accion === 'EGRESO_CAJA') badge.classList.add('bg-orange');
-    else badge.classList.add('bg-secondary');
-
-    document.getElementById('audit-det-usuario').textContent = log.usuario ? `${log.usuario.nombre} (${log.usuario.email})` : 'Sistema';
-    document.getElementById('audit-det-id').textContent = log.registroId || 'N/A';
-
-    const diffContainer = document.getElementById('diff-container');
-    
-    // Generar tabla comparativa de valores
-    const vAnterior = log.valorAnterior || {};
-    const vNuevo = log.valorNuevo || {};
-
-    // Obtener todas las claves únicas
-    const allKeys = Array.from(new Set([...Object.keys(vAnterior), ...Object.keys(vNuevo)]));
-
-    if (allKeys.length === 0) {
-      diffContainer.innerHTML = `<div class="alert alert-light text-center py-3 text-secondary">No hay campos para contrastar (Login o evento simple).</div>`;
-    } else {
-      let rowsHtml = '';
-      allKeys.forEach(key => {
-        // Omitir contraseñas o campos innecesarios
-        if (key.toLowerCase().includes('password')) return;
-
-        const valAnt = vAnterior[key] !== undefined ? JSON.stringify(vAnterior[key], null, 2) : '-';
-        const valNue = vNuevo[key] !== undefined ? JSON.stringify(vNuevo[key], null, 2) : '-';
-        
-        let rowClass = '';
-        if (valAnt === '-') rowClass = 'table-success-lt'; // Campo nuevo
-        else if (valNue === '-') rowClass = 'table-danger-lt'; // Campo eliminado
-        else if (valAnt !== valNue) rowClass = 'table-warning-lt'; // Modificado
-
-        rowsHtml += `
-          <tr class="${rowClass}">
-            <td class="fw-bold text-muted">${key}</td>
-            <td style="max-width:300px; white-space: pre-wrap;"><code class="text-danger">${valAnt.replace(/"/g, '')}</code></td>
-            <td style="max-width:300px; white-space: pre-wrap;"><code class="text-success">${valNue.replace(/"/g, '')}</code></td>
-          </tr>
-        `;
-      });
-
-      diffContainer.innerHTML = `
-        <table class="table table-vcenter table-bordered">
-          <thead>
-            <tr class="bg-light">
-              <th>Propiedad / Campo</th>
-              <th>Valor Anterior</th>
-              <th>Valor Nuevo</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml}
-          </tbody>
-        </table>
-      `;
-    }
-
-    const modal = new bootstrap.Modal(document.getElementById('modal-audit-detail'));
-    modal.show();
-  };
-
-  // Exportar a CSV
-  document.getElementById('btn-export-csv').addEventListener('click', () => {
-    if (currentLogs.length === 0) {
-      alert("No hay datos para exportar.");
+    if (logs.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-secondary">No se encontraron registros de auditoría coincidentes.</td></tr>`;
       return;
     }
 
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Fecha,Usuario,Email,Accion,Modulo,RegistroID,Sede,IP\n";
+    tbody.innerHTML = logs.map((log, index) => {
+      let actionBadge = 'bg-secondary-lt';
+      if (log.accion === 'CREATE') actionBadge = 'bg-success-lt';
+      else if (log.accion === 'UPDATE') actionBadge = 'bg-warning-lt';
+      else if (log.accion === 'DELETE') actionBadge = 'bg-danger-lt';
+      else if (log.accion === 'LOGIN') actionBadge = 'bg-info-lt';
+      else if (log.accion === 'PRICE_OVERRIDE') actionBadge = 'bg-purple-lt';
+      else if (log.accion === 'EGRESO_CAJA') actionBadge = 'bg-orange-lt';
 
-    currentLogs.forEach(log => {
+      return `
+        <tr>
+          <td>
+            <span class="fw-bold">${new Date(log.createdAt).toLocaleDateString()}</span><br>
+            <span class="text-secondary small">${new Date(log.createdAt).toLocaleTimeString()}</span>
+          </td>
+          <td>
+            <span class="fw-bold">${log.usuario ? log.usuario.nombre : 'Sistema / Externo'}</span><br>
+            <span class="text-secondary small">${log.usuario ? log.usuario.email : ''}</span>
+          </td>
+          <td><span class="badge ${actionBadge} text-uppercase px-2 py-1">${log.accion}</span></td>
+          <td><strong class="text-muted">${log.modulo}</strong></td>
+          <td><code class="text-secondary">${log.registroId || 'N/A'}</code></td>
+          <td>
+            <span class="text-secondary fw-bold small">${log.sede ? log.sede.nombre : 'Sede Global / N/A'}</span><br>
+            <code class="text-muted small">${log.ip || 'Localhost'}</code>
+          </td>
+          <td class="d-print-none text-end erp-td-actions">
+            ${erpAction('view', { className: 'btn-view-detail', attrs: { 'data-index': index } })}
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    document.querySelectorAll('.btn-view-detail').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const index = btn.getAttribute('data-index');
+        showAuditDetail(currentLogs[index]);
+      });
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger">Error al cargar bitácora: ${err.message}</td></tr>`;
+  }
+}
+
+function showAuditDetail(log) {
+  document.getElementById('audit-det-modulo').textContent = log.modulo;
+
+  const badge = document.getElementById('audit-det-accion');
+  badge.textContent = log.accion;
+  badge.className = 'badge ';
+  if (log.accion === 'CREATE') badge.classList.add('bg-success');
+  else if (log.accion === 'UPDATE') badge.classList.add('bg-warning');
+  else if (log.accion === 'DELETE') badge.classList.add('bg-danger');
+  else if (log.accion === 'LOGIN') badge.classList.add('bg-info');
+  else if (log.accion === 'PRICE_OVERRIDE') badge.classList.add('bg-purple');
+  else if (log.accion === 'EGRESO_CAJA') badge.classList.add('bg-orange');
+  else badge.classList.add('bg-secondary');
+
+  document.getElementById('audit-det-usuario').textContent = log.usuario
+    ? `${log.usuario.nombre} (${log.usuario.email})`
+    : 'Sistema';
+  document.getElementById('audit-det-id').textContent = log.registroId || 'N/A';
+
+  const diffContainer = document.getElementById('diff-container');
+  const vAnterior = log.valorAnterior || {};
+  const vNuevo = log.valorNuevo || {};
+  const allKeys = Array.from(new Set([...Object.keys(vAnterior), ...Object.keys(vNuevo)]));
+
+  if (allKeys.length === 0) {
+    diffContainer.innerHTML = `<div class="alert alert-light text-center py-3 text-secondary mb-0">No hay campos para contrastar.</div>`;
+  } else {
+    let rowsHtml = '';
+    allKeys.forEach((key) => {
+      if (key.toLowerCase().includes('password')) return;
+      const valAnt = vAnterior[key] !== undefined ? JSON.stringify(vAnterior[key], null, 2) : '-';
+      const valNue = vNuevo[key] !== undefined ? JSON.stringify(vNuevo[key], null, 2) : '-';
+      let rowClass = '';
+      if (valAnt === '-') rowClass = 'table-success-lt';
+      else if (valNue === '-') rowClass = 'table-danger-lt';
+      else if (valAnt !== valNue) rowClass = 'table-warning-lt';
+
+      rowsHtml += `
+        <tr class="${rowClass}">
+          <td class="fw-bold text-muted">${key}</td>
+          <td style="max-width:300px; white-space: pre-wrap;"><code class="text-danger">${valAnt.replace(/"/g, '')}</code></td>
+          <td style="max-width:300px; white-space: pre-wrap;"><code class="text-success">${valNue.replace(/"/g, '')}</code></td>
+        </tr>
+      `;
+    });
+
+    diffContainer.innerHTML = `
+      <table class="table table-vcenter table-bordered mb-0">
+        <thead>
+          <tr class="bg-light">
+            <th>Propiedad / Campo</th>
+            <th>Valor anterior</th>
+            <th>Valor nuevo</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    `;
+  }
+
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-audit-detail')).show();
+}
+
+export async function initAuditLogTab() {
+  const form = document.getElementById('form-audit-filter');
+  if (!form || auditTabReady) {
+    await loadAuditLogs();
+    return;
+  }
+
+  document.getElementById('btn-export-csv')?.addEventListener('click', () => {
+    if (currentLogs.length === 0) {
+      alert('No hay datos para exportar.');
+      return;
+    }
+
+    let csvContent = 'data:text/csv;charset=utf-8,';
+    csvContent += 'Fecha,Usuario,Email,Accion,Modulo,RegistroID,Sede,IP\n';
+    currentLogs.forEach((log) => {
       const fecha = new Date(log.createdAt).toLocaleString().replace(/,/g, '');
       const user = log.usuario ? log.usuario.nombre : 'Sistema';
       const email = log.usuario ? log.usuario.email : '';
-      const accion = log.accion;
-      const modulo = log.modulo;
-      const id = log.registroId || '';
-      const sede = log.sede ? log.sede.nombre : 'Global';
-      const ip = log.ip || 'Local';
-
-      csvContent += `"${fecha}","${user}","${email}","${accion}","${modulo}","${id}","${sede}","${ip}"\n`;
+      csvContent += `"${fecha}","${user}","${email}","${log.accion}","${log.modulo}","${log.registroId || ''}","${log.sede ? log.sede.nombre : 'Global'}","${log.ip || 'Local'}"\n`;
     });
 
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `auditoria_erp_${new Date().toISOString().split('T')[0]}.csv`);
+    const link = document.createElement('a');
+    link.href = encodeURI(csvContent);
+    link.download = `auditoria_erp_${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   });
 
-  // Imprimir PDF (Usa la vista de impresión del navegador)
-  document.getElementById('btn-print-pdf').addEventListener('click', () => {
-    window.print();
-  });
+  document.getElementById('btn-print-pdf')?.addEventListener('click', () => window.print());
 
-  // Escuchar formulario de filtros
-  document.getElementById('form-audit-filter').addEventListener('submit', (e) => {
+  form.addEventListener('submit', (e) => {
     e.preventDefault();
     loadAuditLogs();
   });
 
-  // Carga inicial
+  auditTabReady = true;
   await loadAuditLogs();
+}
+
+/** Redirige la ruta antigua #/auditlog a configuración */
+export async function initAuditLog() {
+  window.location.hash = '#/config?tab=auditoria';
 }

@@ -1,5 +1,6 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
+import { erpHeader } from '../utils/module-shell.js';
 
 export async function initRentabilidad(container) {
   const usuario = getUsuario();
@@ -8,7 +9,7 @@ export async function initRentabilidad(container) {
 
   if (!isAdminOrGerente && !isContador) {
     container.innerHTML = `
-      <div class="container-xl py-5">
+      <div class="container-xl erp-module py-5">
         <div class="alert alert-danger">
           <h4 class="alert-title">Acceso Denegado</h4>
           <div class="text-secondary">Usted no tiene permisos para ver el análisis de rentabilidad.</div>
@@ -22,7 +23,7 @@ export async function initRentabilidad(container) {
   let sedes = [];
   let vendedores = [];
   try {
-    const allUsers = await apiFetch('/config/usuarios').catch(() => []);
+    const allUsers = await apiFetch('/config/usuarios-operativos').catch(() => []);
     tecnicos = allUsers.filter(u => u.rol === 'tecnico');
     vendedores = allUsers;
     sedes = await apiFetch('/config/sedes').catch(() => []);
@@ -33,15 +34,14 @@ export async function initRentabilidad(container) {
   const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
   container.innerHTML = `
-    <div class="container-xl">
-      <div class="page-header d-print-none mb-3">
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title" id="rentabilidad-title">Análisis de Rentabilidad de Reparaciones</h2>
-            <div class="text-secondary mt-1" id="rentabilidad-subtitle">Comparativa de ingresos de mano de obra y costos de repuestos por técnico y equipo</div>
-          </div>
-        </div>
-      </div>
+    <div class="container-xl erp-module">
+      ${erpHeader({
+        eyebrow: 'Rentabilidad',
+        title: 'Análisis de reparaciones',
+        subtitle: 'Ingresos de mano de obra y costos de repuestos por técnico',
+        titleId: 'rentabilidad-title',
+        subId: 'rentabilidad-subtitle'
+      })}
 
       <!-- Navegación por pestañas (Tabs) -->
       <div class="mb-3 d-print-none">

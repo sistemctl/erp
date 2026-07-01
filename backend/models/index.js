@@ -30,6 +30,7 @@ const Nomina = require('./Nomina');
 const Proveedor = require('./Proveedor');
 const OrdenCompra = require('./OrdenCompra');
 const ItemOrdenCompra = require('./ItemOrdenCompra');
+const PagoCompra = require('./PagoCompra');
 const MovimientoInventario = require('./MovimientoInventario');
 const Notificacion = require('./Notificacion');
 const AuditLog = require('./AuditLog');
@@ -190,6 +191,13 @@ ItemOrdenCompra.belongsTo(Producto, { foreignKey: 'productoId', as: 'producto' }
 OrdenCompra.hasMany(ItemOrdenCompra, { foreignKey: 'ordenCompraId', as: 'items' });
 Producto.hasMany(ItemOrdenCompra, { foreignKey: 'productoId', as: 'compras' });
 
+// PagoCompra <-> OrdenCompra, Usuario; EgresoCaja opcional vía pagoCompraId
+PagoCompra.belongsTo(OrdenCompra, { foreignKey: 'ordenCompraId', as: 'ordenCompra' });
+PagoCompra.belongsTo(Usuario, { foreignKey: 'usuarioId', as: 'usuario' });
+OrdenCompra.hasMany(PagoCompra, { foreignKey: 'ordenCompraId', as: 'pagos' });
+EgresoCaja.belongsTo(PagoCompra, { foreignKey: 'pagoCompraId', as: 'pagoCompra' });
+PagoCompra.hasOne(EgresoCaja, { foreignKey: 'pagoCompraId', as: 'egresoCaja' });
+
 // MovimientoInventario <-> Producto, Sede, Usuario
 MovimientoInventario.belongsTo(Producto, { foreignKey: 'productoId', as: 'producto' });
 MovimientoInventario.belongsTo(Sede, { foreignKey: 'sedeId', as: 'sede' });
@@ -238,6 +246,7 @@ module.exports = {
   Proveedor,
   OrdenCompra,
   ItemOrdenCompra,
+  PagoCompra,
   MovimientoInventario,
   Notificacion,
   AuditLog,

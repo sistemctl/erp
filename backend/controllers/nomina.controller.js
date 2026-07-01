@@ -1,5 +1,6 @@
-const { Nomina, Empleado, Sede } = require('../models');
+const { Nomina, Empleado, Sede, ConfiguracionSistema } = require('../models');
 const PDFDocument = require('pdfkit');
+const { obtenerPeriodoPagoQuincenal } = require('../utils/nomina-periodo');
 
 const SMLV = 1300000; // Salario Mínimo Mensual Legal Vigente 2024 aprox
 const AUX_TRANSPORTE_MENSUAL = 162000; // Auxilio de transporte mensual aprox
@@ -18,7 +19,17 @@ exports.calcularNomina = async (req, res, next) => {
       deduccionPrestamos
     } = req.body;
 
-    if (!empleadoId || !periodo || !tipoPeriodo) {
+    let periodoFinal = periodo;
+    let tipoPeriodoFinal = tipoPeriodo || 'quincenal';
+
+    if (!periodoFinal) {
+      const configSistema = await ConfiguracionSistema.findOne();
+      const auto = obtenerPeriodoPagoQuincenal(new Date(), configSistema || {});
+      periodoFinal = auto.periodo;
+      tipoPeriodoFinal = auto.tipoPeriodo;
+    }
+
+    if (!empleadoId || !tipoPeriodoFinal) {
       return res.status(400).json({ error: 'Faltan parámetros requeridos para calcular la nómina.' });
     }
 
@@ -28,12 +39,12 @@ exports.calcularNomina = async (req, res, next) => {
     }
 
     // Validar si ya existe nómina para este empleado y período
-    const existe = await Nomina.findOne({ where: { empleadoId, periodo } });
+    const existe = await Nomina.findOne({ where: { empleadoId, periodo: periodoFinal } });
     if (existe) {
       return res.status(400).json({ error: 'Ya existe una liquidación de nómina registrada para este empleado en el período indicado.' });
     }
 
-    const esQuincenal = tipoPeriodo === 'quincenal';
+    const esQuincenal = tipoPeriodoFinal === 'quincenal';
     const divisor = esQuincenal ? 2 : 1;
 
     // 1. Salario Base
@@ -75,8 +86,8 @@ exports.calcularNomina = async (req, res, next) => {
 
     const nomina = await Nomina.create({
       empleadoId,
-      periodo,
-      tipoPeriodo,
+      periodo: periodoFinal,
+      tipoPeriodo: tipoPeriodoFinal,
       salarioBase: salarioBasePeriodo,
       auxilioTransporte: auxTransportePeriodo,
       horasExtra: extraNum,
@@ -210,6 +221,10 @@ exports.getDesprendiblePdf = async (req, res, next) => {
       return res.status(404).json({ error: 'Liquidación de nómina no encontrada.' });
     }
 
+    const config = await ConfiguracionSistema.findOne();
+    const empresa = config?.empresa || 'TechStore Colombia S.A.S.';
+    const nit = config?.nit || 'N/A';
+
     const doc = new PDFDocument({ margin: 50 });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=desprendible_${nomina.empleado.nombre.replace(/\s+/g, '_')}_${nomina.periodo}.pdf`);
@@ -218,8 +233,8 @@ exports.getDesprendiblePdf = async (req, res, next) => {
     const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
     // Encabezado
-    doc.fontSize(16).text('TECHSTORE COLOMBIA S.A.S.', { align: 'center', bold: true });
-    doc.fontSize(9).text('NIT: 901.456.789-0', { align: 'center' });
+    doc.fontSize(16).text(empresa.toUpperCase(), { align: 'center', bold: true });
+    doc.fontSize(9).text(`NIT: ${nit}`, { align: 'center' });
     doc.text(`Sede: ${nomina.empleado.sede.nombre} | ${nomina.empleado.sede.direccion}`, { align: 'center' });
     doc.moveDown(1.5);
 
@@ -302,7 +317,7 @@ exports.getDesprendiblePdf = async (req, res, next) => {
     // Firmas
     doc.fontSize(10);
     doc.text('_______________________                  _______________________', { align: 'center' });
-    doc.text('Firma Autorizada (TechStore)                Firma Recibido Colaborador', { align: 'center' });
+    doc.text(`Firma Autorizada (${empresa})                Firma Recibido Colaborador`, { align: 'center' });
 
     doc.end();
   } catch (error) {

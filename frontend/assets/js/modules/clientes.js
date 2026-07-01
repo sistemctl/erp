@@ -1,5 +1,7 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
+import { erpHeader } from '../utils/module-shell.js';
+import { erpAction, erpActions } from '../utils/action-buttons.js';
 
 export async function initClientes(container) {
   const usuario = getUsuario();
@@ -17,21 +19,18 @@ export async function initClientes(container) {
   await loadClientes();
 
   container.innerHTML = `
-    <div class="container-xl">
-      <div class="page-header d-print-none mb-4">
-        <div class="row align-items-center">
-          <div class="col">
-            <h2 class="page-title">CRM de Clientes</h2>
-            <div class="text-secondary mt-1">Directorio unificado, historial de compras, reparaciones y control de deudas</div>
-          </div>
-          <div class="col-auto ms-auto">
-            <button id="btn-crear-cliente" class="btn btn-primary">
-              <i class="ti ti-plus me-2"></i> Crear Cliente
-            </button>
-          </div>
-        </div>
-      </div>
-
+    <div class="container-xl erp-module">
+      ${erpHeader({
+        eyebrow: 'Clientes',
+        title: 'CRM y directorio',
+        subtitle: 'Historial de compras, reparaciones y control de deudas',
+        actionsHtml: `
+          <button id="btn-crear-cliente" class="btn btn-primary">
+            <i class="ti ti-plus me-2"></i> Crear cliente
+          </button>
+        `
+      })}
+      
       <!-- Buscador -->
       <div class="card mb-4 d-print-none">
         <div class="card-body">
@@ -134,13 +133,11 @@ export async function initClientes(container) {
         <td>${c.telefono || '<span class="text-secondary small">No registrado</span>'}</td>
         <td>${c.email || '<span class="text-secondary small">No registrado</span>'}</td>
         <td class="small text-secondary">${c.direccion || 'N/A'}</td>
-        <td class="text-end">
-           <button class="btn btn-outline-primary btn-icon btn-sm btn-ficha-cli" data-id="${c.id}" title="Ficha del Cliente" aria-label="Ver ficha del cliente">
-            <i class="ti ti-user-check"></i>
-          </button>
-          <button class="btn btn-outline-secondary btn-icon btn-sm btn-edit-cli" data-id="${c.id}" title="Editar" aria-label="Editar cliente">
-            <i class="ti ti-edit"></i>
-          </button>
+        <td class="text-end erp-td-actions">
+          ${erpActions(`
+            ${erpAction('view', { className: 'btn-ficha-cli', attrs: { 'data-id': c.id }, label: 'Ver' })}
+            ${erpAction('edit', { className: 'btn-edit-cli', attrs: { 'data-id': c.id } })}
+          `)}
         </td>
       </tr>
     `).join('');

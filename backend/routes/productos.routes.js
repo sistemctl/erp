@@ -11,6 +11,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 // Consultas permitidas a todos los roles autenticados
 router.get('/', authMiddleware, productosController.getProductos);
 router.get('/categorias', authMiddleware, productosController.getCategorias);
+router.get('/generar-codigo', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede']), productosController.generarCodigoInterno);
 router.get('/barcode/:codigo', authMiddleware, productosController.getProductoByBarcode);
 
 // Rutas de administración de catálogo

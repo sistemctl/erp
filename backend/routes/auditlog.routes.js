@@ -4,6 +4,6 @@ const auditlogController = require('../controllers/auditlog.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 const rolesMiddleware = require('../middleware/roles.middleware');
 
-router.get('/', authMiddleware, rolesMiddleware(['admin', 'superadmin']), auditlogController.getAuditLogs);
+router.get('/', authMiddleware, rolesMiddleware(['superadmin']), auditlogController.getAuditLogs);
 
 module.exports = router;
