@@ -1,0 +1,28 @@
+# Dependencias y artefactos locales
+**/node_modules
+**/.env
+**/.env.*
+!**/.env.example
+
+# Git y editor
+.git
+.gitignore
+.cursor
+.vscode
+*.md
+!README.md
+
+# Docker homelab (no forma parte de la imagen ERP)
+docker/homelab/pihole
+docker/homelab/certs
+docker/homelab/.env
+
+# Logs, tests y temporales
+**/*.log
+**/test-results
+**/.playwright
+errorHandler.js
+
+# Uploads locales (se montan como volumen en producción)
+backend/uploads/*
+!backend/uploads/.gitkeep
