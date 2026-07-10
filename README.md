@@ -53,7 +53,7 @@ El backend sirve la API REST (`/api/*`), archivos subidos (`/uploads`) y el fron
 ## Estructura del repositorio
 
 ```
-erpnext/
+erp/
 ├── backend/              # API Express + modelos Sequelize
 │   ├── server.js         # Punto de entrada
 │   ├── .env.example      # Variables para instalación nativa
@@ -69,7 +69,7 @@ erpnext/
 
 ## Variables de entorno
 
-Copie la plantilla según el método de instalación:
+Copia la plantilla según el método de instalación:
 
 | Método | Archivo plantilla | Destino |
 |--------|-------------------|---------|
@@ -93,7 +93,7 @@ Copie la plantilla según el método de instalación:
 |----------|-------------|
 | `NODE_ENV` | `production` en servidores reales |
 | `PORT` | Puerto HTTP interno (por defecto `3000`) |
-| `PUBLIC_BASE_URL` | URL pública con HTTPS, ej. `https://erp.midominio.com` |
+| `PUBLIC_BASE_URL` | URL pública con HTTPS, ej. `https://erp.tudominio.com` |
 | `CORS_ORIGINS` | Dominios permitidos separados por coma |
 
 ### Variables opcionales
@@ -106,45 +106,51 @@ Copie la plantilla según el método de instalación:
 | `SMTP_*` | Correo saliente (también configurable en la UI) |
 | `TWILIO_*` | SMS/WhatsApp (también configurable en la UI) |
 
-> **Nota:** En `NODE_ENV=production`, las IPs de red local **no** se aceptan automáticamente por CORS. Defina `CORS_ORIGINS` con sus dominios HTTPS.
+> **Nota:** Con `NODE_ENV=production`, las IPs de red local **no** se aceptan automáticamente por CORS. Debes definir `CORS_ORIGINS` con tus dominios HTTPS.
 
 ---
 
 ## Instalación con Docker
 
-Levanta **PostgreSQL + ERP** en contenedores. No requiere instalar Node.js ni PostgreSQL en el host.
+Despliega **PostgreSQL** y el **ERP** en contenedores. No necesitas instalar Node.js ni PostgreSQL en tu máquina.
 
 ### 1. Clonar el repositorio
 
 ```bash
-git clone https://github.com/TU_USUARIO/erpnext.git
-cd erpnext
+git clone https://github.com/sistemctl/erp.git
+cd erp
 ```
 
-### 2. Configurar variables
+### 2. Configurar variables de entorno
+
+Copia la plantilla y edítala:
 
 ```bash
 cp .env.docker.example .env
 ```
 
-Edite `.env` y cambie al menos:
+Abre `.env` y cambia **obligatoriamente** estos valores:
 
 ```env
-DB_PASS=una_contraseña_segura
-JWT_SECRET=clave_aleatoria_de_al_menos_32_caracteres
+DB_PASS=tu_contraseña_segura
+JWT_SECRET=genera_una_clave_aleatoria_de_32_caracteres_o_mas
 ```
 
-Opcionalmente ajuste `ERP_HOST_PORT` si el puerto 3000 del host está ocupado.
+Si el puerto `3000` ya está en uso en tu equipo, cambia también:
 
-### 3. Construir y arrancar
+```env
+ERP_HOST_PORT=3001
+```
+
+### 3. Construir e iniciar los contenedores
 
 ```bash
 docker compose -f docker-compose.erp.yml up -d --build
 ```
 
-La primera vez puede tardar varios minutos (descarga de imágenes, `npm ci` y sincronización de la base de datos).
+La primera ejecución puede tardar varios minutos: descarga imágenes, instala dependencias con `npm ci` y sincroniza la base de datos.
 
-### 4. Verificar que funciona
+### 4. Verificar que todo funciona
 
 ```bash
 # Estado de los contenedores
@@ -153,7 +159,7 @@ docker compose -f docker-compose.erp.yml ps
 # Logs del ERP
 docker compose -f docker-compose.erp.yml logs -f erp
 
-# Health check
+# Comprobar que responde
 curl http://localhost:3000/api/health
 ```
 
@@ -163,15 +169,17 @@ Respuesta esperada:
 {"ok":true,"puerto":3000,"urlPublica":"http://localhost:3000"}
 ```
 
-### 5. Acceder a la aplicación
+> Si cambiaste `ERP_HOST_PORT`, usa ese puerto en lugar de `3000`.
 
-Abra en el navegador:
+### 5. Abrir la aplicación
+
+En el navegador:
 
 ```
 http://localhost:3000
 ```
 
-(o el puerto definido en `ERP_HOST_PORT`).
+Usa el puerto que hayas definido en `ERP_HOST_PORT` si no es el `3000`.
 
 ### 6. Cargar datos de prueba (opcional)
 
@@ -179,43 +187,43 @@ http://localhost:3000
 docker compose -f docker-compose.erp.yml exec erp node seeders/seeder.js
 ```
 
-Credenciales de prueba tras el seeder:
+Credenciales después del seeder:
 
 | Rol | Email | Contraseña |
 |-----|-------|------------|
 | Admin | `admin@techstore.com` | `admin123` |
 
-### Comandos Docker útiles
+### Comandos útiles
 
 ```bash
-# Detener
+# Detener contenedores
 docker compose -f docker-compose.erp.yml down
 
-# Detener y eliminar volúmenes (borra la base de datos)
+# Detener y borrar volúmenes (elimina la base de datos)
 docker compose -f docker-compose.erp.yml down -v
 
 # Reiniciar solo el ERP
 docker compose -f docker-compose.erp.yml restart erp
 
-# Actualizar tras git pull
+# Actualizar después de un git pull
 git pull
 docker compose -f docker-compose.erp.yml up -d --build
 
-# Backup de PostgreSQL
+# Respaldo de PostgreSQL
 docker compose -f docker-compose.erp.yml exec postgres \
   pg_dump -U erp_user erp_techstore > backup_$(date +%F).sql
 ```
 
 ### HTTPS con Nginx delante de Docker (opcional)
 
-Si expone el ERP con un dominio público, configure un proxy inverso en el host apuntando al puerto `ERP_HOST_PORT` y defina en `.env`:
+Si publicas el ERP con un dominio, configura un proxy inverso en el host apuntando al puerto `ERP_HOST_PORT` y agrega en `.env`:
 
 ```env
-PUBLIC_BASE_URL=https://erp.midominio.com
-CORS_ORIGINS=https://erp.midominio.com
+PUBLIC_BASE_URL=https://erp.tudominio.com
+CORS_ORIGINS=https://erp.tudominio.com
 ```
 
-Luego reinicie el contenedor ERP:
+Reinicia el contenedor del ERP:
 
 ```bash
 docker compose -f docker-compose.erp.yml restart erp
@@ -225,7 +233,7 @@ docker compose -f docker-compose.erp.yml restart erp
 
 ## Instalación en servidor Linux
 
-Guía para **Ubuntu 22.04/24.04** o Debian equivalente. El ERP corre como servicio systemd detrás de Nginx con HTTPS.
+Guía para **Ubuntu 22.04/24.04** o Debian equivalente. El ERP corre como servicio `systemd` detrás de Nginx con HTTPS.
 
 ### 1. Actualizar el sistema e instalar dependencias
 
@@ -251,11 +259,11 @@ sudo systemctl enable postgresql
 sudo systemctl start postgresql
 ```
 
-### 4. Crear base de datos y usuario
+### 4. Crear la base de datos y el usuario
 
 ```bash
 sudo -u postgres psql <<'SQL'
-CREATE USER erp_user WITH PASSWORD 'cambiar_contraseña_segura';
+CREATE USER erp_user WITH PASSWORD 'tu_contraseña_segura';
 CREATE DATABASE erp_techstore OWNER erp_user;
 GRANT ALL PRIVILEGES ON DATABASE erp_techstore TO erp_user;
 SQL
@@ -264,10 +272,10 @@ SQL
 ### 5. Clonar el proyecto
 
 ```bash
-sudo mkdir -p /opt/erpnext
-sudo chown $USER:$USER /opt/erpnext
-git clone https://github.com/TU_USUARIO/erpnext.git /opt/erpnext
-cd /opt/erpnext
+sudo mkdir -p /opt/erp
+sudo chown $USER:$USER /opt/erp
+git clone https://github.com/sistemctl/erp.git /opt/erp
+cd /opt/erp
 ```
 
 ### 6. Configurar variables de entorno
@@ -286,17 +294,17 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=erp_techstore
 DB_USER=erp_user
-DB_PASS=cambiar_contraseña_segura
-JWT_SECRET=clave_aleatoria_de_al_menos_32_caracteres
+DB_PASS=tu_contraseña_segura
+JWT_SECRET=genera_una_clave_aleatoria_de_32_caracteres_o_mas
 JWT_EXPIRES_IN=8h
-PUBLIC_BASE_URL=https://erp.midominio.com
-CORS_ORIGINS=https://erp.midominio.com
+PUBLIC_BASE_URL=https://erp.tudominio.com
+CORS_ORIGINS=https://erp.tudominio.com
 ```
 
-### 7. Instalar dependencias y probar arranque
+### 7. Instalar dependencias y probar el arranque
 
 ```bash
-cd /opt/erpnext/backend
+cd /opt/erp/backend
 npm ci --omit=dev
 mkdir -p uploads/reparaciones
 node server.js
@@ -308,12 +316,12 @@ En otra terminal:
 curl http://127.0.0.1:3000/api/health
 ```
 
-Si responde `{"ok":true,...}`, detenga el proceso con `Ctrl+C` y continúe.
+Si responde `{"ok":true,...}`, detén el proceso con `Ctrl+C` y continúa.
 
-### 8. Crear servicio systemd
+### 8. Crear el servicio systemd
 
 ```bash
-sudo tee /etc/systemd/system/erpnext.service > /dev/null <<'EOF'
+sudo tee /etc/systemd/system/erp.service > /dev/null <<'EOF'
 [Unit]
 Description=ERP TechStore (Servitec Gamers)
 After=network.target postgresql.service
@@ -323,8 +331,8 @@ Wants=postgresql.service
 Type=simple
 User=www-data
 Group=www-data
-WorkingDirectory=/opt/erpnext/backend
-EnvironmentFile=/opt/erpnext/backend/.env
+WorkingDirectory=/opt/erp/backend
+EnvironmentFile=/opt/erp/backend/.env
 ExecStart=/usr/bin/node server.js
 Restart=on-failure
 RestartSec=5
@@ -334,26 +342,26 @@ WantedBy=multi-user.target
 EOF
 ```
 
-Ajuste permisos para el usuario del servicio:
+Asigna permisos al usuario del servicio:
 
 ```bash
-sudo chown -R www-data:www-data /opt/erpnext/backend/uploads
-sudo chown -R www-data:www-data /opt/erpnext/frontend
+sudo chown -R www-data:www-data /opt/erp/backend/uploads
+sudo chown -R www-data:www-data /opt/erp/frontend
 sudo systemctl daemon-reload
-sudo systemctl enable erpnext
-sudo systemctl start erpnext
-sudo systemctl status erpnext
+sudo systemctl enable erp
+sudo systemctl start erp
+sudo systemctl status erp
 ```
 
 ### 9. Configurar Nginx como proxy inverso
 
-Reemplace `erp.midominio.com` por su dominio real:
+Reemplaza `erp.tudominio.com` por tu dominio real:
 
 ```bash
-sudo tee /etc/nginx/sites-available/erpnext > /dev/null <<'EOF'
+sudo tee /etc/nginx/sites-available/erp > /dev/null <<'EOF'
 server {
     listen 80;
-    server_name erp.midominio.com;
+    server_name erp.tudominio.com;
 
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -368,7 +376,7 @@ server {
 }
 EOF
 
-sudo ln -sf /etc/nginx/sites-available/erpnext /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/erp /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -376,7 +384,7 @@ sudo systemctl reload nginx
 ### 10. Habilitar HTTPS con Let's Encrypt
 
 ```bash
-sudo certbot --nginx -d erp.midominio.com
+sudo certbot --nginx -d erp.tudominio.com
 ```
 
 Certbot renovará el certificado automáticamente.
@@ -384,7 +392,7 @@ Certbot renovará el certificado automáticamente.
 ### 11. Cargar datos de prueba (opcional)
 
 ```bash
-cd /opt/erpnext/backend
+cd /opt/erp/backend
 node seeders/seeder.js
 ```
 
@@ -392,18 +400,18 @@ node seeders/seeder.js
 
 ```bash
 # Ver logs del servicio
-sudo journalctl -u erpnext -f
+sudo journalctl -u erp -f
 
-# Reiniciar tras cambios en .env o código
-sudo systemctl restart erpnext
+# Reiniciar después de cambios en .env o código
+sudo systemctl restart erp
 
-# Actualizar aplicación
-cd /opt/erpnext
+# Actualizar la aplicación
+cd /opt/erp
 git pull
 cd backend && npm ci --omit=dev
-sudo systemctl restart erpnext
+sudo systemctl restart erp
 
-# Backup PostgreSQL
+# Respaldo de PostgreSQL
 pg_dump -U erp_user -h localhost erp_techstore > ~/backup_erp_$(date +%F).sql
 ```
 
@@ -427,9 +435,9 @@ docker compose -f docker-compose.erp.yml exec erp node seeders/seeder.js
 
 | Tarea | Docker | Linux |
 |-------|--------|-------|
-| Ver logs | `docker compose -f docker-compose.erp.yml logs -f erp` | `journalctl -u erpnext -f` |
-| Reiniciar | `docker compose -f docker-compose.erp.yml restart erp` | `sudo systemctl restart erpnext` |
-| Backup BD | `pg_dump` vía contenedor `postgres` | `pg_dump` local |
+| Ver logs | `docker compose -f docker-compose.erp.yml logs -f erp` | `journalctl -u erp -f` |
+| Reiniciar | `docker compose -f docker-compose.erp.yml restart erp` | `sudo systemctl restart erp` |
+| Respaldo BD | `pg_dump` vía contenedor `postgres` | `pg_dump` local |
 | Subidas | Volumen `erp_uploads` | `backend/uploads/` |
 
 ---
@@ -438,34 +446,34 @@ docker compose -f docker-compose.erp.yml exec erp node seeders/seeder.js
 
 ### El ERP no arranca — error de conexión a PostgreSQL
 
-- Verifique `DB_HOST`, `DB_USER`, `DB_PASS` y que PostgreSQL esté activo.
-- Docker: espere a que el healthcheck de `postgres` esté en `healthy` antes de que `erp` inicie.
+- Revisa `DB_HOST`, `DB_USER`, `DB_PASS` y que PostgreSQL esté activo.
+- Docker: espera a que el healthcheck de `postgres` esté en `healthy` antes de que `erp` inicie.
 - Linux: `sudo systemctl status postgresql`
 
 ### Puerto 3000 ya en uso
 
-- Cambie `ERP_HOST_PORT` en `.env` (Docker) o `PORT` en `backend/.env` (Linux).
-- En Linux con systemd, reinicie el servicio tras el cambio.
+- Cambia `ERP_HOST_PORT` en `.env` (Docker) o `PORT` en `backend/.env` (Linux).
+- En Linux con systemd, reinicia el servicio después del cambio.
 
 ### Error CORS en el navegador
 
-- En producción defina `CORS_ORIGINS` con la URL exacta (protocolo + dominio).
-- Ejemplo: `CORS_ORIGINS=https://erp.midominio.com`
+- En producción define `CORS_ORIGINS` con la URL exacta (protocolo + dominio).
+- Ejemplo: `CORS_ORIGINS=https://erp.tudominio.com`
 
 ### `502 Bad Gateway` detrás de Nginx
 
-- Confirme que el ERP responde: `curl http://127.0.0.1:3000/api/health`
-- Verifique que `proxy_pass` apunta al puerto correcto.
-- Revise logs: `journalctl -u erpnext` o logs de Nginx en `/var/log/nginx/error.log`
+- Confirma que el ERP responde: `curl http://127.0.0.1:3000/api/health`
+- Verifica que `proxy_pass` apunta al puerto correcto.
+- Revisa logs: `journalctl -u erp` o `/var/log/nginx/error.log`
 
 ### Health check falla en Docker
 
-- La primera sincronización de Sequelize puede tardar. Espere hasta 90 s.
-- Revise logs: `docker compose -f docker-compose.erp.yml logs erp`
+- La primera sincronización de Sequelize puede tardar. Espera hasta 90 segundos.
+- Revisa logs: `docker compose -f docker-compose.erp.yml logs erp`
 
 ### Subidas de archivos no persisten (Docker)
 
-- Los archivos se guardan en el volumen `erp_uploads`. No use `docker compose down -v` si desea conservarlos.
+- Los archivos se guardan en el volumen `erp_uploads`. No uses `docker compose down -v` si quieres conservarlos.
 
 ---
 
