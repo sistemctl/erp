@@ -15,6 +15,19 @@ function isLocalOrigin(origin) {
   return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
 }
 
+/** Redes privadas RFC1918 — acceso LAN sin dominio local */
+function isPrivateLanOrigin(origin) {
+  try {
+    const { hostname } = new URL(origin);
+    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    if (/^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function isTunnelHostname(hostname) {
   if (!hostname) return false;
   return TUNNEL_HOST_PATTERNS.some((pattern) => pattern.test(hostname));
@@ -23,6 +36,7 @@ function isTunnelHostname(hostname) {
 function isAllowedCorsOrigin(origin) {
   if (!origin) return true;
   if (isLocalOrigin(origin)) return true;
+  if (process.env.NODE_ENV !== 'production' && isPrivateLanOrigin(origin)) return true;
 
   try {
     const { hostname, origin: parsedOrigin } = new URL(origin);

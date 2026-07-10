@@ -28,6 +28,7 @@ const modulosPorRol = {
     { name: 'Clientes CRM', hash: '#/clientes', icon: 'ti-users-group' },
     { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
     { name: 'Rentabilidad', hash: '#/rentabilidad', icon: 'ti-chart-bar' },
+    { name: 'Reportes', hash: '#/reportes', icon: 'ti-report-analytics' },
     { name: 'Inventario', hash: '#/inventario', icon: 'ti-package' },
     { name: 'Facturación', hash: '#/facturacion', icon: 'ti-file-text' },
     { name: 'Caja', hash: '#/caja', icon: 'ti-building-store' },
@@ -46,6 +47,7 @@ const modulosPorRol = {
     { name: 'Clientes CRM', hash: '#/clientes', icon: 'ti-users-group' },
     { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
     { name: 'Rentabilidad', hash: '#/rentabilidad', icon: 'ti-chart-bar' },
+    { name: 'Reportes', hash: '#/reportes', icon: 'ti-report-analytics' },
     { name: 'Inventario', hash: '#/inventario', icon: 'ti-package' },
     { name: 'Facturación', hash: '#/facturacion', icon: 'ti-file-text' },
     { name: 'Caja', hash: '#/caja', icon: 'ti-building-store' },
@@ -63,6 +65,7 @@ const modulosPorRol = {
     { name: 'Clientes CRM', hash: '#/clientes', icon: 'ti-users-group' },
     { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
     { name: 'Rentabilidad', hash: '#/rentabilidad', icon: 'ti-chart-bar' },
+    { name: 'Reportes', hash: '#/reportes', icon: 'ti-report-analytics' },
     { name: 'Inventario', hash: '#/inventario', icon: 'ti-package' },
     { name: 'Facturación', hash: '#/facturacion', icon: 'ti-file-text' },
     { name: 'Caja', hash: '#/caja', icon: 'ti-building-store' },
@@ -91,7 +94,8 @@ const modulosPorRol = {
     { name: 'Compras', hash: '#/compras', icon: 'ti-truck' },
     { name: 'Proveedores', hash: '#/proveedores', icon: 'ti-building-factory' },
     { name: 'Caja', hash: '#/caja', icon: 'ti-building-store' },
-    { name: 'Rentabilidad', hash: '#/rentabilidad', icon: 'ti-chart-bar' }
+    { name: 'Rentabilidad', hash: '#/rentabilidad', icon: 'ti-chart-bar' },
+    { name: 'Reportes', hash: '#/reportes', icon: 'ti-report-analytics' }
   ]
 };
 
@@ -224,6 +228,10 @@ async function router() {
       case '#/rentabilidad':
         const { initRentabilidad } = await import('./modules/rentabilidad.js');
         await initRentabilidad(contentContainer);
+        break;
+      case '#/reportes':
+        const { initReportes } = await import('./modules/reportes.js');
+        await initReportes(contentContainer);
         break;
       case '#/facturacion':
         const { initFacturacion } = await import('./modules/facturacion.js');

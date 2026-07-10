@@ -37,7 +37,7 @@ exports.getTradeIns = async (req, res, next) => {
 exports.registrarTradeIn = async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
-    const { clienteId, tipoEquipo, marca, modelo, imei, estadoFisico, valoracion, ventaId, sedeId: bodySedeId } = req.body;
+    const { clienteId, tipoEquipo, marca, modelo, imei, estadoFisico, valoracion, precioVenta, ventaId, sedeId: bodySedeId } = req.body;
     const sedeId = await resolveActionSede(bodySedeId, req.usuario, Sede, transaction);
     const usuarioId = req.usuario.userId;
 
@@ -59,22 +59,34 @@ exports.registrarTradeIn = async (req, res, next) => {
     // 2. Definir código de barras (usar IMEI o autogenerado si no hay IMEI)
     const serial = imei || `TRD-${Date.now()}`;
     
-    // Verificar si ya existe un producto con el mismo código de barras
+    // Verificar si ya existe un producto o serie con el mismo IMEI/código
     let productoExistente = await Producto.findOne({ where: { codigoBarras: serial }, transaction });
     if (productoExistente) {
       return res.status(400).json({ error: `Ya existe un producto registrado en el sistema con el IMEI/Código ${serial}.` });
     }
 
+    const serieExistente = await NumeroSerie.findOne({ where: { serie: serial }, transaction });
+    if (serieExistente) {
+      return res.status(400).json({ error: `El IMEI/serie ${serial} ya está registrado en inventario.` });
+    }
+
     // 3. Crear el Producto Reacondicionado en el catálogo
     const prodVal = parseFloat(valoracion);
-    const precioSugerido = prodVal * 1.30; // 30% de incremento sugerido para venta de reacondicionados
+    if (!Number.isFinite(prodVal) || prodVal < 0) {
+      return res.status(400).json({ error: 'La valoración debe ser un monto válido.' });
+    }
+
+    let precioFinal = parseFloat(precioVenta);
+    if (!Number.isFinite(precioFinal) || precioFinal < 0) {
+      precioFinal = Math.round(prodVal * 1.30);
+    }
 
     const producto = await Producto.create({
       nombre: `[Usado] ${marca} ${modelo} (${estadoFisico.toUpperCase()})`,
       codigoBarras: serial,
       descripcion: `Equipo recibido en Trade-In de cliente. Marca: ${marca}, Modelo: ${modelo}, Estado: ${estadoFisico}. IMEI: ${serial}`,
       precioCosto: prodVal,
-      precioVenta: precioSugerido,
+      precioVenta: precioFinal,
       tieneIVA: false,
       stockMinimo: 0,
       tieneNumeroSerie: true,
@@ -94,10 +106,9 @@ exports.registrarTradeIn = async (req, res, next) => {
     await NumeroSerie.create({
       productoId: producto.id,
       sedeId,
-      serial,
+      serie: serial,
       estado: 'en_stock',
-      clienteId: null,
-      fechaCompra: new Date()
+      clienteId: null
     }, { transaction });
 
     // 6. Registrar el Trade-In

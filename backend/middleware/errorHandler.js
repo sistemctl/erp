@@ -1,11 +1,16 @@
 module.exports = (err, req, res, next) => {
-  console.error('Error no controlado:', err);
+  if (res.headersSent) {
+    return next(err);
+  }
 
-  const status = err.status || 500;
-  const message = err.message || 'Ocurrió un error interno en el servidor.';
+  const status = err.status || err.statusCode || 500;
+  const message = err.message || 'Error interno del servidor.';
+
+  if (status >= 500) {
+    console.error('[API]', req.method, req.originalUrl, err);
+  }
 
   res.status(status).json({
-    error: message,
-    detalles: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    error: message
   });
 };

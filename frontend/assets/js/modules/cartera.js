@@ -9,6 +9,8 @@ export async function initCartera(container) {
 
   let morosidadFiltro = '';
   let activeCpcId = null;
+  let lastCarteraData = [];
+  const canRecordatorio = ['admin', 'superadmin', 'gerente_sede', 'contador'].includes(usuario.rol);
 
   container.innerHTML = `
     <div class="container-xl erp-module">
@@ -18,10 +20,16 @@ export async function initCartera(container) {
         subtitle: 'Créditos, plazos de pago y recaudo por sede'
       })}
 
+      <div class="row g-3 mb-4" id="cartera-resumen-kpis">
+        <div class="col-md-4"><div class="card card-sm"><div class="card-body"><div class="text-secondary small">Total pendiente</div><div class="h2 mb-0" id="cartera-kpi-total">—</div></div></div></div>
+        <div class="col-md-4"><div class="card card-sm"><div class="card-body"><div class="text-secondary small">Vencida</div><div class="h2 mb-0 text-danger" id="cartera-kpi-vencida">—</div></div></div></div>
+        <div class="col-md-4"><div class="card card-sm"><div class="card-body"><div class="text-secondary small">Al día</div><div class="h2 mb-0 text-success" id="cartera-kpi-aldia">—</div></div></div></div>
+      </div>
+
       <div class="card mb-4 d-print-none erp-filter-card">
         <div class="card-body">
           <div class="row g-3">
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label">Antigüedad de Mora</label>
               <select id="filtro-morosidad" class="form-select">
                 <option value="">-- Toda la Cartera --</option>
@@ -31,7 +39,7 @@ export async function initCartera(container) {
                 <option value="+90">Mora crítica (+90 días)</option>
               </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label">Estado de la Deuda</label>
               <select id="filtro-estado" class="form-select">
                 <option value="">-- Todos los Estados --</option>
@@ -40,8 +48,11 @@ export async function initCartera(container) {
                 <option value="pagada">Liquidada / Pagada</option>
               </select>
             </div>
-            <div class="col-md-4 d-flex align-items-end">
+            <div class="col-md-2 d-flex align-items-end">
               <button id="btn-buscar-cartera" class="btn btn-primary w-100"><i class="ti ti-search me-1"></i> Consultar</button>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+              <button type="button" id="btn-export-cartera" class="btn btn-outline-secondary w-100"><i class="ti ti-download me-1"></i> CSV</button>
             </div>
           </div>
         </div>
@@ -121,6 +132,40 @@ export async function initCartera(container) {
   const modalAbono = new bootstrap.Modal(document.getElementById('modal-abono-cartera'));
   const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
+  const loadResumen = async () => {
+    try {
+      const q = sedeId ? `?sede=${sedeId}` : '';
+      const res = await apiFetch(`/analytics/finanzas/cartera${q}`);
+      document.getElementById('cartera-kpi-total').textContent = formatter.format(res.totalPendiente);
+      document.getElementById('cartera-kpi-vencida').textContent = formatter.format(res.totalVencida);
+      document.getElementById('cartera-kpi-aldia').textContent = formatter.format(res.totalAlDia);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const exportCsv = () => {
+    if (!lastCarteraData.length) {
+      alert('No hay datos para exportar.');
+      return;
+    }
+    const escape = (v) => {
+      const s = v == null ? '' : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const cols = ['Cliente', 'Factura', 'Vencimiento', 'Días mora', 'Saldo', 'Estado'];
+    const rows = lastCarteraData.map(i => [
+      i.cliente?.nombre, i.factura?.numeroFactura,
+      new Date(i.fechaVencimiento).toLocaleDateString(),
+      i.diasVencido, i.saldoPendiente, i.estado
+    ].map(escape).join(','));
+    const blob = new Blob(['\uFEFF' + [cols.join(','), ...rows].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `cartera_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+  };
+
   // Cargar Cartera
   const loadCartera = async () => {
     const tbody = document.getElementById('cartera-table-body');
@@ -139,6 +184,7 @@ export async function initCartera(container) {
 
       const query = params.length > 0 ? '?' + params.join('&') : '';
       const data = await apiFetch(`/cartera${query}`);
+      lastCarteraData = data;
 
       if (data.length === 0) {
         tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-secondary">No se encontraron créditos registrados en cartera.</td></tr>`;
@@ -182,6 +228,10 @@ export async function initCartera(container) {
                 <button class="btn btn-primary btn-sm btn-abono-cpc" data-id="${item.id}" data-saldo="${item.saldoPendiente}" data-sede="${item.factura ? item.factura.sedeId || '' : ''}">
                   <i class="ti ti-plus me-1"></i>Abonar
                 </button>
+                ${canRecordatorio ? `
+                <button class="btn btn-outline-secondary btn-sm btn-recordatorio-cpc ms-1" data-id="${item.id}" title="Enviar recordatorio por correo">
+                  <i class="ti ti-mail"></i>
+                </button>` : ''}
               ` : `
                 <span class="text-success small"><i class="ti ti-check me-1"></i>Saldado</span>
               `}
@@ -191,7 +241,7 @@ export async function initCartera(container) {
       }).join('');
 
       document.querySelectorAll('.btn-abono-cpc').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', () => {
           activeCpcId = btn.dataset.id;
           activeAbonoSedeId = btn.dataset.sede || null;
           document.getElementById('form-abono-cartera').reset();
@@ -201,12 +251,33 @@ export async function initCartera(container) {
         });
       });
 
+      document.querySelectorAll('.btn-recordatorio-cpc').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('¿Enviar recordatorio de pago por correo al cliente?')) return;
+          try {
+            await apiFetch(`/cartera/${btn.dataset.id}/recordatorio`, { method: 'POST' });
+            alert('Recordatorio enviado correctamente.');
+          } catch (err) {
+            alert(err.message);
+          }
+        });
+      });
+
     } catch (e) {
       tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Error: ${e.message}</td></tr>`;
     }
   };
 
-  document.getElementById('btn-buscar-cartera').addEventListener('click', loadCartera);
+  document.getElementById('btn-buscar-cartera').addEventListener('click', () => {
+    loadCartera();
+    loadResumen();
+  });
+  document.getElementById('btn-export-cartera').addEventListener('click', exportCsv);
+
+  const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  if (hashParams.get('estado')) {
+    document.getElementById('filtro-estado').value = hashParams.get('estado');
+  }
 
   // Submit Abono
   document.getElementById('form-abono-cartera').addEventListener('submit', async (e) => {
@@ -231,10 +302,12 @@ export async function initCartera(container) {
       alert('Abono registrado exitosamente. Caja diaria actualizada.');
       modalAbono.hide();
       loadCartera();
+      loadResumen();
     } catch (err) {
       alert(err.message);
     }
   });
 
+  await loadResumen();
   await loadCartera();
 }

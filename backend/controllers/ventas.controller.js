@@ -18,6 +18,8 @@ const {
 } = require('../models');
 const { Op } = require('sequelize');
 const { resolveQuerySede } = require('../utils/sede');
+const { calcularFechaVencimientoCredito, getDiasPlazoCredito } = require('../utils/credito');
+const emailService = require('../services/email.service');
 
 exports.procesarVenta = async (req, res, next) => {
   const transaction = await sequelize.transaction();
@@ -252,8 +254,8 @@ exports.procesarVenta = async (req, res, next) => {
     // 6. Generar Factura
     const countFacturas = await Factura.count({ transaction });
     const numeroFactura = `FE-${String(countFacturas + 1).padStart(6, '0')}`;
-    const fechaVencimiento = new Date();
-    fechaVencimiento.setDate(fechaVencimiento.getDate() + 30); // 30 días plazo para crédito
+    const diasPlazo = await getDiasPlazoCredito(ConfiguracionSistema);
+    const fechaVencimiento = calcularFechaVencimientoCredito(diasPlazo);
 
     const factura = await Factura.create({
       numeroFactura,
@@ -291,6 +293,8 @@ exports.procesarVenta = async (req, res, next) => {
       });
     }
 
+    triggerFacturaEmailAuto(factura.id);
+
     return res.status(201).json({
       message: 'Venta registrada con éxito.',
       ventaId: venta.id,
@@ -303,6 +307,15 @@ exports.procesarVenta = async (req, res, next) => {
     next(error);
   }
 };
+
+// Envío automático de factura por correo (no bloquea la respuesta)
+function triggerFacturaEmailAuto(facturaId) {
+  emailService.enviarFacturaPorEmailAuto(facturaId).catch((err) => {
+    if (!err.message?.includes('sin correo') && !err.message?.includes('desactivado')) {
+      console.error('[Email] Auto factura POS:', err.message);
+    }
+  });
+}
 
 // --- REPORTES DE DESCUENTOS APLICADOS ---
 

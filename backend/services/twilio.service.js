@@ -1,4 +1,5 @@
 const { Notificacion, ConfiguracionSistema, OrdenReparacion, Cliente, Sede } = require('../models');
+const { textoSedeNotificacion } = require('../utils/sede');
 
 // Función segura de inicialización de Twilio
 function getTwilioClient(sid, token) {
@@ -60,7 +61,7 @@ exports.enviarNotificacionReparacion = async (ordenId, estado) => {
     const mensaje = template
       .replace(/{cliente}/g, orden.cliente.nombre)
       .replace(/{equipo}/g, `${orden.marca} ${orden.modelo}`)
-      .replace(/{sede}/g, orden.sede.nombre)
+      .replace(/{sede}/g, textoSedeNotificacion(orden.sede))
       .replace(/{orden}/g, orden.numeroOrden)
       .replace(/{total}/g, totalFormateado);
 

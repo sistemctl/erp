@@ -205,11 +205,13 @@ MovimientoInventario.belongsTo(Usuario, { foreignKey: 'usuarioId', as: 'usuario'
 Producto.hasMany(MovimientoInventario, { foreignKey: 'productoId', as: 'movimientos' });
 Sede.hasMany(MovimientoInventario, { foreignKey: 'sedeId', as: 'movimientos' });
 
-// Notificacion <-> OrdenReparacion, Cliente
+// Notificacion <-> OrdenReparacion, Cliente, Factura
 Notificacion.belongsTo(OrdenReparacion, { foreignKey: 'ordenReparacionId', as: 'orden' });
 Notificacion.belongsTo(Cliente, { foreignKey: 'clienteId', as: 'cliente' });
+Notificacion.belongsTo(Factura, { foreignKey: 'facturaId', as: 'factura' });
 OrdenReparacion.hasMany(Notificacion, { foreignKey: 'ordenReparacionId', as: 'notificaciones' });
 Cliente.hasMany(Notificacion, { foreignKey: 'clienteId', as: 'notificaciones' });
+Factura.hasMany(Notificacion, { foreignKey: 'facturaId', as: 'notificaciones' });
 
 // AuditLog <-> Usuario, Sede
 AuditLog.belongsTo(Usuario, { foreignKey: 'usuarioId', as: 'usuario' });

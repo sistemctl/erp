@@ -1,3 +1,4 @@
+const PDFDocument = require('pdfkit');
 const QRCode = require('qrcode');
 const { numeroALetras } = require('./numero-a-letras');
 const {
@@ -211,4 +212,17 @@ async function generarFacturaPDF(doc, factura, config = {}) {
   drawPageFooter(doc, empresa, innerX, innerW);
 }
 
-module.exports = { generarFacturaPDF, getFacturaItems, getCondicionPago };
+function buildFacturaPdfBuffer(factura, config = {}) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 0 });
+    const chunks = [];
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+    generarFacturaPDF(doc, factura, config)
+      .then(() => doc.end())
+      .catch(reject);
+  });
+}
+
+module.exports = { generarFacturaPDF, getFacturaItems, getCondicionPago, buildFacturaPdfBuffer };

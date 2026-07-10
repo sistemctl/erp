@@ -21,7 +21,9 @@ const { buildPublicAppUrl } = require('../utils/public-url');
 const fs = require('fs');
 const path = require('path');
 const twilioService = require('../services/twilio.service');
+const emailService = require('../services/email.service');
 const { resolveQuerySede, resolveActionSede } = require('../utils/sede');
+const { calcularFechaVencimientoCredito, getDiasPlazoCredito } = require('../utils/credito');
 
 // --- CRUD ÓRDENES ---
 
@@ -165,6 +167,9 @@ exports.createOrden = async (req, res, next) => {
 
     // Disparar envío de notificación de forma asíncrona
     twilioService.enviarNotificacionReparacion(orden.id, 'recibido');
+    emailService.enviarNotificacionReparacion(orden.id, 'recibido').catch((err) => {
+      console.error('[Email] Error en notificación recibido:', err.message);
+    });
 
     return res.status(201).json(orden);
   } catch (error) {
@@ -317,8 +322,8 @@ exports.updateEstado = async (req, res, next) => {
       if (!yaFacturado) {
         const countFacturas = await Factura.count({ transaction });
         const numeroFactura = `FE-${String(countFacturas + 1).padStart(6, '0')}`;
-        const fechaVencimiento = new Date();
-        fechaVencimiento.setDate(fechaVencimiento.getDate() + 30);
+        const diasPlazo = await getDiasPlazoCredito(ConfiguracionSistema);
+        const fechaVencimiento = calcularFechaVencimientoCredito(diasPlazo);
         
         await Factura.create({
           numeroFactura,
@@ -354,6 +359,9 @@ exports.updateEstado = async (req, res, next) => {
 
     // Disparar envío de notificación en base al nuevo estado
     twilioService.enviarNotificacionReparacion(orden.id, estado);
+    emailService.enviarNotificacionReparacion(orden.id, estado).catch((err) => {
+      console.error('[Email] Error en notificación de reparación:', err.message);
+    });
 
     return res.json({ message: 'Estado actualizado correctamente.', estado: orden.estado });
   } catch (error) {

@@ -1,0 +1,5 @@
+.env
+certs/*.pem
+certs/*.key
+pihole/etc-pihole/
+pihole/etc-dnsmasq.d/99-servitec-local.conf

@@ -47,6 +47,54 @@ const ConfiguracionSistema = sequelize.define('ConfiguracionSistema', {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
+  emailActivo: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  emailFacturaAuto: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  smtpHost: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  smtpPort: {
+    type: DataTypes.INTEGER,
+    defaultValue: 587
+  },
+  smtpSecure: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  smtpUser: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  smtpPass: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  smtpFromEmail: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  smtpFromName: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  smtpIgnoreTlsErrors: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  templateEmailFacturaAsunto: {
+    type: DataTypes.TEXT,
+    defaultValue: 'Factura {factura} — {empresa}'
+  },
+  templateEmailFacturaCuerpo: {
+    type: DataTypes.TEXT,
+    defaultValue: 'Estimado/a {cliente},\n\nAdjuntamos la factura {factura} por un total de {total}.\n\nGracias por su compra.\n{empresa}'
+  },
   twilioAccountSid: {
     type: DataTypes.STRING,
     allowNull: true
@@ -104,6 +152,26 @@ const ConfiguracionSistema = sequelize.define('ConfiguracionSistema', {
     type: DataTypes.INTEGER,
     defaultValue: 3000,
     allowNull: false
+  },
+  diasPlazoCredito: {
+    type: DataTypes.INTEGER,
+    defaultValue: 30
+  },
+  emailCarteraRecordatorio: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  diasMoraRecordatorioCartera: {
+    type: DataTypes.INTEGER,
+    defaultValue: 7
+  },
+  templateEmailCarteraAsunto: {
+    type: DataTypes.TEXT,
+    defaultValue: 'Recordatorio de pago — {empresa}'
+  },
+  templateEmailCarteraCuerpo: {
+    type: DataTypes.TEXT,
+    defaultValue: 'Estimado/a {cliente},\n\nLe recordamos que tiene un saldo pendiente de {saldo} correspondiente a la factura {factura}, vencida hace {dias} días.\n\nPor favor comuníquese con nosotros para regularizar su pago.\n\n{empresa}'
   }
 }, {
   tableName: 'ConfiguracionesSistema'

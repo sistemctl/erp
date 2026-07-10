@@ -1,4 +1,16 @@
-const { CuentaPorCobrar, Abono, Factura, Venta, Cliente, Sede, Usuario, Caja, sequelize } = require('../models');
+const emailService = require('../services/email.service');
+const {
+  CuentaPorCobrar,
+  Abono,
+  Factura,
+  Venta,
+  Cliente,
+  Sede,
+  Usuario,
+  Caja,
+  ConfiguracionSistema,
+  sequelize
+} = require('../models');
 const { Op } = require('sequelize');
 const { resolveQuerySede } = require('../utils/sede');
 
@@ -26,11 +38,12 @@ exports.getCartera = async (req, res, next) => {
     const cartera = await CuentaPorCobrar.findAll({
       where,
       include: [
-        { model: Cliente, as: 'cliente', attributes: ['nombre', 'documento', 'telefono'] },
+        { model: Cliente, as: 'cliente', attributes: ['nombre', 'documento', 'telefono', 'email'] },
         { 
           model: Factura, 
           as: 'factura', 
           where: includeFacturaWhere,
+          attributes: ['numeroFactura', 'sedeId', 'total'],
           include: [{ model: Sede, as: 'sede', attributes: ['nombre'] }]
         }
       ],
@@ -205,6 +218,35 @@ exports.registrarAbonoCartera = async (req, res, next) => {
     return res.status(201).json({ message: 'Abono registrado correctamente.', abono, cuentaPorCobrar: cpc });
   } catch (error) {
     await transaction.rollback();
+    next(error);
+  }
+};
+
+exports.enviarRecordatorio = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const config = await ConfiguracionSistema.findOne();
+    if (!config?.emailActivo) {
+      return res.status(400).json({ error: 'El canal de correo no está activo en configuración.' });
+    }
+
+    const cpc = await CuentaPorCobrar.findByPk(id, {
+      include: [
+        { model: Cliente, as: 'cliente', attributes: ['id', 'nombre', 'email'] },
+        { model: Factura, as: 'factura', attributes: ['numeroFactura', 'total'] }
+      ]
+    });
+
+    if (!cpc) {
+      return res.status(404).json({ error: 'Cuenta por cobrar no encontrada.' });
+    }
+    if (parseFloat(cpc.saldoPendiente) <= 0) {
+      return res.status(400).json({ error: 'Esta cuenta no tiene saldo pendiente.' });
+    }
+
+    await emailService.enviarRecordatorioCartera(config, cpc);
+    return res.json({ message: 'Recordatorio enviado por correo.' });
+  } catch (error) {
     next(error);
   }
 };

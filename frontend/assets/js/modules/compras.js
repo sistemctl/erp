@@ -260,6 +260,23 @@ export async function initCompras(container) {
 
             <!-- TAB 3: CUENTAS POR PAGAR (CPP) -->
             <div class="tab-pane" id="tab-cuentas-pagar" role="tabpanel">
+              <div class="card mb-3 erp-filter-card">
+                <div class="card-body py-2">
+                  <div class="row g-2 align-items-end">
+                    <div class="col-md-4">
+                      <label class="form-label mb-1">Antigüedad</label>
+                      <select id="cpp-filtro-mora" class="form-select form-select-sm">
+                        <option value="">Todas las CPP</option>
+                        <option value="al_dia">Al día</option>
+                        <option value="0-30">Vencida 0-30 días</option>
+                        <option value="30-60">Vencida 30-60 días</option>
+                        <option value="60-90">Vencida 60-90 días</option>
+                        <option value="+90">Vencida +90 días</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <div class="table-responsive">
                 <table class="table table-vcenter card-table table-striped table-hover">
                   <thead>
@@ -267,6 +284,7 @@ export async function initCompras(container) {
                       <th>Factura / OC No.</th>
                       <th>Proveedor</th>
                       <th>Fecha Vencimiento</th>
+                      <th class="text-center">Días</th>
                       <th class="text-end">Total Factura</th>
                       <th class="text-end">Saldo Pendiente</th>
                       <th class="text-center">Estado Pago</th>
@@ -495,11 +513,37 @@ export async function initCompras(container) {
     });
   }
 
+  function cppMoraMeta(fechaVencimientoPago) {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    const vence = fechaVencimientoPago ? new Date(fechaVencimientoPago) : null;
+    if (!vence) return { diasVencido: 0, diasHasta: null, clasificacion: 'al_dia', semaforo: 'green' };
+    const diffDays = Math.ceil((vence - hoy) / (1000 * 60 * 60 * 24));
+    if (diffDays >= 0) {
+      return { diasVencido: 0, diasHasta: diffDays, clasificacion: 'al_dia', semaforo: 'green' };
+    }
+    const mora = Math.abs(diffDays);
+    let clasificacion = '0-30';
+    if (mora > 90) clasificacion = '+90';
+    else if (mora > 60) clasificacion = '60-90';
+    else if (mora > 30) clasificacion = '30-60';
+    return { diasVencido: mora, diasHasta: diffDays, clasificacion, semaforo: mora > 30 ? 'red' : 'orange' };
+  }
+
   function renderCppTable() {
-    const outstanding = compras.filter(c => ['pendiente', 'parcial', 'recibida'].includes(c.estado) && parseFloat(c.saldoPendiente) > 0);
+    const filtroMora = document.getElementById('cpp-filtro-mora')?.value || '';
+    let outstanding = compras.filter(c => ['pendiente', 'parcial', 'recibida'].includes(c.estado) && parseFloat(c.saldoPendiente) > 0);
+
+    if (filtroMora) {
+      outstanding = outstanding.filter(c => {
+        const meta = cppMoraMeta(c.fechaVencimientoPago);
+        if (filtroMora === 'al_dia') return meta.clasificacion === 'al_dia';
+        return meta.clasificacion === filtroMora;
+      });
+    }
 
     if (outstanding.length === 0) {
-      tbodyCpp.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-secondary">No registra cuentas por pagar pendientes.</td></tr>`;
+      tbodyCpp.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-secondary">No registra cuentas por pagar pendientes.</td></tr>`;
       return;
     }
 
@@ -509,16 +553,20 @@ export async function initCompras(container) {
       if (c.estadoPago === 'pagado') payBadge = 'bg-success-lt';
       else if (c.estadoPago === 'abono_parcial') payBadge = 'bg-warning-lt';
 
-      const isVencida = new Date(c.fechaVencimientoPago) < new Date();
+      const meta = cppMoraMeta(c.fechaVencimientoPago);
+      const diasLabel = meta.diasVencido > 0
+        ? `<span class="badge bg-red-lt">${meta.diasVencido} d vencida</span>`
+        : `<span class="badge bg-green-lt">${meta.diasHasta ?? 0} d</span>`;
 
       return `
         <tr>
           <td><span class="badge bg-blue text-white">OC-${shortId}</span></td>
           <td><strong>${c.proveedor ? c.proveedor.nombre : 'N/A'}</strong></td>
-          <td class="${isVencida ? 'text-danger fw-bold' : ''}">
+          <td class="${meta.diasVencido > 0 ? 'text-danger fw-bold' : ''}">
             ${c.fechaVencimientoPago ? new Date(c.fechaVencimientoPago).toLocaleDateString() : 'N/A'}
-            ${isVencida ? ' <span class="badge bg-red-lt">VENCIDA</span>' : ''}
+            ${meta.diasVencido > 0 ? ' <span class="badge bg-red-lt">VENCIDA</span>' : ''}
           </td>
+          <td class="text-center">${diasLabel}</td>
           <td class="text-end">${formatter.format(c.total)}</td>
           <td class="text-end text-danger fw-bold">${formatter.format(c.saldoPendiente)}</td>
           <td class="text-center"><span class="badge ${payBadge} px-2 py-1">${c.estadoPago.toUpperCase()}</span></td>
@@ -531,7 +579,6 @@ export async function initCompras(container) {
       `;
     }).join('');
 
-    // Attach payments listeners
     document.querySelectorAll('.btn-pagar-oc').forEach(btn => {
       btn.addEventListener('click', () => openAbonarCuenta(btn.dataset.id));
     });
@@ -539,6 +586,8 @@ export async function initCompras(container) {
 
   renderComprasTable();
   renderCppTable();
+
+  document.getElementById('cpp-filtro-mora')?.addEventListener('change', renderCppTable);
 
   const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
   if (hashParams.get('tab') === 'cpp') {

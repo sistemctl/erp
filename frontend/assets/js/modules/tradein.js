@@ -82,14 +82,34 @@ export async function initTradeIn(container) {
                   </select>
                 </div>
 
-                <div class="mb-4">
-                  <label class="form-label">Valoración Estimada (COP)</label>
+                <div class="mb-3">
+                  <label class="form-label">Valoración / Costo (COP)</label>
                   <div class="input-group">
                     <span class="input-group-text">$</span>
-                    <input type="number" id="ti-valoracion" class="form-control form-control-lg fw-bold text-success" placeholder="Ej: 800000" min="0" required>
+                    <input type="number" id="ti-valoracion" class="form-control form-control-lg fw-bold text-success" placeholder="Ej: 800000" min="0" step="1000" required>
                   </div>
-                  <div class="text-secondary small mt-1">Este valor se generará como stock reacondicionado y saldo a favor en el POS.</div>
+                  <div class="text-secondary small mt-1">Lo que pagas o recibes por el equipo. Se registra como costo en inventario.</div>
                 </div>
+
+                <div class="row g-3 mb-3">
+                  <div class="col-md-5">
+                    <label class="form-label">Margen sugerido</label>
+                    <select id="ti-margen" class="form-select">
+                      <option value="20">20%</option>
+                      <option value="30" selected>30%</option>
+                      <option value="50">50%</option>
+                      <option value="custom">Personalizado</option>
+                    </select>
+                  </div>
+                  <div class="col-md-7">
+                    <label class="form-label">Precio de venta (COP)</label>
+                    <div class="input-group">
+                      <span class="input-group-text">$</span>
+                      <input type="number" id="ti-precio-venta" class="form-control fw-bold" placeholder="Ej: 1040000" min="0" step="1000" required>
+                    </div>
+                  </div>
+                </div>
+                <p class="text-secondary small mb-4" id="ti-precio-hint">Sugerido: costo + margen. Puede editar el precio de venta manualmente.</p>
 
                 <button type="submit" class="btn btn-success w-100 btn-lg">
                   <i class="ti ti-plus me-1"></i> Confirmar y Registrar en Inventario
@@ -128,6 +148,66 @@ export async function initTradeIn(container) {
 
   const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
+  const valoracionEl = document.getElementById('ti-valoracion');
+  const margenEl = document.getElementById('ti-margen');
+  const precioVentaEl = document.getElementById('ti-precio-venta');
+  const precioHintEl = document.getElementById('ti-precio-hint');
+  let precioVentaManual = false;
+
+  const calcPrecioSugerido = () => {
+    const costo = parseFloat(valoracionEl.value) || 0;
+    const margen = parseFloat(margenEl.value);
+    if (margenEl.value === 'custom' || !Number.isFinite(margen)) return null;
+    return Math.round(costo * (1 + margen / 100));
+  };
+
+  const updatePrecioHint = () => {
+    if (!precioHintEl) return;
+    const costo = parseFloat(valoracionEl.value) || 0;
+    const venta = parseFloat(precioVentaEl.value) || 0;
+    if (!costo || !venta) {
+      precioHintEl.textContent = 'Sugerido: costo + margen. Puede editar el precio de venta manualmente.';
+      return;
+    }
+    const margenReal = ((venta - costo) / costo) * 100;
+    precioHintEl.textContent = `Margen sobre costo: ${margenReal.toFixed(1)}%. También se usará como saldo a favor en el POS.`;
+  };
+
+  const syncPrecioVenta = () => {
+    if (precioVentaManual || margenEl.value === 'custom') {
+      updatePrecioHint();
+      return;
+    }
+    const sugerido = calcPrecioSugerido();
+    if (sugerido !== null) {
+      precioVentaEl.value = sugerido || '';
+    }
+    updatePrecioHint();
+  };
+
+  valoracionEl.addEventListener('input', () => {
+    precioVentaManual = false;
+    if (margenEl.value === 'custom') margenEl.value = '30';
+    syncPrecioVenta();
+  });
+
+  margenEl.addEventListener('change', () => {
+    if (margenEl.value === 'custom') {
+      precioVentaManual = true;
+      precioVentaEl.focus();
+      updatePrecioHint();
+      return;
+    }
+    precioVentaManual = false;
+    syncPrecioVenta();
+  });
+
+  precioVentaEl.addEventListener('input', () => {
+    precioVentaManual = true;
+    if (margenEl.value !== 'custom') margenEl.value = 'custom';
+    updatePrecioHint();
+  });
+
   // Submit Trade-In
   document.getElementById('form-registrar-tradein').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -139,8 +219,18 @@ export async function initTradeIn(container) {
       modelo: document.getElementById('ti-modelo').value.trim(),
       imei: document.getElementById('ti-imei').value.trim() || null,
       estadoFisico: document.getElementById('ti-estado').value,
-      valoracion: parseFloat(document.getElementById('ti-valoracion').value)
+      valoracion: parseFloat(document.getElementById('ti-valoracion').value),
+      precioVenta: parseFloat(document.getElementById('ti-precio-venta').value)
     };
+
+    if (!Number.isFinite(payload.valoracion) || payload.valoracion < 0) {
+      alert('Ingrese una valoración válida.');
+      return;
+    }
+    if (!Number.isFinite(payload.precioVenta) || payload.precioVenta < 0) {
+      alert('Ingrese un precio de venta válido.');
+      return;
+    }
 
     if (needsSedePicker) {
       const sedeVal = document.getElementById('ti-sede')?.value;
@@ -168,6 +258,8 @@ export async function initTradeIn(container) {
       }));
 
       document.getElementById('form-registrar-tradein').reset();
+      precioVentaManual = false;
+      margenEl.value = '30';
       loadTradeIns();
 
     } catch (err) {
@@ -181,7 +273,8 @@ export async function initTradeIn(container) {
     if (!tbody) return;
 
     try {
-      const query = sedeId ? `?sede=${sedeId}` : '';
+      const filterSedeId = usuario.sedeId || document.getElementById('ti-sede')?.value || '';
+      const query = filterSedeId ? `?sede=${filterSedeId}` : '';
       const data = await apiFetch(`/trade-in${query}`);
 
       if (data.length === 0) {

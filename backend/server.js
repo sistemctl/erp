@@ -70,6 +70,7 @@ app.use('/api/cartera', require('./routes/cartera.routes'));
 app.use('/api/notificaciones', require('./routes/notificaciones.routes'));
 app.use('/api/audit-log', require('./routes/auditlog.routes'));
 app.use('/api/gemini', require('./routes/gemini.routes'));
+app.use('/api/analytics', require('./routes/analytics.routes'));
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
@@ -100,6 +101,7 @@ const startServer = async () => {
       } else {
         console.log('Túnel Cloudflare: cloudflared tunnel --url http://127.0.0.1:' + PORT);
       }
+      require('./jobs/scheduler').startScheduler();
     });
   } catch (error) {
     console.error('Error al iniciar el servidor:', error);

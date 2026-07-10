@@ -7,6 +7,7 @@ const rolesMiddleware = require('../middleware/roles.middleware');
 router.get('/', authMiddleware, facturasController.getFacturas);
 router.get('/:id', authMiddleware, facturasController.getFacturaById);
 router.post('/:id/nota-credito', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede']), facturasController.anularFactura);
+router.post('/:id/enviar-email', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'cajero', 'contador']), facturasController.enviarFacturaEmail);
 router.get('/:id/pdf', authMiddleware, facturasController.getFacturaPdf);
 
 module.exports = router;

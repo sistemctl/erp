@@ -1,4 +1,37 @@
-const { Sede, Usuario, ConfiguracionSistema } = require('../models');
+const {
+  sequelize,
+  Sequelize,
+  Sede,
+  Usuario,
+  ConfiguracionSistema,
+  StockSede,
+  MovimientoInventario,
+  NumeroSerie,
+  Cliente,
+  Venta,
+  ItemVenta,
+  PagoVenta,
+  Cotizacion,
+  ItemCotizacion,
+  OrdenReparacion,
+  FotoReparacion,
+  RepuestoOrden,
+  RentabilidadReparacion,
+  TradeIn,
+  Caja,
+  EgresoCaja,
+  Factura,
+  CuentaPorCobrar,
+  Abono,
+  Empleado,
+  Nomina,
+  OrdenCompra,
+  ItemOrdenCompra,
+  PagoCompra,
+  AuditLog,
+  Notificacion
+} = require('../models');
+const { Op } = Sequelize;
 const {
   clampPort,
   buildAppUrl,
@@ -9,6 +42,123 @@ const {
 } = require('../utils/server-config');
 const { normalizeLogoUrl } = require('../utils/branding-url');
 const { getPublicOrigin } = require('../utils/public-url');
+const emailService = require('../services/email.service');
+
+async function forceDeleteSede(sede, transaction) {
+  const sedeId = sede.id;
+
+  await StockSede.destroy({ where: { sedeId }, transaction });
+  await MovimientoInventario.destroy({ where: { sedeId }, transaction });
+  await NumeroSerie.destroy({ where: { sedeId }, transaction });
+  await AuditLog.update({ sedeId: null }, { where: { sedeId }, transaction });
+  await Usuario.update({ sedeId: null }, { where: { sedeId }, transaction });
+
+  const otraSede = await Sede.findOne({
+    where: {
+      id: { [Op.ne]: sedeId },
+      activa: true
+    },
+    order: [['nombre', 'ASC']],
+    transaction
+  }) || await Sede.findOne({
+    where: { id: { [Op.ne]: sedeId } },
+    order: [['nombre', 'ASC']],
+    transaction
+  });
+
+  const clientes = await Cliente.count({ where: { sedeId }, transaction });
+  if (clientes > 0) {
+    if (!otraSede) {
+      const err = new Error('No se puede eliminar la sede: hay clientes asociados y no existe otra sede para reasignarlos.');
+      err.status = 400;
+      throw err;
+    }
+    await Cliente.update({ sedeId: otraSede.id }, { where: { sedeId }, transaction });
+  }
+
+  const empleados = await Empleado.findAll({ where: { sedeId }, attributes: ['id'], transaction });
+  const empleadoIds = empleados.map((e) => e.id);
+  if (empleadoIds.length) {
+    await Nomina.destroy({ where: { empleadoId: empleadoIds }, transaction });
+    await Empleado.destroy({ where: { sedeId }, transaction });
+  }
+
+  const ordenesCompra = await OrdenCompra.findAll({ where: { sedeId }, attributes: ['id'], transaction });
+  const ordenCompraIds = ordenesCompra.map((o) => o.id);
+  if (ordenCompraIds.length) {
+    const pagosCompra = await PagoCompra.findAll({
+      where: { ordenCompraId: ordenCompraIds },
+      attributes: ['id'],
+      transaction
+    });
+    const pagoCompraIds = pagosCompra.map((p) => p.id);
+    if (pagoCompraIds.length) {
+      await EgresoCaja.destroy({ where: { pagoCompraId: pagoCompraIds }, transaction });
+      await PagoCompra.destroy({ where: { id: pagoCompraIds }, transaction });
+    }
+    await ItemOrdenCompra.destroy({ where: { ordenCompraId: ordenCompraIds }, transaction });
+    await OrdenCompra.destroy({ where: { sedeId }, transaction });
+  }
+
+  const cajas = await Caja.findAll({ where: { sedeId }, attributes: ['id'], transaction });
+  const cajaIds = cajas.map((c) => c.id);
+  if (cajaIds.length) {
+    await EgresoCaja.destroy({ where: { cajaId: cajaIds }, transaction });
+    await Caja.destroy({ where: { sedeId }, transaction });
+  }
+
+  const cotizaciones = await Cotizacion.findAll({ where: { sedeId }, attributes: ['id'], transaction });
+  const cotizacionIds = cotizaciones.map((c) => c.id);
+  if (cotizacionIds.length) {
+    await ItemCotizacion.destroy({ where: { cotizacionId: cotizacionIds }, transaction });
+    await Cotizacion.destroy({ where: { sedeId }, transaction });
+  }
+
+  const facturas = await Factura.findAll({ where: { sedeId }, attributes: ['id'], transaction });
+  const facturaIds = facturas.map((f) => f.id);
+  if (facturaIds.length) {
+    await Notificacion.destroy({ where: { facturaId: facturaIds }, transaction });
+    const cuentas = await CuentaPorCobrar.findAll({
+      where: { facturaId: facturaIds },
+      attributes: ['id'],
+      transaction
+    });
+    const cuentaIds = cuentas.map((c) => c.id);
+    if (cuentaIds.length) {
+      await Abono.destroy({ where: { cuentaPorCobrarId: cuentaIds }, transaction });
+      await CuentaPorCobrar.destroy({ where: { id: cuentaIds }, transaction });
+    }
+    await Factura.destroy({ where: { sedeId }, transaction });
+  }
+
+  await TradeIn.destroy({ where: { sedeId }, transaction });
+
+  const ventas = await Venta.findAll({ where: { sedeId }, attributes: ['id'], transaction });
+  const ventaIds = ventas.map((v) => v.id);
+  if (ventaIds.length) {
+    await ItemVenta.destroy({ where: { ventaId: ventaIds }, transaction });
+    await PagoVenta.destroy({ where: { ventaId: ventaIds }, transaction });
+    await Venta.destroy({ where: { sedeId }, transaction });
+  }
+
+  const ordenes = await OrdenReparacion.findAll({ where: { sedeId }, attributes: ['id'], transaction });
+  const ordenIds = ordenes.map((o) => o.id);
+  if (ordenIds.length) {
+    await Notificacion.destroy({ where: { ordenReparacionId: ordenIds }, transaction });
+    await FotoReparacion.destroy({ where: { ordenId: ordenIds }, transaction });
+    await RepuestoOrden.destroy({ where: { ordenId: ordenIds }, transaction });
+    await RentabilidadReparacion.destroy({ where: { ordenId: ordenIds }, transaction });
+    await OrdenReparacion.destroy({ where: { sedeId }, transaction });
+  }
+
+  await sede.destroy({ transaction });
+}
+
+function maskSecretFields(data) {
+  if (data.smtpPass) data.smtpPass = '••••••••';
+  if (data.twilioAuthToken) data.twilioAuthToken = '••••••••';
+  return data;
+}
 
 function attachServidorMeta(configJson, req) {
   const data = configJson?.toJSON ? configJson.toJSON() : { ...configJson };
@@ -94,6 +244,7 @@ exports.updateSede = async (req, res, next) => {
 exports.deleteSede = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const force = ['1', 'true', 'yes'].includes(String(req.query.force || '').toLowerCase());
     const sede = await Sede.findByPk(id);
 
     if (!sede) {
@@ -101,18 +252,59 @@ exports.deleteSede = async (req, res, next) => {
     }
 
     const valorAnterior = sede.toJSON();
-    await Sede.destroy({ where: { id } });
 
-    if (req.logAudit) {
-      await req.logAudit({
-        accion: 'DELETE',
-        modulo: 'Sedes',
-        registroId: id,
-        valorAnterior
+    if (force) {
+      const transaction = await sequelize.transaction();
+      try {
+        await forceDeleteSede(sede, transaction);
+        await transaction.commit();
+      } catch (error) {
+        await transaction.rollback();
+        throw error;
+      }
+
+      if (req.logAudit) {
+        await req.logAudit({
+          accion: 'DELETE',
+          modulo: 'Sedes',
+          registroId: id,
+          valorAnterior
+        });
+      }
+
+      return res.json({
+        message: 'Sede eliminada definitivamente.',
+        eliminada: true,
+        desactivada: false
       });
     }
 
-    return res.json({ message: 'Sede eliminada exitosamente.' });
+    // Sin force: solo desactivar (conserva historial)
+    if (!sede.activa) {
+      return res.json({
+        message: 'La sede ya está desactivada.',
+        eliminada: false,
+        desactivada: true
+      });
+    }
+
+    await sede.update({ activa: false });
+
+    if (req.logAudit) {
+      await req.logAudit({
+        accion: 'UPDATE',
+        modulo: 'Sedes',
+        registroId: id,
+        valorAnterior,
+        valorNuevo: sede.toJSON()
+      });
+    }
+
+    return res.json({
+      message: 'Sede desactivada. Usa Eliminar si quieres borrarla definitivamente.',
+      eliminada: false,
+      desactivada: true
+    });
   } catch (error) {
     next(error);
   }
@@ -315,7 +507,7 @@ exports.getSistemaConfig = async (req, res, next) => {
         await config.update({ logoUrl: normalized });
       }
     }
-    return res.json(attachServidorMeta(config, req));
+    return res.json(maskSecretFields(attachServidorMeta(config, req)));
   } catch (error) {
     next(error);
   }
@@ -331,6 +523,13 @@ exports.updateSistemaConfig = async (req, res, next) => {
 
     if (payload.logoUrl !== undefined) {
       payload.logoUrl = normalizeLogoUrl(payload.logoUrl);
+    }
+
+    if (!payload.smtpPass || payload.smtpPass === '••••••••') {
+      delete payload.smtpPass;
+    }
+    if (!payload.twilioAuthToken || payload.twilioAuthToken === '••••••••') {
+      delete payload.twilioAuthToken;
     }
 
     if (payload.puertoServidor !== undefined && payload.puertoServidor !== null && payload.puertoServidor !== '') {
@@ -372,7 +571,32 @@ exports.updateSistemaConfig = async (req, res, next) => {
       response.mensajeReinicio = `Reinicie el servidor para aplicar el puerto ${puertoNuevo}. Luego abra ${buildAppUrl(puertoNuevo)}`;
     }
 
-    return res.json(response);
+    return res.json(maskSecretFields(response));
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.probarSmtp = async (req, res, next) => {
+  try {
+    const { emailDestino } = req.body;
+    if (!emailDestino || !String(emailDestino).includes('@')) {
+      return res.status(400).json({ error: 'Indique un correo destino válido.' });
+    }
+
+    const config = await ConfiguracionSistema.findOne();
+    if (!config) {
+      return res.status(400).json({ error: 'Configure el sistema antes de probar SMTP.' });
+    }
+
+    const merged = { ...config.toJSON(), ...req.body };
+    delete merged.emailDestino;
+    if (!merged.smtpPass || merged.smtpPass === '••••••••') {
+      merged.smtpPass = config.smtpPass;
+    }
+
+    await emailService.enviarCorreoPrueba(merged, emailDestino.trim());
+    return res.json({ message: `Correo de prueba enviado a ${emailDestino.trim()}.` });
   } catch (error) {
     next(error);
   }

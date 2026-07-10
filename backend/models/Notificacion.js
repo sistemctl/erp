@@ -9,14 +9,18 @@ const Notificacion = sequelize.define('Notificacion', {
   },
   ordenReparacionId: {
     type: DataTypes.UUID,
-    allowNull: false
+    allowNull: true
+  },
+  facturaId: {
+    type: DataTypes.UUID,
+    allowNull: true
   },
   clienteId: {
     type: DataTypes.UUID,
     allowNull: false
   },
   canal: {
-    type: DataTypes.ENUM('sms', 'whatsapp'),
+    type: DataTypes.ENUM('sms', 'whatsapp', 'email'),
     allowNull: false
   },
   mensaje: {

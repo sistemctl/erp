@@ -73,67 +73,87 @@ export async function initDashboard(container) {
   container.innerHTML = `
     <div class="container-xl erp-module dash">
       <header class="dash-header d-print-none">
-        <div>
-          <div class="dash-header__eyebrow">Centro de control</div>
+        <div class="dash-header__intro">
+          <p class="dash-header__eyebrow">Panel de control</p>
           <h1 class="dash-header__title">${config.empresa}</h1>
           <p class="dash-header__sub">${requiresSede && usuario.sedeNombre
-            ? `Resumen de ${usuario.sedeNombre} · ${PERIODO_LABELS_EARLY[initialPeriodo] || 'período seleccionado'}`
-            : 'Resumen operativo y financiero del período seleccionado'}</p>
+            ? `${usuario.sedeNombre} · ${PERIODO_LABELS_EARLY[initialPeriodo] || 'período'}`
+            : 'Ventas, caja y operación en un vistazo'}</p>
         </div>
-        <div class="dash-filters">
+        <div class="dash-filters" role="group" aria-label="Filtros del panel">
           ${isAdmin ? `
-            <select id="filter-sede" class="form-select" aria-label="Filtrar por sede">
-              <option value="" ${!initialSede ? 'selected' : ''}>Todas las sedes</option>
-              ${sedes.map(s => `<option value="${s.id}" ${String(s.id) === String(initialSede) ? 'selected' : ''}>${s.nombre}</option>`).join('')}
-            </select>
+            <label class="dash-filter">
+              <span class="dash-filter__label">Sede</span>
+              <select id="filter-sede" class="form-select form-select-sm" aria-label="Filtrar por sede">
+                <option value="" ${!initialSede ? 'selected' : ''}>Todas</option>
+                ${sedes.map(s => `<option value="${s.id}" ${String(s.id) === String(initialSede) ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+              </select>
+            </label>
           ` : ''}
-          <select id="filter-periodo" class="form-select" aria-label="Filtrar por período">
-            ${PERIODOS_VALIDOS.map(p => `<option value="${p}" ${p === initialPeriodo ? 'selected' : ''}>${PERIODO_LABELS_EARLY[p]}</option>`).join('')}
-          </select>
+          <label class="dash-filter">
+            <span class="dash-filter__label">Período</span>
+            <select id="filter-periodo" class="form-select form-select-sm" aria-label="Filtrar por período">
+              ${PERIODOS_VALIDOS.map(p => `<option value="${p}" ${p === initialPeriodo ? 'selected' : ''}>${PERIODO_LABELS_EARLY[p]}</option>`).join('')}
+            </select>
+          </label>
         </div>
       </header>
 
-      <!-- Pulso financiero -->
       <section class="dash-pulse d-print-none" id="dash-pulse" aria-label="Balance del período">
+        <div class="dash-pulse__glow" aria-hidden="true"></div>
         <div class="dash-pulse__main">
-          <span class="dash-pulse__eyebrow">Balance neto · <span id="dash-pulse-periodo">Hoy</span></span>
+          <p class="dash-pulse__eyebrow">Resultado del período · <span id="dash-pulse-periodo">Hoy</span></p>
           <div class="dash-pulse__value" id="dash-pulse-resultado">—</div>
-          <div class="dash-pulse__sub">Ingresos por ventas menos gasto total de la empresa</div>
+          <p class="dash-pulse__sub">Ventas del período menos gastos totales de la empresa</p>
         </div>
-        <div class="dash-pulse__stats">
-          <div class="dash-pulse__stat">
+        <ul class="dash-pulse__stats">
+          <li class="dash-pulse__stat dash-pulse__stat--in">
             <span class="dash-pulse__stat-label">Ingresos</span>
-            <span class="dash-pulse__stat-value" id="dash-pulse-ingresos" style="color:var(--dash-cyan)">—</span>
-          </div>
-          <div class="dash-pulse__stat">
-            <span class="dash-pulse__stat-label">Gasto total</span>
-            <span class="dash-pulse__stat-value" id="dash-pulse-gastos" style="color:var(--dash-negative)">—</span>
-          </div>
-          <div class="dash-pulse__stat">
-            <span class="dash-pulse__stat-label">En caja</span>
+            <span class="dash-pulse__stat-value" id="dash-pulse-ingresos">—</span>
+          </li>
+          <li class="dash-pulse__stat dash-pulse__stat--out">
+            <span class="dash-pulse__stat-label">Gastos</span>
+            <span class="dash-pulse__stat-value" id="dash-pulse-gastos">—</span>
+          </li>
+          <li class="dash-pulse__stat dash-pulse__stat--cash">
+            <span class="dash-pulse__stat-label">Efectivo en caja</span>
             <span class="dash-pulse__stat-value" id="dash-pulse-caja">—</span>
-          </div>
-        </div>
+          </li>
+        </ul>
         <div class="dash-pulse__bar-wrap" role="presentation" aria-hidden="true">
           <div class="dash-pulse__bar" id="dash-pulse-bar" style="width:50%"></div>
         </div>
       </section>
 
-      <!-- KPIs agrupados -->
-      <div class="dash-columns dash-columns--2 d-print-none">
-        <section class="dash-section" aria-labelledby="dash-sec-operacion">
-          <div class="dash-section__head">
-            <h2 class="dash-section__title" id="dash-sec-operacion">Operación</h2>
-            <span class="dash-section__hint">Ventas, taller e inventario</span>
-          </div>
-          <div id="dash-kpi-operacion" class="dash-kpi-grid dash-kpi-grid--6"></div>
+      <div class="dash-kpi-board d-print-none">
+        <section class="dash-kpi-group dash-kpi-group--op" aria-labelledby="dash-sec-operacion">
+          <header class="dash-kpi-group__head">
+            <div>
+              <h2 class="dash-kpi-group__title" id="dash-sec-operacion">Operación</h2>
+              <p class="dash-kpi-group__hint">Mostrador, taller e inventario</p>
+            </div>
+          </header>
+          <div id="dash-kpi-operacion" class="dash-kpi-grid dash-kpi-grid--op"></div>
         </section>
-        <section class="dash-section" aria-labelledby="dash-sec-finanzas">
-          <div class="dash-section__head">
-            <h2 class="dash-section__title" id="dash-sec-finanzas">Finanzas</h2>
-            <span class="dash-section__hint">Caja, cartera y egresos</span>
-          </div>
-          <div id="dash-kpi-finanzas" class="dash-kpi-grid dash-kpi-grid--6"></div>
+
+        <section class="dash-kpi-group dash-kpi-group--fin-caja" aria-labelledby="dash-sec-finanzas-caja">
+          <header class="dash-kpi-group__head">
+            <div>
+              <h2 class="dash-kpi-group__title" id="dash-sec-finanzas-caja">Caja y deudas</h2>
+              <p class="dash-kpi-group__hint">Lo que tienes y lo que debes</p>
+            </div>
+          </header>
+          <div id="dash-kpi-finanzas-caja" class="dash-kpi-grid dash-kpi-grid--fin"></div>
+        </section>
+
+        <section class="dash-kpi-group dash-kpi-group--fin-periodo" aria-labelledby="dash-sec-finanzas-periodo">
+          <header class="dash-kpi-group__head">
+            <div>
+              <h2 class="dash-kpi-group__title" id="dash-sec-finanzas-periodo">Movimiento del período</h2>
+              <p class="dash-kpi-group__hint">Gastos, compras y utilidad</p>
+            </div>
+          </header>
+          <div id="dash-kpi-finanzas-periodo" class="dash-kpi-grid dash-kpi-grid--fin"></div>
         </section>
       </div>
 
@@ -154,7 +174,7 @@ export async function initDashboard(container) {
         <div class="col-lg-4">
           <div class="dash-panel">
             <div class="dash-panel__head">
-              <h3 class="dash-panel__title">Ir a módulo</h3>
+              <h3 class="dash-panel__title">Accesos rápidos</h3>
             </div>
             <nav class="dash-quick" aria-label="Accesos rápidos">
               <a href="#/pos" class="dash-quick__item">
@@ -176,6 +196,13 @@ export async function initDashboard(container) {
                 <div>
                   <div class="dash-quick__label">Caja y egresos</div>
                   <div class="dash-quick__desc">Apertura, cierre y retiros</div>
+                </div>
+              </a>
+              <a href="#/reportes" class="dash-quick__item">
+                <span class="dash-quick__dot" style="background:#0d9488"></span>
+                <div>
+                  <div class="dash-quick__label">Reportes financieros</div>
+                  <div class="dash-quick__desc">Cartera, flujo de caja y export CSV</div>
                 </div>
               </a>
               <a href="#/compras" class="dash-quick__item">
@@ -409,17 +436,15 @@ export async function initDashboard(container) {
     window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
   }
 
-  function kpiCard({ href, action, title, iconClass, iconBg, value, label, valueClass = '', hint = '', cta = '' }) {
-    const ctaLabel = cta || (action ? 'Ver detalle' : 'Abrir módulo');
+  function kpiCard({ href, action, title, iconClass, iconBg, value, label, valueClass = '' }) {
     return `
       <a href="${href}" class="dash-kpi" ${action ? `data-dash-action="${action}"` : ''} title="${title}">
-        <span class="dash-kpi__icon ${iconBg}"><i class="ti ${iconClass}"></i></span>
+        <span class="dash-kpi__icon ${iconBg}"><i class="ti ${iconClass}" aria-hidden="true"></i></span>
         <span class="dash-kpi__body">
           <span class="dash-kpi__label">${label}</span>
           <span class="dash-kpi__value ${valueClass}">${value}</span>
-          ${hint ? `<span class="dash-kpi__hint">${hint}</span>` : ''}
-          <span class="dash-kpi__cta">${ctaLabel}<i class="ti ti-arrow-up-right" aria-hidden="true"></i></span>
         </span>
+        <span class="dash-kpi__arrow" aria-hidden="true"><i class="ti ti-arrow-up-right"></i></span>
       </a>
     `;
   }
@@ -460,7 +485,8 @@ export async function initDashboard(container) {
     });
 
     const operacion = document.getElementById('dash-kpi-operacion');
-    const finanzas = document.getElementById('dash-kpi-finanzas');
+    const finanzasCaja = document.getElementById('dash-kpi-finanzas-caja');
+    const finanzasPeriodo = document.getElementById('dash-kpi-finanzas-periodo');
 
     operacion.innerHTML = [
       kpiCard({
@@ -514,7 +540,7 @@ export async function initDashboard(container) {
       })
     ].join('');
 
-    finanzas.innerHTML = [
+    finanzasCaja.innerHTML = [
       kpiCard({
         href: '#/caja',
         title: 'Ir a control de caja',
@@ -532,14 +558,34 @@ export async function initDashboard(container) {
         label: 'Cartera pendiente'
       }),
       kpiCard({
+        href: '#/cartera?estado=vencida',
+        title: 'Ver cartera vencida',
+        iconClass: 'ti-alert-triangle',
+        iconBg: 'bg-red-lt text-red',
+        value: formatterCOP.format(kpis.totalCarteraVencida ?? 0),
+        label: 'Cartera vencida',
+        valueClass: (kpis.totalCarteraVencida ?? 0) > 0 ? 'text-danger' : ''
+      }),
+      kpiCard({
+        href: '#/compras?tab=cpp',
+        title: 'Ver cuentas por pagar',
+        iconClass: 'ti-building-bank',
+        iconBg: 'bg-pink-lt text-pink',
+        value: formatterCOP.format(kpis.cuentasPorPagar ?? 0),
+        label: 'Cuentas por pagar',
+        valueClass: (kpis.cuentasPorPagar ?? 0) > 0 ? 'text-danger' : ''
+      })
+    ].join('');
+
+    finanzasPeriodo.innerHTML = [
+      kpiCard({
         href: '#/caja?accion=egreso',
         action: 'scroll-egresos',
         title: 'Ver egresos por categoría',
         iconClass: 'ti-receipt',
         iconBg: 'bg-danger-lt text-danger',
         value: formatterCOP.format(kpis.totalGastosOperativos ?? kpis.totalGastos),
-        label: 'Gastos de caja',
-        cta: 'Ver categorías'
+        label: 'Gastos de caja'
       }),
       kpiCard({
         href: '#/compras',
@@ -547,8 +593,7 @@ export async function initDashboard(container) {
         iconClass: 'ti-truck',
         iconBg: 'bg-indigo-lt text-indigo',
         value: formatterCOP.format(kpis.totalComprasPagadas ?? 0),
-        label: 'Compras pagadas',
-        cta: 'Ver órdenes'
+        label: 'Compras pagadas'
       }),
       kpiCard({
         href: '#gasto-total-section',
@@ -557,9 +602,8 @@ export async function initDashboard(container) {
         iconClass: 'ti-report-money',
         iconBg: 'bg-orange-lt text-orange',
         value: formatterCOP.format(kpis.totalGastoEmpresa ?? kpis.totalEgresos ?? 0),
-        label: 'Gasto total empresa',
-        valueClass: 'text-danger',
-        cta: 'Ver desglose'
+        label: 'Gasto total',
+        valueClass: 'text-danger'
       }),
       kpiCard({
         href: '#dashboard-chart',
@@ -568,9 +612,8 @@ export async function initDashboard(container) {
         iconClass: 'ti-chart-line',
         iconBg: kpis.resultadoNeto >= 0 ? 'bg-green-lt text-green' : 'bg-red-lt text-red',
         value: formatterCOP.format(kpis.resultadoNeto),
-        label: 'Resultado neto',
-        valueClass: kpis.resultadoNeto >= 0 ? 'text-success' : 'text-danger',
-        cta: 'Ver gráfica'
+        label: 'Utilidad neta',
+        valueClass: kpis.resultadoNeto >= 0 ? 'text-success' : 'text-danger'
       })
     ].join('');
 

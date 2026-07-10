@@ -4,6 +4,7 @@ const ACTION_META = {
   edit: { icon: 'ti-pencil', label: 'Editar' },
   delete: { icon: 'ti-trash', label: 'Eliminar' },
   pdf: { icon: 'ti-file-text', label: 'PDF' },
+  mail: { icon: 'ti-mail', label: 'Enviar' },
   recv: { icon: 'ti-package-import', label: 'Recibir' },
   pay: { icon: 'ti-cash', label: 'Abonar' },
   anular: { icon: 'ti-ban', label: 'Anular' },

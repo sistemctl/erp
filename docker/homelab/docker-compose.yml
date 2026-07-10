@@ -1,0 +1,43 @@
+services:
+  pihole:
+    image: pihole/pihole:latest
+    container_name: pihole
+    hostname: pihole
+    restart: unless-stopped
+    networks:
+      - homelab
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+    environment:
+      TZ: ${TZ:-America/Bogota}
+      WEBPASSWORD: ${PIHOLE_WEBPASSWORD:-changeme}
+      FTLCONF_LOCAL_IPV4: ${HOST_IP}
+      FTLCONF_dns_listeningMode: ALL
+    volumes:
+      - ./pihole/etc-pihole:/etc/pihole
+      - ./pihole/etc-dnsmasq.d:/etc/dnsmasq.d
+    cap_add:
+      - NET_ADMIN
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    restart: unless-stopped
+    depends_on:
+      - pihole
+    networks:
+      - homelab
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/servitec.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+networks:
+  homelab:
+    name: servitec-homelab
+    driver: bridge

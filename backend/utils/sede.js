@@ -25,9 +25,16 @@ const resolveActionSede = async (bodySedeId, usuario, Sede, transaction = null) 
   return sedeId;
 };
 
+/** Texto de sede en plantillas SMS/correo: dirección física, con fallback al nombre */
+const textoSedeNotificacion = (sede) => {
+  if (!sede) return '';
+  return String(sede.direccion || sede.nombre || '').trim();
+};
+
 module.exports = {
   GLOBAL_ROLES,
   isGlobalRole,
   resolveQuerySede,
-  resolveActionSede
+  resolveActionSede,
+  textoSedeNotificacion
 };

@@ -22,6 +22,7 @@ const { Op } = require('sequelize');
 const PDFDocument = require('pdfkit');
 const { resolveQuerySede } = require('../utils/sede');
 const { generarFacturaPDF } = require('../utils/factura-pdf');
+const emailService = require('../services/email.service');
 
 // --- GET ALL FACTURAS ---
 exports.getFacturas = async (req, res, next) => {
@@ -56,7 +57,7 @@ exports.getFacturas = async (req, res, next) => {
     const facturas = await Factura.findAll({
       where,
       include: [
-        { model: Cliente, as: 'cliente', attributes: ['nombre', 'documento', 'telefono'] },
+        { model: Cliente, as: 'cliente', attributes: ['nombre', 'documento', 'telefono', 'email'] },
         { model: Sede, as: 'sede', attributes: ['nombre'] },
         { model: Venta, as: 'venta', attributes: ['numeroVenta'] },
         { model: OrdenReparacion, as: 'ordenReparacion', attributes: ['numeroOrden'] }
@@ -335,6 +336,22 @@ exports.getFacturaPdf = async (req, res, next) => {
     await generarFacturaPDF(doc, factura, config || {});
 
     doc.end();
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.enviarFacturaEmail = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const result = await emailService.enviarFacturaPorEmail(id);
+    if (result.skipped) {
+      return res.status(400).json({ error: 'El envío por correo está desactivado en configuración.' });
+    }
+    return res.json({
+      message: `Factura enviada a ${result.email}.`,
+      ...result
+    });
   } catch (error) {
     next(error);
   }

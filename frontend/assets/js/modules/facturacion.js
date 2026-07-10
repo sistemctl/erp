@@ -1,6 +1,6 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
-import { showConfirm } from '../utils/toast.js';
+import { showConfirm, showToast } from '../utils/toast.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
 import { renderFacturaDocumento, printFacturaDocumento } from '../utils/factura-document.js';
@@ -127,6 +127,8 @@ export async function initFacturacion(container) {
 
       const origen = f.venta ? `Venta (${f.venta.numeroVenta})` : (f.ordenReparacion ? `Taller (${f.ordenReparacion.numeroOrden})` : 'Manual');
 
+      const puedeEnviarEmail = f.estado !== 'anulada' && f.cliente?.email;
+
       return `
         <tr>
           <td><strong class="text-blue">${f.numeroFactura}</strong></td>
@@ -142,6 +144,7 @@ export async function initFacturacion(container) {
             ${erpActions(`
               ${erpAction('view', { className: 'btn-ver-factura', attrs: { 'data-id': f.id } })}
               ${erpAction('pdf', { className: 'btn-pdf-factura', attrs: { 'data-id': f.id } })}
+              ${puedeEnviarEmail ? erpAction('mail', { className: 'btn-email-factura', attrs: { 'data-id': f.id, 'data-email': f.cliente.email } }) : ''}
               ${isAdminOrGerente && f.estado !== 'anulada' ? erpAction('anular', { className: 'btn-anular-factura', attrs: { 'data-id': f.id } }) : ''}
             `)}
           </td>
@@ -156,6 +159,10 @@ export async function initFacturacion(container) {
 
     document.querySelectorAll('.btn-pdf-factura').forEach(btn => {
       btn.addEventListener('click', () => downloadPdf(btn.dataset.id));
+    });
+
+    document.querySelectorAll('.btn-email-factura').forEach(btn => {
+      btn.addEventListener('click', () => enviarFacturaEmail(btn.dataset.id, btn.dataset.email));
     });
 
     document.querySelectorAll('.btn-anular-factura').forEach(btn => {
@@ -219,12 +226,17 @@ export async function initFacturacion(container) {
           <button type="button" class="btn btn-primary" id="modal-download-pdf">
             <i class="ti ti-file-text me-1"></i> Descargar PDF
           </button>
+          ${f.cliente?.email && f.estado !== 'anulada' ? `
+          <button type="button" class="btn btn-outline-primary" id="modal-email-factura">
+            <i class="ti ti-mail me-1"></i> Enviar correo
+          </button>` : ''}
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
         </div>
       `;
 
       document.getElementById('btn-imprimir-factura')?.addEventListener('click', () => printFacturaDocumento());
       document.getElementById('modal-download-pdf')?.addEventListener('click', () => downloadPdf(f.id, f.numeroFactura));
+      document.getElementById('modal-email-factura')?.addEventListener('click', () => enviarFacturaEmail(f.id, f.cliente?.email));
     } catch (err) {
       content.innerHTML = `<div class="alert alert-danger m-3">${err.message}</div>`;
     }
@@ -251,6 +263,19 @@ export async function initFacturacion(container) {
       window.URL.revokeObjectURL(url);
     } catch (e) {
       alert(e.message);
+    }
+  }
+
+  async function enviarFacturaEmail(id, email) {
+    if (!email) {
+      showToast('Sin correo', 'El cliente no tiene email registrado.', 'warning');
+      return;
+    }
+    try {
+      const res = await apiFetch(`/facturas/${id}/enviar-email`, { method: 'POST' });
+      showToast('Correo enviado', res.message || `Factura enviada a ${email}.`, 'success');
+    } catch (err) {
+      showToast('Error', err.message, 'error');
     }
   }
 

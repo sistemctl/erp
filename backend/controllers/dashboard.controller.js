@@ -6,6 +6,7 @@ const {
   Producto,
   StockSede,
   CuentaPorCobrar,
+  Factura,
   Cliente,
   EgresoCaja,
   CategoriaEgreso,
@@ -264,6 +265,20 @@ exports.getKPIs = async (req, res, next) => {
       }]
     }) || 0;
 
+    const totalCarteraVencida = await CuentaPorCobrar.sum('saldoPendiente', {
+      where: {
+        estado: 'vencida',
+        saldoPendiente: { [Op.gt]: 0 }
+      },
+      include: [{
+        model: Factura,
+        as: 'factura',
+        attributes: [],
+        required: true,
+        ...(querySedeId ? { where: { sedeId: querySedeId } } : {})
+      }]
+    }) || 0;
+
     // 8. Clientes Nuevos
     const clientesNuevos = await Cliente.count({ where: whereClientes });
 
@@ -295,6 +310,7 @@ exports.getKPIs = async (req, res, next) => {
       dineroEnCaja: parseFloat(dineroEnCaja),
       stockBajoCount: parseInt(stockBajoCount),
       totalCartera: parseFloat(totalCartera),
+      totalCarteraVencida: parseFloat(totalCarteraVencida),
       clientesNuevos: parseInt(clientesNuevos),
       totalGastos: gastosEmpresa.totalGastosOperativos,
       totalGastosOperativos: gastosEmpresa.totalGastosOperativos,

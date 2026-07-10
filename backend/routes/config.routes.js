@@ -23,6 +23,7 @@ router.put('/usuarios/:id', authMiddleware, rolesMiddleware(['superadmin']), con
 router.delete('/usuarios/:id', authMiddleware, rolesMiddleware(['superadmin']), configController.deleteUsuario);
 
 router.put('/sistema', authMiddleware, rolesMiddleware(['superadmin']), configController.updateSistemaConfig);
+router.post('/sistema/probar-smtp', authMiddleware, rolesMiddleware(['superadmin']), configController.probarSmtp);
 
 router.get('/backup', authMiddleware, rolesMiddleware(['superadmin']), configController.exportarBackup);
 router.post('/restore', authMiddleware, rolesMiddleware(['superadmin']), configController.importarBackup);

@@ -6,6 +6,11 @@ import { renderAparienciaTabHtml, initConfigApariencia } from './config-aparienc
 import { renderAuditLogTabHtml, renderAuditLogModalHtml, initAuditLogTab } from './auditlog.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
+import {
+  renderNotificacionEmailPreviewHtml,
+  initNotificacionEmailPreview,
+  syncNotificacionEmailPreview
+} from '../utils/notificacion-email-preview.js';
 
 export async function initConfig(container) {
   const usuario = getUsuario();
@@ -45,7 +50,7 @@ export async function initConfig(container) {
               <a href="#tab-config-usuarios" class="nav-link" data-bs-toggle="tab" role="tab"><i class="ti ti-users me-1"></i> Usuarios y Accesos</a>
             </li>
             <li class="nav-item" role="presentation">
-              <a href="#tab-config-twilio" class="nav-link" data-bs-toggle="tab" role="tab"><i class="ti ti-brand-twilio me-1"></i> Twilio y Plantillas</a>
+              <a href="#tab-config-twilio" class="nav-link" data-bs-toggle="tab" role="tab"><i class="ti ti-bell me-1"></i> Notificaciones</a>
             </li>
             <li class="nav-item" role="presentation">
               <a href="#tab-config-log" class="nav-link" data-bs-toggle="tab" role="tab"><i class="ti ti-mail-opened me-1"></i> Historial Envíos</a>
@@ -102,6 +107,11 @@ export async function initConfig(container) {
                 <div class="col-md-4">
                   <label class="form-label fw-bold">Límite de Egreso sin PIN (COP)</label>
                   <input type="number" id="cfg-egreso-max" class="form-control" min="0" step="100" required>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label fw-bold">Plazo crédito a clientes (días)</label>
+                  <input type="number" id="cfg-dias-plazo-credito" class="form-control" min="1" max="365" required>
+                  <small class="text-secondary">Días para vencimiento de facturas a crédito en POS y taller.</small>
                 </div>
                 <div class="col-md-12 mt-3">
                   <label class="form-check form-switch">
@@ -201,9 +211,11 @@ export async function initConfig(container) {
               </div>
             </div>
 
-            <!-- TAB 4: TWILIO Y PLANTILLAS -->
+            <!-- TAB 4: NOTIFICACIONES (TWILIO + SMTP) -->
             <div class="tab-pane" id="tab-config-twilio" role="tabpanel">
               <form id="form-config-twilio">
+                <div class="row g-4">
+                  <div class="col-lg-7">
                 <div class="mb-3">
                   <label class="form-check form-switch mt-2">
                     <input class="form-check-input" type="checkbox" id="cfg-notif-activas">
@@ -212,21 +224,112 @@ export async function initConfig(container) {
                 </div>
 
                 <div class="row g-3 mb-4">
-                  <div class="col-md-6">
+                  <div class="col-md-4">
                     <label class="form-check">
                       <input class="form-check-input" type="checkbox" id="cfg-sms-activo">
-                      <span class="form-check-label fw-bold">Habilitar Canal SMS</span>
+                      <span class="form-check-label fw-bold">Canal SMS</span>
                     </label>
                   </div>
-                  <div class="col-md-6">
+                  <div class="col-md-4">
                     <label class="form-check">
                       <input class="form-check-input" type="checkbox" id="cfg-wa-activo">
-                      <span class="form-check-label fw-bold">Habilitar Canal WhatsApp</span>
+                      <span class="form-check-label fw-bold">Canal WhatsApp</span>
+                    </label>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-check">
+                      <input class="form-check-input" type="checkbox" id="cfg-email-activo">
+                      <span class="form-check-label fw-bold">Canal Correo (SMTP)</span>
                     </label>
                   </div>
                 </div>
 
-                <h4 class="text-secondary border-bottom pb-2"><i class="ti ti-key me-1"></i> Credenciales de Twilio API</h4>
+                <h4 class="text-secondary border-bottom pb-2"><i class="ti ti-mail me-1"></i> Correo SMTP</h4>
+                <div class="row g-3 mb-3">
+                  <div class="col-md-12">
+                    <label class="form-check">
+                      <input class="form-check-input" type="checkbox" id="cfg-email-factura-auto">
+                      <span class="form-check-label">Enviar factura por correo al completar venta en POS (si el cliente tiene email)</span>
+                    </label>
+                  </div>
+                  <div class="col-md-12">
+                    <label class="form-check">
+                      <input class="form-check-input" type="checkbox" id="cfg-email-cartera-recordatorio">
+                      <span class="form-check-label">Recordatorio automático de cartera vencida por correo (lunes 08:00)</span>
+                    </label>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">Días mínimos de mora para recordatorio</label>
+                    <input type="number" id="cfg-dias-mora-recordatorio" class="form-control" min="1" max="365" value="7">
+                  </div>
+                  <div class="col-md-8">
+                    <label class="form-label">Asunto — recordatorio cartera</label>
+                    <input type="text" id="cfg-tpl-email-cartera-asunto" class="form-control" placeholder="Recordatorio de pago — {empresa}" spellcheck="false">
+                  </div>
+                  <div class="col-md-12">
+                    <label class="form-label">Cuerpo — recordatorio cartera</label>
+                    <textarea id="cfg-tpl-email-cartera-cuerpo" class="form-control" rows="3" spellcheck="false"></textarea>
+                    <small class="text-secondary">Variables: <code>{cliente}</code>, <code>{factura}</code>, <code>{saldo}</code>, <code>{dias}</code>, <code>{empresa}</code></small>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">Servidor SMTP</label>
+                    <input type="text" id="cfg-smtp-host" class="form-control" placeholder="smtp.gmail.com" spellcheck="false">
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Puerto</label>
+                    <input type="number" id="cfg-smtp-port" class="form-control" placeholder="587" min="1" max="65535">
+                    <small class="text-secondary">Gmail: use <strong>587</strong> sin SSL directo, o <strong>465</strong> con SSL directo.</small>
+                  </div>
+                  <div class="col-md-3 d-flex align-items-end">
+                    <label class="form-check mb-2">
+                      <input class="form-check-input" type="checkbox" id="cfg-smtp-secure">
+                      <span class="form-check-label">SSL/TLS directo (solo puerto 465)</span>
+                    </label>
+                  </div>
+                  <div class="col-md-12">
+                    <label class="form-check">
+                      <input class="form-check-input" type="checkbox" id="cfg-smtp-ignore-tls">
+                      <span class="form-check-label">Omitir verificación de certificado TLS</span>
+                      <span class="text-secondary small d-block">Actívelo si usa antivirus/proxy que intercepta correo (error “self-signed certificate”). En desarrollo suele no ser necesario.</span>
+                    </label>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">Usuario SMTP</label>
+                    <input type="text" id="cfg-smtp-user" class="form-control" spellcheck="false">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">Contraseña SMTP</label>
+                    <input type="password" id="cfg-smtp-pass" class="form-control" placeholder="Dejar vacío para no cambiar" spellcheck="false">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">Correo remitente (De)</label>
+                    <input type="email" id="cfg-smtp-from-email" class="form-control" placeholder="ventas@miempresa.com" spellcheck="false">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">Nombre remitente</label>
+                    <input type="text" id="cfg-smtp-from-name" class="form-control" placeholder="Servitec Gamers" spellcheck="false">
+                  </div>
+                  <div class="col-md-12">
+                    <label class="form-label">Asunto — envío de factura</label>
+                    <input type="text" id="cfg-tpl-email-factura-asunto" class="form-control" placeholder="Factura {factura} — {empresa}" spellcheck="false">
+                  </div>
+                  <div class="col-md-12">
+                    <label class="form-label">Cuerpo — envío de factura</label>
+                    <textarea id="cfg-tpl-email-factura-cuerpo" class="form-control" rows="3" placeholder="Estimado/a {cliente}…"></textarea>
+                    <small class="text-secondary">Variables: <code>{cliente}</code>, <code>{factura}</code>, <code>{total}</code>, <code>{sede}</code> (dirección de la sede), <code>{empresa}</code></small>
+                  </div>
+                  <div class="col-md-8">
+                    <label class="form-label">Probar conexión SMTP</label>
+                    <input type="email" id="cfg-smtp-test-email" class="form-control" placeholder="correo@destino.com" spellcheck="false">
+                  </div>
+                  <div class="col-md-4 d-flex align-items-end">
+                    <button type="button" class="btn btn-outline-primary w-100" id="btn-probar-smtp">
+                      <i class="ti ti-plug-connected me-1"></i> Probar conexión
+                    </button>
+                  </div>
+                </div>
+
+                <h4 class="text-secondary border-bottom pb-2 mt-4"><i class="ti ti-key me-1"></i> Credenciales de Twilio API</h4>
                 <div class="row g-3 mb-4">
                   <div class="col-md-6">
                     <label class="form-label">Twilio Account SID</label>
@@ -244,7 +347,7 @@ export async function initConfig(container) {
 
                 <h4 class="text-secondary border-bottom pb-2"><i class="ti ti-template me-1"></i> Plantillas de Mensajes por Estado</h4>
                 <div class="alert alert-info py-2 small">
-                  Variables dinámicas: <code>{cliente}</code> (nombre cliente), <code>{equipo}</code> (dispositivo), <code>{sede}</code> (sede física), <code>{orden}</code> (número orden), <code>{total}</code> (monto cobrado).
+                  Variables dinámicas: <code>{cliente}</code> (nombre cliente), <code>{equipo}</code> (dispositivo), <code>{sede}</code> (dirección de la sede), <code>{orden}</code> (número orden), <code>{total}</code> (monto cobrado).
                 </div>
 
                 <div class="mb-3">
@@ -262,7 +365,12 @@ export async function initConfig(container) {
                   <textarea id="cfg-tpl-entregado" class="form-control" rows="2" placeholder="Plantilla al entregar y facturar…"></textarea>
                 </div>
 
-                <button type="submit" class="btn btn-primary"><i class="ti ti-device-floppy me-1"></i> Guardar Plantillas y Pasarela</button>
+                <button type="submit" class="btn btn-primary"><i class="ti ti-device-floppy me-1"></i> Guardar notificaciones</button>
+                  </div>
+                  <div class="col-lg-5">
+                    ${renderNotificacionEmailPreviewHtml()}
+                  </div>
+                </div>
               </form>
             </div>
 
@@ -273,7 +381,7 @@ export async function initConfig(container) {
                   <thead>
                     <tr>
                       <th>Fecha</th>
-                      <th>Orden</th>
+                      <th>Referencia</th>
                       <th>Cliente</th>
                       <th>Mensaje</th>
                       <th>Canal</th>
@@ -466,6 +574,7 @@ export async function initConfig(container) {
       document.getElementById('cfg-iva').value = data.ivaDefecto || 19.00;
       document.getElementById('cfg-descuento-max').value = data.descuentoMaximoPct || 15.00;
       document.getElementById('cfg-egreso-max').value = data.egresoMaximoSinPin || 50000;
+      document.getElementById('cfg-dias-plazo-credito').value = data.diasPlazoCredito ?? 30;
       document.getElementById('cfg-cobrar-iva').checked = !!data.cobrarIvaPos;
       document.getElementById('cfg-nomina-frecuencia').value = data.nominaFrecuenciaDefault || 'quincenal';
       document.getElementById('cfg-nomina-corte').value = data.nominaDiaCorteQuincena ?? 15;
@@ -474,18 +583,36 @@ export async function initConfig(container) {
       document.getElementById('cfg-puerto').value = data.puertoServidor ?? 3000;
       renderServidorEstado(data);
 
-      // Twilio
+      // Twilio y correo
       document.getElementById('cfg-notif-activas').checked = !!data.notificacionesActivas;
       document.getElementById('cfg-sms-activo').checked = !!data.smsActivo;
       document.getElementById('cfg-wa-activo').checked = !!data.whatsappActivo;
+      document.getElementById('cfg-email-activo').checked = !!data.emailActivo;
+      document.getElementById('cfg-email-factura-auto').checked = !!data.emailFacturaAuto;
+      document.getElementById('cfg-email-cartera-recordatorio').checked = !!data.emailCarteraRecordatorio;
+      document.getElementById('cfg-dias-mora-recordatorio').value = data.diasMoraRecordatorioCartera ?? 7;
+      document.getElementById('cfg-tpl-email-cartera-asunto').value = data.templateEmailCarteraAsunto || '';
+      document.getElementById('cfg-tpl-email-cartera-cuerpo').value = data.templateEmailCarteraCuerpo || '';
+      document.getElementById('cfg-smtp-host').value = data.smtpHost || '';
+      document.getElementById('cfg-smtp-port').value = data.smtpPort ?? 587;
+      document.getElementById('cfg-smtp-secure').checked = !!data.smtpSecure;
+      document.getElementById('cfg-smtp-ignore-tls').checked = !!data.smtpIgnoreTlsErrors;
+      syncSmtpPortSecure(false);
+      document.getElementById('cfg-smtp-user').value = data.smtpUser || '';
+      document.getElementById('cfg-smtp-pass').value = '';
+      document.getElementById('cfg-smtp-from-email').value = data.smtpFromEmail || '';
+      document.getElementById('cfg-smtp-from-name').value = data.smtpFromName || '';
+      document.getElementById('cfg-tpl-email-factura-asunto').value = data.templateEmailFacturaAsunto || '';
+      document.getElementById('cfg-tpl-email-factura-cuerpo').value = data.templateEmailFacturaCuerpo || '';
       document.getElementById('cfg-twilio-sid').value = data.twilioAccountSid || '';
-      document.getElementById('cfg-twilio-token').value = data.twilioAuthToken || '';
+      document.getElementById('cfg-twilio-token').value = '';
       document.getElementById('cfg-twilio-from').value = data.twilioFromNumber || '';
 
       // Templates
       document.getElementById('cfg-tpl-recibido').value = data.templateRecibido || '';
       document.getElementById('cfg-tpl-listo').value = data.templateListo || '';
       document.getElementById('cfg-tpl-entregado').value = data.templateEntregado || '';
+      syncNotificacionEmailPreview();
 
     } catch (e) {
       console.error("Error al cargar configuraciones:", e);
@@ -524,7 +651,24 @@ export async function initConfig(container) {
           <td class="text-end erp-td-actions">
             ${erpActions(`
               ${erpAction('edit', { className: 'btn-edit-sede', attrs: { 'data-index': index } })}
-              ${erpAction('delete', { className: 'btn-delete-sede', attrs: { 'data-id': s.id }, label: 'Borrar' })}
+              ${s.activa
+                ? erpAction('unlink', {
+                    className: 'btn-deactivate-sede',
+                    label: 'Desactivar',
+                    icon: 'ti-player-pause',
+                    attrs: { 'data-id': s.id }
+                  })
+                : erpAction('return', {
+                    className: 'btn-activate-sede',
+                    label: 'Activar',
+                    icon: 'ti-player-play',
+                    attrs: { 'data-id': s.id }
+                  })}
+              ${erpAction('delete', {
+                className: 'btn-force-delete-sede',
+                label: 'Eliminar',
+                attrs: { 'data-id': s.id, 'data-nombre': s.nombre }
+              })}
             `)}
           </td>
         </tr>
@@ -538,18 +682,60 @@ export async function initConfig(container) {
         });
       });
 
-      document.querySelectorAll('.btn-delete-sede').forEach(btn => {
+      document.querySelectorAll('.btn-activate-sede').forEach(btn => {
         btn.addEventListener('click', async () => {
           const id = btn.getAttribute('data-id');
-          const verificado = await showConfirm('Eliminar Sede', '¿Estás seguro de eliminar esta sede? Esto podría afectar a los usuarios y ventas asociadas.');
-          if (verificado) {
-            try {
-              await apiFetch(`/config/sedes/${id}`, { method: 'DELETE' });
-              alert('Sede eliminada.');
-              loadSedes();
-            } catch (err) {
-              alert(err.message);
-            }
+          const verificado = await showConfirm(
+            'Activar sede',
+            'La sede volverá a estar disponible para operaciones nuevas.'
+          );
+          if (!verificado) return;
+          try {
+            await apiFetch(`/config/sedes/${id}`, {
+              method: 'PUT',
+              body: JSON.stringify({ activa: true })
+            });
+            alert('Sede activada.');
+            await loadSedes();
+          } catch (err) {
+            alert(err.message);
+          }
+        });
+      });
+
+      document.querySelectorAll('.btn-deactivate-sede').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-id');
+          const verificado = await showConfirm(
+            'Desactivar sede',
+            'La sede se marcará como inactiva y dejará de usarse en operaciones nuevas. El historial se conserva.'
+          );
+          if (!verificado) return;
+          try {
+            const resultado = await apiFetch(`/config/sedes/${id}`, { method: 'DELETE' });
+            alert(resultado.message);
+            await loadSedes();
+          } catch (err) {
+            alert(err.message);
+          }
+        });
+      });
+
+      document.querySelectorAll('.btn-force-delete-sede').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-id');
+          const nombre = btn.getAttribute('data-nombre') || 'esta sede';
+          const verificado = await showConfirm(
+            'Eliminar sede definitivamente',
+            `Se eliminará "${nombre}" y su inventario asociado. Si tiene clientes, se reasignarán a otra sede. Ventas, cajas y documentos de esa sede también se borrarán. Esta acción no se puede deshacer.`
+          );
+          if (!verificado) return;
+          try {
+            const resultado = await apiFetch(`/config/sedes/${id}?force=true`, { method: 'DELETE' });
+            alert(resultado.message);
+            await loadSedes();
+          } catch (err) {
+            alert(err.message);
           }
         });
       });
@@ -706,10 +892,10 @@ export async function initConfig(container) {
         return `
           <tr>
             <td>${new Date(n.createdAt).toLocaleString()}</td>
-            <td><strong>${n.orden ? n.orden.numeroOrden : 'N/A'}</strong></td>
+            <td><strong>${n.factura ? n.factura.numeroFactura : (n.orden ? n.orden.numeroOrden : '—')}</strong></td>
             <td>
               ${n.cliente ? n.cliente.nombre : 'Cliente N/A'}<br>
-              <span class="text-secondary small">${n.cliente ? n.cliente.telefono : ''}</span>
+              <span class="text-secondary small">${n.cliente?.email || n.cliente?.telefono || ''}</span>
             </td>
             <td class="text-truncate" style="max-width: 300px;" title="${n.mensaje}">${n.mensaje}</td>
             <td><span class="badge bg-secondary-lt text-uppercase">${n.canal}</span></td>
@@ -741,6 +927,7 @@ export async function initConfig(container) {
       ivaDefecto: parseFloat(document.getElementById('cfg-iva').value),
       descuentoMaximoPct: parseFloat(document.getElementById('cfg-descuento-max').value),
       egresoMaximoSinPin: parseFloat(document.getElementById('cfg-egreso-max').value),
+      diasPlazoCredito: parseInt(document.getElementById('cfg-dias-plazo-credito').value, 10) || 30,
       cobrarIvaPos: document.getElementById('cfg-cobrar-iva').checked,
       nominaFrecuenciaDefault: document.getElementById('cfg-nomina-frecuencia').value,
       nominaDiaCorteQuincena: parseInt(document.getElementById('cfg-nomina-corte').value, 10),
@@ -852,30 +1039,106 @@ export async function initConfig(container) {
     }
   });
 
-  // Twilio y Plantillas
+  // Twilio, SMTP y plantillas
+  function syncSmtpPortSecure(fromUserToggle = true) {
+    const portEl = document.getElementById('cfg-smtp-port');
+    const secureEl = document.getElementById('cfg-smtp-secure');
+    if (!portEl || !secureEl) return;
+
+    if (fromUserToggle && secureEl.checked) {
+      portEl.value = 465;
+    } else if (fromUserToggle && !secureEl.checked) {
+      portEl.value = 587;
+    } else {
+      const port = parseInt(portEl.value, 10) || 587;
+      if (port === 465) secureEl.checked = true;
+      else if (port === 587) secureEl.checked = false;
+    }
+  }
+
+  document.getElementById('cfg-smtp-secure')?.addEventListener('change', () => syncSmtpPortSecure(true));
+  document.getElementById('cfg-smtp-port')?.addEventListener('change', () => syncSmtpPortSecure(false));
+
   document.getElementById('form-config-twilio').addEventListener('submit', async (e) => {
     e.preventDefault();
     const body = {
       notificacionesActivas: document.getElementById('cfg-notif-activas').checked,
       smsActivo: document.getElementById('cfg-sms-activo').checked,
       whatsappActivo: document.getElementById('cfg-wa-activo').checked,
+      emailActivo: document.getElementById('cfg-email-activo').checked,
+      emailFacturaAuto: document.getElementById('cfg-email-factura-auto').checked,
+      emailCarteraRecordatorio: document.getElementById('cfg-email-cartera-recordatorio').checked,
+      diasMoraRecordatorioCartera: parseInt(document.getElementById('cfg-dias-mora-recordatorio').value, 10) || 7,
+      templateEmailCarteraAsunto: document.getElementById('cfg-tpl-email-cartera-asunto').value.trim(),
+      templateEmailCarteraCuerpo: document.getElementById('cfg-tpl-email-cartera-cuerpo').value.trim(),
+      smtpHost: document.getElementById('cfg-smtp-host').value.trim(),
+      smtpPort: parseInt(document.getElementById('cfg-smtp-port').value, 10) || 587,
+      smtpSecure: document.getElementById('cfg-smtp-secure').checked,
+      smtpIgnoreTlsErrors: document.getElementById('cfg-smtp-ignore-tls').checked,
+      smtpUser: document.getElementById('cfg-smtp-user').value.trim(),
+      smtpFromEmail: document.getElementById('cfg-smtp-from-email').value.trim(),
+      smtpFromName: document.getElementById('cfg-smtp-from-name').value.trim(),
+      templateEmailFacturaAsunto: document.getElementById('cfg-tpl-email-factura-asunto').value.trim(),
+      templateEmailFacturaCuerpo: document.getElementById('cfg-tpl-email-factura-cuerpo').value.trim(),
       twilioAccountSid: document.getElementById('cfg-twilio-sid').value.trim(),
-      twilioAuthToken: document.getElementById('cfg-twilio-token').value.trim(),
       twilioFromNumber: document.getElementById('cfg-twilio-from').value.trim(),
       templateRecibido: document.getElementById('cfg-tpl-recibido').value.trim(),
       templateListo: document.getElementById('cfg-tpl-listo').value.trim(),
       templateEntregado: document.getElementById('cfg-tpl-entregado').value.trim()
     };
 
+    const smtpPass = document.getElementById('cfg-smtp-pass').value;
+    if (smtpPass) body.smtpPass = smtpPass;
+    const twilioToken = document.getElementById('cfg-twilio-token').value;
+    if (twilioToken) body.twilioAuthToken = twilioToken;
+
     try {
       await apiFetch('/config/sistema', {
         method: 'PUT',
         body: JSON.stringify(body)
       });
-      alert('Configuración de mensajería guardada correctamente.');
+      alert('Configuración de notificaciones guardada correctamente.');
       loadConfig();
     } catch (err) {
       alert(err.message);
+    }
+  });
+
+  document.getElementById('btn-probar-smtp')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-probar-smtp');
+    const emailDestino = document.getElementById('cfg-smtp-test-email').value.trim();
+    if (!emailDestino) {
+      alert('Indique un correo destino para la prueba.');
+      return;
+    }
+
+    const payload = {
+      emailDestino,
+      smtpHost: document.getElementById('cfg-smtp-host').value.trim(),
+      smtpPort: parseInt(document.getElementById('cfg-smtp-port').value, 10) || 587,
+      smtpSecure: document.getElementById('cfg-smtp-secure').checked,
+      smtpIgnoreTlsErrors: document.getElementById('cfg-smtp-ignore-tls').checked,
+      smtpUser: document.getElementById('cfg-smtp-user').value.trim(),
+      smtpFromEmail: document.getElementById('cfg-smtp-from-email').value.trim(),
+      smtpFromName: document.getElementById('cfg-smtp-from-name').value.trim(),
+      empresa: document.getElementById('cfg-empresa')?.value?.trim() || 'ERP'
+    };
+    const smtpPass = document.getElementById('cfg-smtp-pass').value;
+    if (smtpPass) payload.smtpPass = smtpPass;
+
+    try {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader-2 me-1"></i> Enviando…';
+      const res = await apiFetch('/config/sistema/probar-smtp', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      alert(res.message || 'Correo de prueba enviado.');
+    } catch (err) {
+      alert('Error SMTP: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-plug-connected me-1"></i> Probar conexión';
     }
   });
 
@@ -947,6 +1210,7 @@ export async function initConfig(container) {
     loadSedes().then(loadUsuarios);
   });
   document.querySelector('a[href="#tab-config-log"]').addEventListener('shown.bs.tab', loadNotificationsLog);
+  document.querySelector('a[href="#tab-config-twilio"]')?.addEventListener('shown.bs.tab', syncNotificacionEmailPreview);
   document.querySelector('a[href="#tab-config-apariencia"]')?.addEventListener('shown.bs.tab', () => {
     initConfigApariencia(sistemaConfig.temaInterfaz);
   });
@@ -956,6 +1220,7 @@ export async function initConfig(container) {
 
   // Inicialización
   await loadConfig();
+  initNotificacionEmailPreview();
   initConfigApariencia(sistemaConfig.temaInterfaz);
 
   const configParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
