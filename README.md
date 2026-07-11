@@ -21,9 +21,10 @@ El backend sirve la API REST (`/api/*`), archivos subidos (`/uploads`) y el fron
 4. [Instalación con Docker](#instalación-con-docker)
 5. [Instalación en servidor Linux](#instalación-en-servidor-linux)
 6. [Datos de prueba (seeder)](#datos-de-prueba-seeder)
-7. [Mantenimiento](#mantenimiento)
-8. [Solución de problemas](#solución-de-problemas)
-9. [Documentación adicional](#documentación-adicional)
+7. [Migración desde Odoo](#migración-desde-odoo-odoo_db--erp_techstore)
+8. [Mantenimiento](#mantenimiento)
+9. [Solución de problemas](#solución-de-problemas)
+10. [Documentación adicional](#documentación-adicional)
 
 ---
 
@@ -428,6 +429,56 @@ cd backend && node seeders/seeder.js
 # Docker
 docker compose -f docker-compose.erp.yml exec erp node seeders/seeder.js
 ```
+
+---
+
+## Migración desde Odoo (`odoo_db` → `erp_techstore`)
+
+Importa el máximo de datos mapeables desde una base Odoo en PostgreSQL hacia este ERP.
+
+**Conserva:** `Usuarios` y `ConfiguracionesSistema`.  
+**Limpia:** sedes, productos, clientes, stock, ventas, facturas, compras y demás tablas de negocio.  
+**Migra:** sedes (almacenes), categorías, productos, clientes, proveedores, stock, ventas, facturas y órdenes de compra (si existen en Odoo).
+
+### 1. Backup obligatorio
+
+```bash
+pg_dump -U postgres erp_techstore > backup_erp_antes_odoo.sql
+```
+
+### 2. Variables en `backend/.env`
+
+```env
+ODOO_DB_HOST=localhost
+ODOO_DB_PORT=5432
+ODOO_DB_NAME=odoo_db
+ODOO_DB_USER=postgres
+ODOO_DB_PASS=tu_contraseña
+```
+
+(Las variables `DB_*` deben apuntar a `erp_techstore`.)
+
+### 3. Simulación (no escribe)
+
+```bash
+cd backend
+node scripts/migrate-odoo.js --dry-run
+```
+
+### 4. Migración real
+
+```bash
+node scripts/migrate-odoo.js --execute
+```
+
+Con Docker (si el contenedor alcanza ambas bases):
+
+```bash
+docker compose -f docker-compose.erp.yml exec erp node scripts/migrate-odoo.js --dry-run
+docker compose -f docker-compose.erp.yml exec erp node scripts/migrate-odoo.js --execute
+```
+
+> Si Odoo y el ERP están en el mismo PostgreSQL del host, desde Docker usa `DB_HOST=host.docker.internal` (o la IP del host) y lo mismo en `ODOO_DB_HOST`.
 
 ---
 

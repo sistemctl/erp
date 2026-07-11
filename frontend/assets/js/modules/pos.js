@@ -33,18 +33,10 @@ function renderPosSessionBar({ usuario, isAdmin, sedes, currentSedeId, cajaAbier
 
   return `
     <div class="pos-session-bar d-print-none" role="region" aria-label="Estado de la caja">
-      <div class="pos-session-bar__chips">
+      <div class="pos-session-bar__primary">
         <span class="pos-session-chip ${cajaOk ? 'pos-session-chip--live' : 'pos-session-chip--warn'}">
           <i class="ti ${cajaOk ? 'ti-lock-open' : 'ti-lock'}" aria-hidden="true"></i>
           ${cajaOk ? 'Caja abierta' : 'Caja cerrada'}
-        </span>
-        <span class="pos-session-chip">
-          <i class="ti ti-building-store" aria-hidden="true"></i>
-          ${sedeNombre}
-        </span>
-        <span class="pos-session-chip">
-          <i class="ti ti-user" aria-hidden="true"></i>
-          ${usuario.nombre}
         </span>
         ${cajaOk ? `
           <span class="pos-session-chip pos-session-chip--scan">
@@ -53,14 +45,24 @@ function renderPosSessionBar({ usuario, isAdmin, sedes, currentSedeId, cajaAbier
           </span>
         ` : ''}
       </div>
-      ${isAdmin ? `
-        <div class="pos-session-bar__admin">
-          <label class="pos-session-bar__label" for="select-pos-sede">Operar en</label>
-          <select id="select-pos-sede" class="form-select form-select-sm pos-session-sede-select" aria-label="Sede para ventas">
-            ${sedes.map((s) => `<option value="${s.id}" ${String(s.id) === String(currentSedeId) ? 'selected' : ''}>${s.nombre}</option>`).join('')}
-          </select>
-        </div>
-      ` : ''}
+      <div class="pos-session-bar__meta">
+        <span class="pos-session-chip" title="Sede">
+          <i class="ti ti-building-store" aria-hidden="true"></i>
+          ${sedeNombre}
+        </span>
+        <span class="pos-session-chip" title="Cajero">
+          <i class="ti ti-user" aria-hidden="true"></i>
+          ${usuario.nombre}
+        </span>
+        ${isAdmin ? `
+          <div class="pos-session-bar__admin">
+            <label class="pos-session-bar__label" for="select-pos-sede">Sede</label>
+            <select id="select-pos-sede" class="form-select form-select-sm pos-session-sede-select" aria-label="Sede para ventas">
+              ${sedes.map((s) => `<option value="${s.id}" ${String(s.id) === String(currentSedeId) ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+            </select>
+          </div>
+        ` : ''}
+      </div>
     </div>
   `;
 }
@@ -157,26 +159,30 @@ export async function initPos(container) {
         <div class="pos-workspace d-print-none">
           <section class="pos-panel pos-panel--catalog" aria-labelledby="pos-catalog-heading">
             <div class="pos-panel__head">
-              <div>
-                <p class="pos-panel__step">Paso 1</p>
-                <h2 class="pos-panel__title" id="pos-catalog-heading">Agregar productos</h2>
-                <p class="pos-panel__hint">Busca por nombre, toca una tarjeta o escanea el código de barras.</p>
-              </div>
-              <kbd class="pos-kbd-hint" title="Atajo de teclado">F2</kbd>
-            </div>
-            <div class="pos-panel__body pos-panel__body--catalog">
-              <div class="pos-search-wrap">
-                <label class="visually-hidden" for="pos-search-input">Buscar producto</label>
-                <div class="input-icon">
-                  <span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span>
-                  <input type="text" id="pos-search-input" class="form-control form-control-lg pos-search-input" placeholder="Nombre o código de barras…" autocomplete="off" spellcheck="false">
+              <div class="pos-panel__heading">
+                <span class="pos-step-badge" aria-hidden="true">1</span>
+                <div class="pos-panel__heading-text">
+                  <p class="pos-panel__step">Paso 1</p>
+                  <h2 class="pos-panel__title" id="pos-catalog-heading">Agregar productos</h2>
                 </div>
               </div>
-              <div id="pos-categories-container" class="pos-categories" role="toolbar" aria-label="Filtrar por categoría"></div>
+              <kbd class="pos-kbd-hint" title="Enfocar búsqueda">F2</kbd>
+            </div>
+            <div class="pos-panel__body pos-panel__body--catalog">
+              <div class="pos-toolbar">
+                <div class="pos-search-wrap">
+                  <label class="visually-hidden" for="pos-search-input">Buscar producto</label>
+                  <div class="input-icon">
+                    <span class="input-icon-addon"><i class="ti ti-search" aria-hidden="true"></i></span>
+                    <input type="text" id="pos-search-input" class="form-control form-control-lg pos-search-input" placeholder="Nombre o código de barras…" autocomplete="off" spellcheck="false">
+                  </div>
+                </div>
+                <div id="pos-categories-container" class="pos-categories" role="toolbar" aria-label="Filtrar por categoría"></div>
+              </div>
               <div class="pos-results" id="pos-search-results">
                 <div class="pos-empty">
                   <i class="ti ti-scan" aria-hidden="true"></i>
-                  <p>Escanea un producto o escribe para buscar en el catálogo.</p>
+                  <p>Escanea o busca un producto para empezar.</p>
                 </div>
               </div>
             </div>
@@ -184,10 +190,12 @@ export async function initPos(container) {
 
           <section class="pos-panel pos-panel--sale" aria-labelledby="pos-sale-heading">
             <div class="pos-panel__head pos-panel__head--sale">
-              <div>
-                <p class="pos-panel__step">Paso 2</p>
-                <h2 class="pos-panel__title" id="pos-sale-heading">Cobrar venta</h2>
-                <p class="pos-panel__hint">Revisa los ítems y presiona cobrar cuando el cliente pague.</p>
+              <div class="pos-panel__heading">
+                <span class="pos-step-badge pos-step-badge--sale" aria-hidden="true">2</span>
+                <div class="pos-panel__heading-text">
+                  <p class="pos-panel__step">Paso 2</p>
+                  <h2 class="pos-panel__title" id="pos-sale-heading">Cobrar venta</h2>
+                </div>
               </div>
               <span class="pos-cart-count" id="pos-cart-count" aria-live="polite">0 productos</span>
             </div>
@@ -195,21 +203,23 @@ export async function initPos(container) {
               <div class="pos-cart-scroll" id="pos-cart-items">
                 <div class="pos-empty pos-empty--compact">
                   <i class="ti ti-shopping-cart" aria-hidden="true"></i>
-                  <p>Aún no hay productos en esta venta.</p>
+                  <p>El carrito está vacío.</p>
                 </div>
               </div>
               <div class="pos-totals">
-                <div class="pos-totals__row">
-                  <span>Subtotal</span>
-                  <span id="pos-subtotal" class="pos-totals__val">$ 0</span>
-                </div>
-                <div class="pos-totals__row pos-totals__row--muted">
-                  <span>Descuento</span>
-                  <span id="pos-descuento" class="pos-totals__val text-danger">−$ 0</span>
-                </div>
-                <div class="pos-totals__row pos-totals__row--muted">
-                  <span>IVA</span>
-                  <span id="pos-iva" class="pos-totals__val">$ 0</span>
+                <div class="pos-totals__lines">
+                  <div class="pos-totals__row">
+                    <span>Subtotal</span>
+                    <span id="pos-subtotal" class="pos-totals__val">$ 0</span>
+                  </div>
+                  <div class="pos-totals__row pos-totals__row--muted">
+                    <span>Descuento</span>
+                    <span id="pos-descuento" class="pos-totals__val text-danger">−$ 0</span>
+                  </div>
+                  <div class="pos-totals__row pos-totals__row--muted">
+                    <span>IVA</span>
+                    <span id="pos-iva" class="pos-totals__val">$ 0</span>
+                  </div>
                 </div>
                 <div class="pos-totals__grand">
                   <span>Total a cobrar</span>
@@ -487,7 +497,7 @@ export async function initPos(container) {
       }
 
       resultsContainer.innerHTML = `
-        <div class="row row-cards g-2 p-2">
+        <div class="pos-product-grid">
           ${filtered.map(item => {
             const brandName = item.producto.categoria ? item.producto.categoria.nombre : 'GENÉRICO';
             const imgHtml = item.producto.imagenUrl 
@@ -495,25 +505,17 @@ export async function initPos(container) {
               : `<div class="pos-product-card-fallback">${item.producto.nombre.charAt(0).toUpperCase()}</div>`;
 
             return `
-              <div class="col-6 col-sm-4 col-md-3 animate__animated animate__fadeIn">
-                <div class="card pos-product-card btn-add-prod" data-id="${item.productoId}">
-                  <!-- Imagen -->
-                  ${imgHtml}
-                  
-                  <!-- Detalle -->
-                  <div class="card-body p-2 d-flex flex-column justify-content-between flex-fill">
-                    <div class="d-flex flex-column">
-                      <span class="pos-product-card-brand">${brandName}</span>
-                      <div class="pos-product-card-title text-truncate" title="${item.producto.nombre}">${item.producto.nombre}</div>
-                    </div>
-                    
-                    <div class="pos-product-card-footer">
-                      <span class="pos-product-card-price">$ ${new Intl.NumberFormat('es-CO').format(item.producto.precioVenta)}</span>
-                      <span class="pos-product-card-stock">Stock: <strong class="${item.cantidad <= item.producto.stockMinimo ? 'text-danger' : 'text-success'}">${item.cantidad}</strong></span>
-                    </div>
+              <button type="button" class="pos-product-card btn-add-prod" data-id="${item.productoId}">
+                ${imgHtml}
+                <div class="pos-product-card-body">
+                  <span class="pos-product-card-brand">${brandName}</span>
+                  <div class="pos-product-card-title" title="${item.producto.nombre}">${item.producto.nombre}</div>
+                  <div class="pos-product-card-footer">
+                    <span class="pos-product-card-price">$ ${new Intl.NumberFormat('es-CO').format(item.producto.precioVenta)}</span>
+                    <span class="pos-product-card-stock">Stock <strong class="${item.cantidad <= item.producto.stockMinimo ? 'text-danger' : 'text-success'}">${item.cantidad}</strong></span>
                   </div>
                 </div>
-              </div>
+              </button>
             `;
           }).join('')}
         </div>
@@ -639,7 +641,7 @@ export async function initPos(container) {
       cartContainer.innerHTML = `
         <div class="pos-empty pos-empty--compact">
           <i class="ti ti-shopping-cart" aria-hidden="true"></i>
-          <p>Aún no hay productos en esta venta.</p>
+          <p>El carrito está vacío.</p>
         </div>
       `;
       checkoutBtn.disabled = true;
