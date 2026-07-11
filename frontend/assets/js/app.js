@@ -2,6 +2,7 @@ import { isAuthenticated, getUsuario, logout } from './auth.js';
 import { showToast } from './utils/toast.js';
 import { applyThemeFromCache, initThemeFromServer } from './utils/theme.js';
 import { applyDocumentBranding, getCachedBrand, resolveAssetUrl } from './utils/branding.js';
+import { isPublicSeguimientoLocation } from './modules/seguimiento-reparacion.js';
 
 // Anular global alert del navegador con una notificación Toast Premium animada
 window.alert = (message) => {
@@ -214,6 +215,29 @@ async function router() {
   const rawHash = window.location.hash || '#/dashboard';
   const hash = rawHash.split('?')[0] || '#/dashboard';
   const appContainer = document.getElementById('app');
+
+  // Seguimiento público (QR del cliente) — sin login ni shell del ERP
+  // Soporta /r/OR-xxx, /seguimiento/OR-xxx y #/seguimiento/OR-xxx
+  if (isPublicSeguimientoLocation(rawHash)) {
+    if (window.activeModuleCleanup) {
+      window.activeModuleCleanup();
+      window.activeModuleCleanup = null;
+    }
+    const { initSeguimientoReparacion } = await import('./modules/seguimiento-reparacion.js');
+    await initSeguimientoReparacion(appContainer, rawHash);
+    return;
+  }
+
+  // Etiquetas QR antiguas: #/reparaciones?buscar=OR-xxx → seguimiento público si no hay sesión
+  if (!isAuthenticated() && hash === '#/reparaciones') {
+    const params = new URLSearchParams(rawHash.includes('?') ? rawHash.split('?')[1] : '');
+    const buscar = (params.get('buscar') || '').trim();
+    if (buscar) {
+      // Usar ruta estable (sin #) para que un refresh/reescaneo no pierda el fragmento
+      window.location.replace(`${window.location.origin}/r/${encodeURIComponent(buscar)}`);
+      return;
+    }
+  }
 
   // 1. Verificar si está logueado
   if (!isAuthenticated()) {

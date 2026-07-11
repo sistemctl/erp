@@ -1023,6 +1023,7 @@ export async function initReparaciones(container) {
                 <p>Cliente: ${orden.cliente ? orden.cliente.nombre : 'Cliente General'}</p>
                 <p>Equipo: ${orden.tipoEquipo} ${orden.marca} ${orden.modelo}</p>
                 <img src="${imgUrl}" width="120" height="120">
+                <p style="font-size:10px;color:#666;margin-top:4px">Escaneo del cliente · sin login</p>
                 <button onclick="window.print()">Imprimir Etiqueta</button>
               </body>
             </html>

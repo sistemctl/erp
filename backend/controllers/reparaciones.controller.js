@@ -603,9 +603,8 @@ exports.getEtiquetaQr = async (req, res, next) => {
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
     }
 
-    // URL a donde apuntará el escaneo QR del lector
-    // Permite que el técnico abra directamente la orden escaneando la etiqueta
-    const scanUrl = `${buildPublicAppUrl(req)}/#/reparaciones?buscar=${orden.numeroOrden}`;
+    // Ruta pública sin hash: muchos lectores QR pierden el fragmento #/...
+    const scanUrl = `${buildPublicAppUrl(req)}/r/${encodeURIComponent(orden.numeroOrden)}`;
     
     // Generar imagen de código QR y hacer stream como PNG
     res.setHeader('Content-Type', 'image/png');
