@@ -102,27 +102,31 @@ export async function initDashboard(container) {
         actionsHtml: dashFiltersHtml
       })}
 
-      <section class="dash-pulse d-print-none" id="dash-pulse" aria-label="Balance del período">
+      <section class="dash-pulse d-print-none" id="dash-pulse" aria-label="Resultado del período y efectivo en caja">
         <div class="dash-pulse__glow" aria-hidden="true"></div>
         <div class="dash-pulse__main">
           <p class="dash-pulse__eyebrow">Resultado del período · <span id="dash-pulse-periodo">Hoy</span></p>
           <div class="dash-pulse__value" id="dash-pulse-resultado">—</div>
-          <p class="dash-pulse__sub">Ventas del período menos gastos totales de la empresa</p>
+          <p class="dash-pulse__sub">Ingresos menos gastos del período seleccionado. El efectivo en caja es el saldo actual del registro abierto, no parte de este resultado.</p>
         </div>
-        <ul class="dash-pulse__stats">
-          <li class="dash-pulse__stat dash-pulse__stat--in">
-            <span class="dash-pulse__stat-label">Ingresos</span>
-            <span class="dash-pulse__stat-value" id="dash-pulse-ingresos">—</span>
-          </li>
-          <li class="dash-pulse__stat dash-pulse__stat--out">
-            <span class="dash-pulse__stat-label">Gastos</span>
-            <span class="dash-pulse__stat-value" id="dash-pulse-gastos">—</span>
-          </li>
-          <li class="dash-pulse__stat dash-pulse__stat--cash">
-            <span class="dash-pulse__stat-label">Efectivo en caja</span>
+        <div class="dash-pulse__side">
+          <p class="dash-pulse__group-label" id="dash-pulse-periodo-group">Del período</p>
+          <ul class="dash-pulse__stats" aria-labelledby="dash-pulse-periodo-group">
+            <li class="dash-pulse__stat dash-pulse__stat--in">
+              <span class="dash-pulse__stat-label">Ingresos</span>
+              <span class="dash-pulse__stat-value" id="dash-pulse-ingresos">—</span>
+            </li>
+            <li class="dash-pulse__stat dash-pulse__stat--out">
+              <span class="dash-pulse__stat-label">Gastos</span>
+              <span class="dash-pulse__stat-value" id="dash-pulse-gastos">—</span>
+            </li>
+          </ul>
+          <div class="dash-pulse__cash" role="group" aria-labelledby="dash-pulse-caja-label">
+            <span class="dash-pulse__stat-label" id="dash-pulse-caja-label">Efectivo en caja ahora</span>
             <span class="dash-pulse__stat-value" id="dash-pulse-caja">—</span>
-          </li>
-        </ul>
+            <span class="dash-pulse__cash-hint">Saldo del registro abierto (fondo + movimientos). No es el resultado del período.</span>
+          </div>
+        </div>
         <div class="dash-pulse__bar-wrap" role="presentation" aria-hidden="true">
           <div class="dash-pulse__bar" id="dash-pulse-bar" style="width:50%"></div>
         </div>
@@ -633,6 +637,7 @@ export async function initDashboard(container) {
     const enCaja = kpis.dineroEnCaja ?? 0;
 
     const periodoEl = document.getElementById('dash-pulse-periodo');
+    const periodoGroupEl = document.getElementById('dash-pulse-periodo-group');
     const resultadoEl = document.getElementById('dash-pulse-resultado');
     const ingresosEl = document.getElementById('dash-pulse-ingresos');
     const gastosEl = document.getElementById('dash-pulse-gastos');
@@ -640,6 +645,7 @@ export async function initDashboard(container) {
     const barEl = document.getElementById('dash-pulse-bar');
 
     if (periodoEl) periodoEl.textContent = periodoText;
+    if (periodoGroupEl) periodoGroupEl.textContent = `Del período · ${periodoText}`;
     if (resultadoEl) {
       resultadoEl.textContent = formatterCOP.format(resultado);
       resultadoEl.classList.remove('is-positive', 'is-negative');

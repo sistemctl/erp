@@ -266,6 +266,12 @@ export async function initCaja(container) {
               <div class="mb-3">
                 <label class="form-label">Monto a Retirar (COP)</label>
                 <input type="number" id="egreso-monto" class="form-control" min="100" required placeholder="Ej: 15000">
+                <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
+                  <button type="button" class="btn btn-sm btn-outline-danger" id="btn-sacar-todo-efectivo">
+                    <i class="ti ti-cash-off me-1"></i> Sacar todo el efectivo
+                  </button>
+                  <span class="text-secondary small" id="egreso-saldo-hint"></span>
+                </div>
               </div>
               <div class="mb-3">
                 <label class="form-label">Categoría del Egreso</label>
@@ -599,9 +605,7 @@ export async function initCaja(container) {
       loadEgresosList();
 
       document.getElementById('btn-pos-egreso').addEventListener('click', () => {
-        document.getElementById('form-egreso').reset();
-        document.getElementById('pin-admin-wrapper').classList.add('d-none');
-        modalEgreso.show();
+        abrirModalEgreso();
       });
 
       document.getElementById('btn-pos-cierre').addEventListener('click', () => {
@@ -684,10 +688,17 @@ export async function initCaja(container) {
     }
   });
 
-  // PIN Admin logic
-  document.getElementById('egreso-monto').addEventListener('input', (e) => {
-    const val = parseFloat(e.target.value || 0);
+  // Helpers egreso / saldo efectivo
+  const getSaldoEfectivoDisponible = () => {
+    if (!activeCaja) return 0;
+    return parseFloat(activeCaja.montoApertura || 0)
+      + parseFloat(activeCaja.totalVentasEfectivo || 0)
+      - parseFloat(activeCaja.totalEgresos || 0);
+  };
+
+  const syncEgresoPinPorMonto = (val) => {
     const pinWrapper = document.getElementById('pin-admin-wrapper');
+    if (!pinWrapper) return;
     if (val > limiteEgresoSinPin) {
       pinWrapper.classList.remove('d-none');
       document.getElementById('egreso-pin').required = true;
@@ -695,12 +706,63 @@ export async function initCaja(container) {
       pinWrapper.classList.add('d-none');
       document.getElementById('egreso-pin').required = false;
     }
+  };
+
+  const actualizarBtnSacarTodo = () => {
+    const btn = document.getElementById('btn-sacar-todo-efectivo');
+    const hint = document.getElementById('egreso-saldo-hint');
+    const saldo = getSaldoEfectivoDisponible();
+    if (!btn) return;
+
+    btn.disabled = !(activeCaja && saldo > 0);
+    if (hint) {
+      hint.textContent = activeCaja
+        ? `Disponible en caja: ${formatter.format(saldo)}`
+        : 'No hay caja abierta';
+    }
+  };
+
+  const abrirModalEgreso = () => {
+    document.getElementById('form-egreso').reset();
+    document.getElementById('pin-admin-wrapper').classList.add('d-none');
+    document.getElementById('egreso-pin').required = false;
+    actualizarBtnSacarTodo();
+    modalEgreso.show();
+  };
+
+  // PIN Admin logic
+  document.getElementById('egreso-monto').addEventListener('input', (e) => {
+    syncEgresoPinPorMonto(parseFloat(e.target.value || 0));
+  });
+
+  document.getElementById('btn-sacar-todo-efectivo').addEventListener('click', () => {
+    const saldo = getSaldoEfectivoDisponible();
+    if (!activeCaja || saldo <= 0) {
+      showToast('No disponible', 'No hay efectivo disponible en caja para retirar.', 'warning');
+      actualizarBtnSacarTodo();
+      return;
+    }
+    const montoInput = document.getElementById('egreso-monto');
+    montoInput.value = saldo;
+    syncEgresoPinPorMonto(saldo);
+    showToast('Monto cargado', `Se cargó todo el efectivo disponible (${formatter.format(saldo)}). Complete categoría y motivo para registrar.`, 'info');
   });
 
   // Submit Egreso
   document.getElementById('form-egreso').addEventListener('submit', async (e) => {
     e.preventDefault();
     const montoVal = parseFloat(document.getElementById('egreso-monto').value);
+    const saldo = getSaldoEfectivoDisponible();
+
+    if (!activeCaja) {
+      showToast('Error', 'No hay caja abierta para registrar el egreso.', 'error');
+      return;
+    }
+    if (montoVal > saldo) {
+      showToast('Monto inválido', `El monto no puede superar el efectivo en caja (${formatter.format(saldo)}).`, 'error');
+      return;
+    }
+
     const data = {
       monto: montoVal,
       categoriaId: document.getElementById('egreso-categoria').value,
@@ -1052,7 +1114,6 @@ export async function initCaja(container) {
 
   const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
   if (hashParams.get('accion') === 'egreso' && activeCaja) {
-    document.getElementById('form-egreso')?.reset();
-    modalEgreso.show();
+    abrirModalEgreso();
   }
 }

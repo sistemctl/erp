@@ -5285,12 +5285,14 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   background-color: var(--dash-surface);
 }
 
-/* Pulse hero — cockpit HUD (signature) */
+/* Pulse — period P&L vs open-register cash (theme-aware surface) */
 .dash-pulse {
-  --dash-pulse-bg: #0c1222;
-  --dash-pulse-ink: #f1f5f9;
-  --dash-pulse-muted: #94a3b8;
-  --dash-pulse-line: rgba(255, 255, 255, 0.08);
+  --dash-pulse-bg: var(--dash-surface, var(--erp-surface, #ffffff));
+  --dash-pulse-ink: var(--dash-ink, var(--erp-ink, #0c1222));
+  --dash-pulse-muted: var(--dash-muted, var(--erp-muted, #64748b));
+  --dash-pulse-line: var(--dash-line, var(--erp-line, rgba(12, 18, 34, 0.08)));
+  --dash-pulse-panel: color-mix(in srgb, var(--dash-pulse-muted) 6%, var(--dash-pulse-bg));
+  --dash-pulse-glow: color-mix(in srgb, var(--dash-cyan, #0891b2) 12%, transparent);
   position: relative;
   display: grid;
   grid-template-columns: 1fr;
@@ -5298,18 +5300,11 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   padding: 1.5rem 1.65rem 1.35rem;
   margin-bottom: 1.5rem;
   background: var(--dash-pulse-bg);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: calc(var(--dash-radius) + 2px);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.04) inset,
-    0 20px 48px -24px rgba(8, 145, 178, 0.35);
+  border: 1px solid var(--dash-pulse-line);
+  border-radius: var(--dash-radius, 14px);
+  box-shadow: var(--shadow-xs, 0 1px 2px rgba(12, 18, 34, 0.04));
   overflow: hidden;
   color: var(--dash-pulse-ink);
-}
-
-[data-bs-theme="dark"] .dash-pulse {
-  --dash-pulse-bg: #070b14;
-  border-color: rgba(255, 255, 255, 0.05);
 }
 
 @media (min-width: 768px) {
@@ -5330,8 +5325,8 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   inset: -40% -20% auto auto;
   width: 55%;
   height: 120%;
-  background: radial-gradient(ellipse at center, rgba(8, 145, 178, 0.22) 0%, transparent 68%);
-  opacity: 0.9;
+  background: radial-gradient(ellipse at center, var(--dash-pulse-glow) 0%, transparent 68%);
+  opacity: 0.85;
 }
 
 .dash-pulse::before {
@@ -5341,7 +5336,7 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   top: 0;
   bottom: 0;
   width: 3px;
-  background: linear-gradient(180deg, #22d3ee, var(--dash-cyan));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dash-cyan) 70%, #67e8f9), var(--dash-cyan));
   border-radius: 3px 0 0 3px;
 }
 
@@ -5369,21 +5364,38 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   color: var(--dash-pulse-ink);
 }
 
-.dash-pulse__value.is-positive { color: #34d399; }
-.dash-pulse__value.is-negative { color: #fb7185; }
+.dash-pulse__value.is-positive { color: var(--dash-positive, #059669); }
+.dash-pulse__value.is-negative { color: var(--dash-negative, #e11d48); }
 
 .dash-pulse__sub {
   font-size: 0.8125rem;
   color: var(--dash-pulse-muted);
   margin: 0;
-  max-width: 28rem;
+  max-width: 32rem;
+  line-height: 1.45;
+}
+
+.dash-pulse__side {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.dash-pulse__group-label {
+  margin: 0;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dash-pulse-muted);
 }
 
 .dash-pulse__stats {
-  position: relative;
-  z-index: 1;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr 1fr;
   gap: 0.55rem;
   list-style: none;
   margin: 0;
@@ -5396,7 +5408,7 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
 
 .dash-pulse__stat {
   padding: 0.6rem 0.75rem;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--dash-pulse-panel);
   border-radius: 10px;
   border: 1px solid var(--dash-pulse-line);
 }
@@ -5420,15 +5432,35 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   color: var(--dash-pulse-ink);
 }
 
-.dash-pulse__stat--in .dash-pulse__stat-value { color: #67e8f9; }
-.dash-pulse__stat--out .dash-pulse__stat-value { color: #fda4af; }
-.dash-pulse__stat--cash .dash-pulse__stat-value { color: #e2e8f0; }
+.dash-pulse__stat--in .dash-pulse__stat-value { color: var(--dash-cyan, #0891b2); }
+.dash-pulse__stat--out .dash-pulse__stat-value { color: var(--dash-negative, #e11d48); }
+
+.dash-pulse__cash {
+  padding: 0.7rem 0.85rem;
+  background: color-mix(in srgb, var(--dash-pulse-muted) 5%, var(--dash-pulse-bg));
+  border-radius: 10px;
+  border: 1px dashed color-mix(in srgb, var(--dash-pulse-muted) 35%, var(--dash-pulse-line));
+  border-left: 3px solid color-mix(in srgb, var(--dash-pulse-muted) 55%, var(--dash-pulse-line));
+}
+
+.dash-pulse__cash .dash-pulse__stat-value {
+  color: var(--dash-pulse-ink);
+  font-size: 1.05rem;
+}
+
+.dash-pulse__cash-hint {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  color: var(--dash-pulse-muted);
+}
 
 .dash-pulse__bar-wrap {
   position: relative;
   z-index: 1;
   height: 5px;
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--dash-pulse-muted) 12%, var(--dash-pulse-bg));
   border-radius: 99px;
   overflow: hidden;
 }
@@ -5436,7 +5468,7 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
 .dash-pulse__bar {
   height: 100%;
   border-radius: 99px;
-  background: linear-gradient(90deg, var(--dash-cyan), #22d3ee 70%, #a5f3fc);
+  background: linear-gradient(90deg, var(--dash-cyan), color-mix(in srgb, var(--dash-cyan) 55%, #67e8f9));
   transition: width 0.6s var(--ease-fluid);
 }
 

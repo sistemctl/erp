@@ -91,6 +91,13 @@ exports.egresoCaja = async (req, res, next) => {
       return res.status(400).json({ error: 'No hay ninguna caja abierta en esta sede para registrar egresos.' });
     }
 
+    const efectivoDisponible = parseFloat(caja.montoApertura) + parseFloat(caja.totalVentasEfectivo) - parseFloat(caja.totalEgresos);
+    if (parseFloat(monto) > efectivoDisponible) {
+      return res.status(400).json({
+        error: `El monto supera el efectivo disponible en caja ($${efectivoDisponible.toLocaleString('es-CO')}).`
+      });
+    }
+
     // 2. Obtener configuración del sistema
     const config = await ConfiguracionSistema.findOne({ transaction });
     const limiteSinPin = config ? parseFloat(config.egresoMaximoSinPin) : 50000.00;
