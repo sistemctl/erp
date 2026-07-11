@@ -88,17 +88,30 @@ exports.procesarVenta = async (req, res, next) => {
       return res.status(400).json({ error: 'No se puede procesar una venta sin artículos.' });
     }
 
-    // Cliente: crédito exige registrado; resto usa Consumidor Final (créalo si no existe)
+    // Cliente: crédito exige registrado real; resto usa Consumidor Final (créalo si no existe)
     let resolvedClienteId = clienteId || null;
-    if (esCredito && !resolvedClienteId) {
-      await transaction.rollback();
-      return res.status(400).json({
-        error: 'Debe seleccionar un cliente registrado para realizar ventas a crédito.'
-      });
-    }
     if (!resolvedClienteId) {
       const consumidor = await ensureConsumidorFinal({ sedeId, transaction });
       resolvedClienteId = consumidor.id;
+    } else {
+      const cli = await Cliente.findByPk(resolvedClienteId, { transaction });
+      if (!cli) {
+        await transaction.rollback();
+        return res.status(400).json({ error: 'Cliente no encontrado.' });
+      }
+    }
+
+    if (esCredito) {
+      const cliCred = await Cliente.findByPk(resolvedClienteId, { transaction });
+      const esConsumidor = !cliCred ||
+        cliCred.nombre === 'Consumidor Final' ||
+        ['222222222', '222222222-0', '222222222222'].includes(cliCred.documento);
+      if (esConsumidor) {
+        await transaction.rollback();
+        return res.status(400).json({
+          error: 'Debe seleccionar un cliente registrado para realizar ventas a crédito.'
+        });
+      }
     }
 
     // 1. Verificar Caja Abierta (compartida por sede o del usuario)

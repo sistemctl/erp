@@ -332,8 +332,19 @@ export async function initPos(container) {
                   <div class="mb-3">
                     <label class="form-label">Cliente (Opcional)</label>
                     <select id="checkout-cliente" class="form-select">
-                      <option value="">Consumidor Final</option>
-                      ${clientes.map(c => `<option value="${c.id}">${c.nombre} (${c.documento})</option>`).join('')}
+                      ${(() => {
+                        const isConsumidor = (c) =>
+                          c.nombre === 'Consumidor Final' ||
+                          c.documento === '222222222' ||
+                          c.documento === '222222222-0' ||
+                          c.documento === '222222222222';
+                        const consumidor = clientes.find(isConsumidor);
+                        const otros = clientes.filter((c) => !isConsumidor(c));
+                        return `
+                          <option value="${consumidor ? consumidor.id : ''}">Consumidor Final</option>
+                          ${otros.map((c) => `<option value="${c.id}">${c.nombre} (${c.documento || 's/d'})</option>`).join('')}
+                        `;
+                      })()}
                     </select>
                   </div>
                   <!-- Contenedor Trade-In dinámico -->
@@ -1097,8 +1108,12 @@ export async function initPos(container) {
 
     const isCredito = document.getElementById('checkout-credito').checked;
     const clienteId = document.getElementById('checkout-cliente').value;
+    const clienteSel = clientes.find((c) => String(c.id) === String(clienteId));
+    const esConsumidorFinal = !clienteId ||
+      clienteSel?.nombre === 'Consumidor Final' ||
+      ['222222222', '222222222-0', '222222222222'].includes(clienteSel?.documento);
 
-    if (isCredito && !clienteId) {
+    if (isCredito && esConsumidorFinal) {
       showToast('Venta a Crédito', 'Debe seleccionar un cliente registrado para realizar ventas a crédito.', 'warning');
       return;
     }

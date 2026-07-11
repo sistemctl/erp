@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { Cliente } = require('../models');
+const { Cliente, Sede } = require('../models');
 
 const DOC_CONSUMIDOR = '222222222';
 const NOMBRE_CONSUMIDOR = 'Consumidor Final';
@@ -46,8 +46,26 @@ async function ensureConsumidorFinal({ sedeId, transaction } = {}) {
   }, { transaction });
 }
 
+/** Crea/actualiza Consumidor Final al arrancar el servidor (si hay al menos una sede). */
+async function bootstrapConsumidorFinal() {
+  const sede = await Sede.findOne({
+    where: { activa: true },
+    order: [['createdAt', 'ASC']]
+  }) || await Sede.findOne({ order: [['createdAt', 'ASC']] });
+
+  if (!sede) {
+    console.warn('Sin sedes: Consumidor Final se creará en la primera venta sin cliente.');
+    return null;
+  }
+
+  const cliente = await ensureConsumidorFinal({ sedeId: sede.id });
+  console.log(`Cliente genérico listo: ${cliente.nombre} (${cliente.documento})`);
+  return cliente;
+}
+
 module.exports = {
   ensureConsumidorFinal,
+  bootstrapConsumidorFinal,
   DOC_CONSUMIDOR,
   NOMBRE_CONSUMIDOR
 };

@@ -7,6 +7,7 @@ const auditLogMiddleware = require('./middleware/auditLog.middleware');
 const errorHandler = require('./middleware/errorHandler');
 const { resolveStartupPort, buildAppUrl } = require('./utils/server-config');
 const { isAllowedCorsOrigin, getPublicOrigin } = require('./utils/public-url');
+const { bootstrapConsumidorFinal } = require('./utils/consumidor-final');
 
 require('dotenv').config();
 
@@ -90,6 +91,12 @@ const startServer = async () => {
     console.log('Conectando y sincronizando base de datos PostgreSQL...');
     await sequelize.sync({ alter: true });
     console.log('Base de datos sincronizada correctamente.');
+
+    try {
+      await bootstrapConsumidorFinal();
+    } catch (bootErr) {
+      console.warn('No se pudo preparar Consumidor Final al inicio:', bootErr.message);
+    }
 
     const PORT = await resolveStartupPort(ConfiguracionSistema);
     app.set('puertoActivo', PORT);
