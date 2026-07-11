@@ -495,6 +495,7 @@ exports.getSistemaConfig = async (req, res, next) => {
         notificacionesActivas: false,
         ivaDefecto: 19.00,
         cobrarIvaPos: true,
+        cajaCompartidaSede: true,
         nominaFrecuenciaDefault: 'quincenal',
         nominaDiaCorteQuincena: 15,
         nominaDiaPago1: 15,

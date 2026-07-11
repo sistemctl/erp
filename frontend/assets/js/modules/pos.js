@@ -30,6 +30,9 @@ function getSedeNombre(sedes, sedeId, fallback = 'Sede') {
 function renderPosSessionBar({ usuario, isAdmin, sedes, currentSedeId, cajaAbierta, sedeFallback }) {
   const sedeNombre = getSedeNombre(sedes, currentSedeId, sedeFallback || usuario.sedeNombre || 'Sede');
   const cajaOk = cajaAbierta && cajaAbierta.estado !== 'cerrada';
+  const abiertaPor = cajaOk && cajaAbierta.usuarioApertura?.nombre
+    ? cajaAbierta.usuarioApertura.nombre
+    : null;
 
   return `
     <div class="pos-session-bar d-print-none" role="region" aria-label="Estado de la caja">
@@ -42,6 +45,12 @@ function renderPosSessionBar({ usuario, isAdmin, sedes, currentSedeId, cajaAbier
           <span class="pos-session-chip pos-session-chip--scan">
             <i class="ti ti-scan" aria-hidden="true"></i>
             Escáner listo
+          </span>
+        ` : ''}
+        ${abiertaPor ? `
+          <span class="pos-session-chip" title="Quién abrió la caja de esta sede">
+            <i class="ti ti-user-check" aria-hidden="true"></i>
+            Abrió: ${abiertaPor}
           </span>
         ` : ''}
       </div>
@@ -88,6 +97,7 @@ export async function initPos(container) {
     
     // 1. Cargar datos básicos y verificar si la caja está abierta
     let cajaAbierta = null;
+    let cajaCompartida = true;
     try {
       const hoyStr = getLocalDateStr();
       cajaAbierta = await apiFetch(`/caja/reporte?fecha=${hoyStr}&sede=${currentSedeId}`).catch(() => null);
@@ -97,6 +107,7 @@ export async function initPos(container) {
     maxDescuentoPermitido = config ? parseFloat(config.descuentoMaximoPct) : 15;
     cobrarIva = config && config.cobrarIvaPos !== undefined ? !!config.cobrarIvaPos : true;
     ivaPct = config && config.ivaDefecto !== undefined ? parseFloat(config.ivaDefecto) / 100 : 0.19;
+    cajaCompartida = !config || config.cajaCompartidaSede !== false;
     if (config) {
       empresaConfig = {
         empresa: config.empresa || 'TechStore Colombia',
@@ -127,13 +138,16 @@ export async function initPos(container) {
 
 
     if (!cajaAbierta || cajaAbierta.estado === 'cerrada') {
+      const gateText = cajaCompartida
+        ? 'La caja es por sede: si otro cajero ya la abrió en esta misma sede, deberías poder vender aquí. Revisa el selector de sede arriba o ve a Caja para abrirla.'
+        : 'Con “Caja compartida” desactivada, cada usuario debe abrir su propia caja. Ve a Caja, haz la apertura con tu usuario y vuelve al POS.';
       container.innerHTML = `
         <div class="container-xl erp-module pos-module">
           ${renderPosSessionBar({ usuario, isAdmin, sedes, currentSedeId, cajaAbierta: null, sedeFallback: usuario.sedeNombre })}
           <div class="pos-gate-card">
             <div class="pos-gate-card__icon" aria-hidden="true"><i class="ti ti-lock"></i></div>
             <h2 class="pos-gate-card__title">Abre la caja para vender</h2>
-            <p class="pos-gate-card__text">El punto de venta solo funciona con una caja abierta en esta sede. Haz la apertura y vuelve aquí para facturar.</p>
+            <p class="pos-gate-card__text">${gateText}</p>
             <a href="#/caja" class="btn btn-primary">Ir a apertura de caja</a>
           </div>
         </div>

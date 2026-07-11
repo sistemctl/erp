@@ -19,6 +19,7 @@ const {
 const { Op } = require('sequelize');
 const { resolveQuerySede } = require('../utils/sede');
 const { calcularFechaVencimientoCredito, getDiasPlazoCredito } = require('../utils/credito');
+const { findCajaAbierta } = require('../utils/caja-abierta');
 const emailService = require('../services/email.service');
 
 exports.procesarVenta = async (req, res, next) => {
@@ -50,9 +51,10 @@ exports.procesarVenta = async (req, res, next) => {
       return res.status(400).json({ error: 'No se puede procesar una venta sin artículos.' });
     }
 
-    // 1. Verificar Caja Abierta
-    const caja = await Caja.findOne({
-      where: { sedeId, estado: 'abierta' },
+    // 1. Verificar Caja Abierta (compartida por sede o del usuario)
+    const { caja } = await findCajaAbierta({
+      sedeId,
+      usuarioId: req.usuario.userId,
       transaction
     });
 

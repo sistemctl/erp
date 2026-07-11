@@ -115,6 +115,11 @@ const ConfiguracionSistema = sequelize.define('ConfiguracionSistema', {
     type: DataTypes.BOOLEAN,
     defaultValue: true
   },
+  /** Si true, una caja abierta sirve a todos los usuarios de la sede. Si false, cada usuario usa solo la suya. */
+  cajaCompartidaSede: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
+  },
   templateRecibido: {
     type: DataTypes.TEXT,
     defaultValue: "Hola {cliente}, recibimos tu {equipo} en la sede {sede} bajo la orden #{orden}."

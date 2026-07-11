@@ -13,6 +13,7 @@ const {
 } = require('../models');
 const { Op } = require('sequelize');
 const { resolveQuerySede } = require('../utils/sede');
+const { findCajaAbierta } = require('../utils/caja-abierta');
 
 // --- GET ALL CUENTAS POR COBRAR (CARTERA) ---
 exports.getCartera = async (req, res, next) => {
@@ -126,8 +127,9 @@ exports.registrarAbonoCartera = async (req, res, next) => {
     }
 
     // 1. Validar caja abierta para la sede del cajero
-    const caja = await Caja.findOne({
-      where: { sedeId, estado: 'abierta' },
+    const { caja } = await findCajaAbierta({
+      sedeId,
+      usuarioId: usuarioId,
       transaction
     });
 

@@ -1,6 +1,7 @@
 const { Caja, EgresoCaja, CategoriaEgreso, Usuario, ConfiguracionSistema, Sede, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const { resolveQuerySede } = require('../utils/sede');
+const { findCajaAbierta, isCajaCompartidaSede } = require('../utils/caja-abierta');
 
 function getLocalDateStr(date = new Date()) {
   const d = new Date(date);
@@ -25,16 +26,18 @@ exports.aperturaCaja = async (req, res, next) => {
       return res.status(400).json({ error: 'Monto de apertura inválido.' });
     }
 
-    // Verificar si ya hay una caja abierta en esta sede
-    const cajaAbierta = await Caja.findOne({
-      where: {
-        sedeId,
-        estado: 'abierta'
-      }
+    const compartida = await isCajaCompartidaSede();
+    const { caja: cajaAbierta } = await findCajaAbierta({
+      sedeId,
+      usuarioId: req.usuario.userId
     });
 
     if (cajaAbierta) {
-      return res.status(400).json({ error: 'Ya existe una caja abierta para esta sede.' });
+      return res.status(400).json({
+        error: compartida
+          ? 'Ya existe una caja abierta para esta sede.'
+          : 'Ya tienes una caja abierta en esta sede.'
+      });
     }
 
     const hoyStr = getLocalDateStr();
@@ -81,14 +84,19 @@ exports.egresoCaja = async (req, res, next) => {
       return res.status(400).json({ error: 'Parámetros de egreso incompletos o monto inválido.' });
     }
 
-    // 1. Obtener la caja abierta
-    const caja = await Caja.findOne({
-      where: { sedeId, estado: 'abierta' },
+    // 1. Obtener la caja abierta (compartida por sede o solo la del usuario)
+    const { caja, compartida } = await findCajaAbierta({
+      sedeId,
+      usuarioId: req.usuario.userId,
       transaction
     });
 
     if (!caja) {
-      return res.status(400).json({ error: 'No hay ninguna caja abierta en esta sede para registrar egresos.' });
+      return res.status(400).json({
+        error: compartida
+          ? 'No hay ninguna caja abierta en esta sede para registrar egresos.'
+          : 'No tienes una caja abierta en esta sede para registrar egresos.'
+      });
     }
 
     const efectivoDisponible = parseFloat(caja.montoApertura) + parseFloat(caja.totalVentasEfectivo) - parseFloat(caja.totalEgresos);
@@ -181,13 +189,18 @@ exports.cierreCaja = async (req, res, next) => {
     } = req.body;
     const sedeId = bodySedeId || req.usuario.sedeId;
 
-    const caja = await Caja.findOne({
-      where: { sedeId, estado: 'abierta' },
+    const { caja, compartida } = await findCajaAbierta({
+      sedeId,
+      usuarioId: req.usuario.userId,
       transaction
     });
 
     if (!caja) {
-      return res.status(400).json({ error: 'No hay ninguna caja abierta en esta sede para cerrar.' });
+      return res.status(400).json({
+        error: compartida
+          ? 'No hay ninguna caja abierta en esta sede para cerrar.'
+          : 'No tienes una caja abierta en esta sede para cerrar.'
+      });
     }
 
     // Calcular montos reales del sistema
@@ -232,34 +245,40 @@ exports.cierreCaja = async (req, res, next) => {
 
 // --- LEER REPORTES Y EGRESOS ---
 
+const cajaReporteInclude = [
+  { model: EgresoCaja, as: 'egresos', include: [{ model: CategoriaEgreso, as: 'categoria', attributes: ['nombre'] }] },
+  { model: Usuario, as: 'usuarioApertura', attributes: ['id', 'nombre'] },
+  { model: Sede, as: 'sede', attributes: ['id', 'nombre'] }
+];
+
 exports.getReporteCaja = async (req, res, next) => {
   try {
     const { fecha, sede } = req.query;
-    const querySedeId = sede || req.usuario.sedeId;
+    const querySedeId = (sede && sede !== 'undefined' && sede !== 'null')
+      ? sede
+      : req.usuario.sedeId;
     const queryFecha = fecha || getLocalDateStr();
 
-    let caja = await Caja.findOne({
-      where: {
-        sedeId: querySedeId,
-        fecha: queryFecha
-      },
-      order: [['createdAt', 'DESC']],
-      include: [
-        { model: EgresoCaja, as: 'egresos', include: [{ model: CategoriaEgreso, as: 'categoria', attributes: ['nombre'] }] }
-      ]
+    if (!querySedeId) {
+      return res.status(400).json({ error: 'Debe indicar la sede para consultar la caja.' });
+    }
+
+    // 1) Priorizar caja ABIERTA según política (compartida por sede o solo del usuario)
+    let { caja } = await findCajaAbierta({
+      sedeId: querySedeId,
+      usuarioId: req.usuario.userId,
+      include: cajaReporteInclude
     });
 
-    // Si no hay caja para la fecha dada, verificar si hay alguna caja abierta sin cerrar de fechas anteriores
+    // 2) Si no hay abierta aplicable, devolver el registro de la fecha pedida (histórico / cerrada)
     if (!caja) {
       caja = await Caja.findOne({
         where: {
           sedeId: querySedeId,
-          estado: 'abierta'
+          fecha: queryFecha
         },
         order: [['createdAt', 'DESC']],
-        include: [
-          { model: EgresoCaja, as: 'egresos', include: [{ model: CategoriaEgreso, as: 'categoria', attributes: ['nombre'] }] }
-        ]
+        include: cajaReporteInclude
       });
     }
 

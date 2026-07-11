@@ -24,6 +24,7 @@ const twilioService = require('../services/twilio.service');
 const emailService = require('../services/email.service');
 const { resolveQuerySede, resolveActionSede } = require('../utils/sede');
 const { calcularFechaVencimientoCredito, getDiasPlazoCredito } = require('../utils/credito');
+const { findCajaAbierta } = require('../utils/caja-abierta');
 
 // --- CRUD ÓRDENES ---
 
@@ -262,8 +263,9 @@ exports.updateEstado = async (req, res, next) => {
     }
 
     if (estado === 'entregado') {
-      const caja = await Caja.findOne({
-        where: { sedeId: orden.sedeId, estado: 'abierta' },
+      const { caja } = await findCajaAbierta({
+        sedeId: orden.sedeId,
+        usuarioId: req.usuario.userId,
         transaction
       });
 

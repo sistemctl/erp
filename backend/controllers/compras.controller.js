@@ -16,6 +16,7 @@ const {
 } = require('../models');
 const { Op } = require('sequelize');
 const { resolveQuerySede, resolveActionSede } = require('../utils/sede');
+const { findCajaAbierta } = require('../utils/caja-abierta');
 
 const FUENTES_VALIDAS = ['caja_efectivo', 'efectivo_externo', 'transferencia_empresa', 'otro'];
 
@@ -311,8 +312,9 @@ exports.registrarPagoCompra = async (req, res, next) => {
     let egresoCreado = false;
 
     if (fuente === 'caja_efectivo') {
-      const caja = await Caja.findOne({
-        where: { sedeId: orden.sedeId, estado: 'abierta' },
+      const { caja } = await findCajaAbierta({
+        sedeId: orden.sedeId,
+        usuarioId: req.usuario.userId,
         transaction
       });
 

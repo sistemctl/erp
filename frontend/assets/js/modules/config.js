@@ -120,6 +120,13 @@ export async function initConfig(container) {
                   </label>
                   <small class="text-secondary d-block mt-1">Si se desactiva, el POS no sumará ningún impuesto adicional sobre el precio de venta del producto (se asume que el precio de venta ya incluye el IVA o que la venta no aplica IVA).</small>
                 </div>
+                <div class="col-md-12 mt-3">
+                  <label class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="cfg-caja-compartida" checked>
+                    <span class="form-check-label fw-bold">Caja compartida por sede</span>
+                  </label>
+                  <small class="text-secondary d-block mt-1">Activado: una caja abierta sirve a todos los usuarios de la sede (POS, egresos, cobros). Desactivado: cada usuario solo ve y usa la caja que él mismo abrió.</small>
+                </div>
 
                 <h4 class="text-secondary border-bottom pb-2 mt-4 mb-2"><i class="ti ti-cash me-1"></i> Nómina y fechas de pago</h4>
                 <div class="col-md-3">
@@ -576,6 +583,7 @@ export async function initConfig(container) {
       document.getElementById('cfg-egreso-max').value = data.egresoMaximoSinPin || 50000;
       document.getElementById('cfg-dias-plazo-credito').value = data.diasPlazoCredito ?? 30;
       document.getElementById('cfg-cobrar-iva').checked = !!data.cobrarIvaPos;
+      document.getElementById('cfg-caja-compartida').checked = data.cajaCompartidaSede !== false;
       document.getElementById('cfg-nomina-frecuencia').value = data.nominaFrecuenciaDefault || 'quincenal';
       document.getElementById('cfg-nomina-corte').value = data.nominaDiaCorteQuincena ?? 15;
       document.getElementById('cfg-nomina-pago1').value = data.nominaDiaPago1 ?? 15;
@@ -929,6 +937,7 @@ export async function initConfig(container) {
       egresoMaximoSinPin: parseFloat(document.getElementById('cfg-egreso-max').value),
       diasPlazoCredito: parseInt(document.getElementById('cfg-dias-plazo-credito').value, 10) || 30,
       cobrarIvaPos: document.getElementById('cfg-cobrar-iva').checked,
+      cajaCompartidaSede: document.getElementById('cfg-caja-compartida').checked,
       nominaFrecuenciaDefault: document.getElementById('cfg-nomina-frecuencia').value,
       nominaDiaCorteQuincena: parseInt(document.getElementById('cfg-nomina-corte').value, 10),
       nominaDiaPago1: parseInt(document.getElementById('cfg-nomina-pago1').value, 10),
