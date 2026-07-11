@@ -20,6 +20,29 @@ window.alert = (message) => {
 };
 
 
+const SIDEBAR_SECTIONS = [
+  {
+    id: 'operacion',
+    label: 'Operación',
+    hashes: ['#/dashboard', '#/pos', '#/ventas', '#/clientes', '#/reparaciones', '#/cotizaciones', '#/tradein']
+  },
+  {
+    id: 'inventario',
+    label: 'Inventario',
+    hashes: ['#/inventario', '#/series']
+  },
+  {
+    id: 'finanzas',
+    label: 'Finanzas',
+    hashes: ['#/caja', '#/facturacion', '#/compras', '#/proveedores', '#/cartera', '#/nomina', '#/rentabilidad', '#/reportes']
+  },
+  {
+    id: 'sistema',
+    label: 'Sistema',
+    hashes: ['#/config']
+  }
+];
+
 const modulosPorRol = {
   superadmin: [
     { name: 'Dashboard', hash: '#/dashboard', icon: 'ti-dashboard' },
@@ -98,6 +121,43 @@ const modulosPorRol = {
     { name: 'Reportes', hash: '#/reportes', icon: 'ti-report-analytics' }
   ]
 };
+
+function buildSidebarMenuHtml(modulos) {
+  const byHash = new Map(modulos.map((m) => [m.hash.split('?')[0], m]));
+  const used = new Set();
+  const parts = [];
+
+  const renderItem = (m) => `
+    <li class="nav-item">
+      <a class="nav-link" href="${m.hash}" data-hash="${m.hash}">
+        <span class="nav-link-icon d-md-none d-lg-inline-block">
+          <i class="ti ${m.icon} fs-2"></i>
+        </span>
+        <span class="nav-link-title">${m.name}</span>
+      </a>
+    </li>
+  `;
+
+  for (const section of SIDEBAR_SECTIONS) {
+    const items = section.hashes
+      .map((h) => byHash.get(h))
+      .filter(Boolean);
+    if (!items.length) continue;
+    parts.push(`<li class="nav-item nav-section" aria-hidden="true"><span class="nav-section-label">${section.label}</span></li>`);
+    for (const m of items) {
+      used.add(m.hash.split('?')[0]);
+      parts.push(renderItem(m));
+    }
+  }
+
+  for (const m of modulos) {
+    const base = m.hash.split('?')[0];
+    if (used.has(base)) continue;
+    parts.push(renderItem(m));
+  }
+
+  return parts.join('');
+}
 
 const ROL_META = {
   superadmin: { label: 'Superadmin', tone: 'violet' },
@@ -525,17 +585,7 @@ async function renderBaseShell(container) {
   `;
 
   container.className = "page";
-  // Sidebar list items
-  const menuItemsHtml = modulos.map(m => `
-    <li class="nav-item">
-      <a class="nav-link" href="${m.hash}" data-hash="${m.hash}">
-        <span class="nav-link-icon d-md-none d-lg-inline-block">
-          <i class="ti ${m.icon} fs-2"></i>
-        </span>
-        <span class="nav-link-title">${m.name}</span>
-      </a>
-    </li>
-  `).join('');
+  const menuItemsHtml = buildSidebarMenuHtml(modulos);
 
   container.innerHTML = `
     <!-- Sidebar -->
@@ -559,7 +609,7 @@ async function renderBaseShell(container) {
 
     <!-- Topbar & Main Wrapper -->
     <div class="page-wrapper">
-      <header class="navbar erp-topbar d-none d-lg-flex d-print-none">
+      <header class="navbar erp-topbar d-flex d-print-none">
         <div class="container-xl erp-topbar-inner">
           <div class="erp-topbar-context" aria-live="polite">
             <span class="erp-topbar-accent" aria-hidden="true"></span>

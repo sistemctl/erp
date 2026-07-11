@@ -32,8 +32,8 @@ export async function initVentas(container) {
       })}
 
       <!-- Navigation tabs -->
-      <div class="card mb-4 d-print-none">
-        <div class="card-header">
+      <div class="card mb-3 d-print-none">
+        <div class="card-header bg-transparent border-bottom">
           <ul class="nav nav-tabs card-header-tabs" data-bs-toggle="tabs" role="tablist">
             <li class="nav-item" role="presentation">
               <a href="#tab-historial" class="nav-link active" data-bs-toggle="tab" aria-selected="true" role="tab">
@@ -61,103 +61,117 @@ export async function initVentas(container) {
           <div class="tab-content">
             <!-- TAB 1: HISTORIAL DE VENTAS -->
             <div class="tab-pane active show" id="tab-historial" role="tabpanel">
-              <form id="form-filtros-ventas" class="row g-3 mb-4">
-                <div class="col-md-3">
-                  <label class="form-label">Buscar Venta / Cliente</label>
-                  <input type="text" id="filtro-buscar-venta" class="form-control" placeholder="No. Venta o Cliente…" spellcheck="false">
+              <div class="erp-list-workspace">
+              <div class="card erp-filter-card">
+                <div class="card-body">
+                  <form id="form-filtros-ventas" class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                      <label class="form-label">Buscar Venta / Cliente</label>
+                      <input type="text" id="filtro-buscar-venta" class="form-control" placeholder="No. Venta o Cliente…" spellcheck="false">
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label">Vendedor</label>
+                      <select id="filtro-vendedor-venta" class="form-select">
+                        <option value="">-- Todos --</option>
+                        ${vendedores.map(v => `<option value="${v.id}">${v.nombre}</option>`).join('')}
+                      </select>
+                    </div>
+                    ${isAdminOrGerente && ['admin', 'superadmin'].includes(usuario.rol) ? `
+                      <div class="col-md-2">
+                        <label class="form-label">Sede</label>
+                        <select id="filtro-sede-venta" class="form-select">
+                          <option value="">-- Todas --</option>
+                          ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                        </select>
+                      </div>
+                    ` : '<input type="hidden" id="filtro-sede-venta" value="">'}
+                    <div class="col-md-2">
+                      <label class="form-label">Desde</label>
+                      <input type="date" id="filtro-desde-venta" class="form-control">
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label">Hasta</label>
+                      <input type="date" id="filtro-hasta-venta" class="form-control">
+                    </div>
+                    <div class="col-md-1 d-flex align-items-end">
+                      <button type="submit" class="btn btn-primary w-100 erp-filter-submit" aria-label="Filtrar historial de ventas"><i class="ti ti-filter me-1"></i>Filtrar</button>
+                    </div>
+                  </form>
                 </div>
-                <div class="col-md-2">
-                  <label class="form-label">Vendedor</label>
-                  <select id="filtro-vendedor-venta" class="form-select">
-                    <option value="">-- Todos --</option>
-                    ${vendedores.map(v => `<option value="${v.id}">${v.nombre}</option>`).join('')}
-                  </select>
-                </div>
-                ${isAdminOrGerente && ['admin', 'superadmin'].includes(usuario.rol) ? `
-                  <div class="col-md-2">
-                    <label class="form-label">Sede</label>
-                    <select id="filtro-sede-venta" class="form-select">
-                      <option value="">-- Todas --</option>
-                      ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
-                    </select>
-                  </div>
-                ` : '<input type="hidden" id="filtro-sede-venta" value="">'}
-                <div class="col-md-2">
-                  <label class="form-label">Desde</label>
-                  <input type="date" id="filtro-desde-venta" class="form-control">
-                </div>
-                <div class="col-md-2">
-                  <label class="form-label">Hasta</label>
-                  <input type="date" id="filtro-hasta-venta" class="form-control">
-                </div>
-                <div class="col-md-1 d-flex align-items-end">
-                  <button type="submit" class="btn btn-primary w-100" aria-label="Filtrar historial de ventas"><i class="ti ti-filter"></i></button>
-                </div>
-              </form>
+              </div>
 
-              <div class="table-responsive">
-                <table class="table table-vcenter card-table table-hover table-striped">
-                  <thead>
-                    <tr>
-                      <th>No. Venta</th>
-                      <th>Fecha</th>
-                      <th>Cliente</th>
-                      <th>Vendedor</th>
-                      <th>Sede</th>
-                      <th>Ítems</th>
-                      <th>Método Pago</th>
-                      <th class="text-end">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody id="ventas-table-body">
-                    <!-- Dinámico -->
-                  </tbody>
-                </table>
+              <div class="card erp-table-panel">
+                <div class="table-responsive">
+                  <table class="table table-vcenter card-table table-hover mb-0">
+                    <thead>
+                      <tr>
+                        <th>No. Venta</th>
+                        <th>Fecha</th>
+                        <th>Cliente</th>
+                        <th>Vendedor</th>
+                        <th>Sede</th>
+                        <th>Ítems</th>
+                        <th>Método Pago</th>
+                        <th class="text-end">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody id="ventas-table-body">
+                      <!-- Dinámico -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
               </div>
             </div>
 
             <!-- TAB 2: COMISIONES -->
             <div class="tab-pane" id="tab-comisiones" role="tabpanel">
-              <form id="form-filtros-comisiones" class="row g-3 mb-4">
-                <div class="col-md-3">
-                  <label class="form-label">Vendedor / Cajero</label>
-                  <select id="filtro-vendedor-comision" class="form-select">
-                    <option value="">-- Todos --</option>
-                    ${vendedores.map(v => `<option value="${v.id}">${v.nombre}</option>`).join('')}
-                  </select>
+              <div class="card mb-2 erp-filter-card">
+                <div class="card-body">
+                  <form id="form-filtros-comisiones" class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                      <label class="form-label">Vendedor / Cajero</label>
+                      <select id="filtro-vendedor-comision" class="form-select">
+                        <option value="">-- Todos --</option>
+                        ${vendedores.map(v => `<option value="${v.id}">${v.nombre}</option>`).join('')}
+                      </select>
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label">Desde</label>
+                      <input type="date" id="filtro-desde-comision" class="form-control">
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label">Hasta</label>
+                      <input type="date" id="filtro-hasta-comision" class="form-control">
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                      <button type="submit" class="btn btn-primary w-100"><i class="ti ti-calculator me-1"></i> Calcular Comisiones</button>
+                    </div>
+                  </form>
                 </div>
-                <div class="col-md-3">
-                  <label class="form-label">Desde</label>
-                  <input type="date" id="filtro-desde-comision" class="form-control">
-                </div>
-                <div class="col-md-3">
-                  <label class="form-label">Hasta</label>
-                  <input type="date" id="filtro-hasta-comision" class="form-control">
-                </div>
-                <div class="col-md-3 d-flex align-items-end">
-                  <button type="submit" class="btn btn-primary w-100"><i class="ti ti-calculator me-1"></i> Calcular Comisiones</button>
-                </div>
-              </form>
+              </div>
 
-              <div class="row row-cards mb-4" id="kpi-comisiones-wrapper">
+              <div class="row row-cards mb-2" id="kpi-comisiones-wrapper">
                 <!-- KPI Card -->
               </div>
 
-              <div class="table-responsive">
-                <table class="table table-vcenter card-table">
-                  <thead>
-                    <tr>
-                      <th>Vendedor</th>
-                      <th>No. Venta</th>
-                      <th>Fecha</th>
-                      <th class="text-end">Total Venta</th>
-                      <th class="text-end">Comisión (2%)</th>
-                    </tr>
-                  </thead>
-                  <tbody id="comisiones-table-body">
-                    <tr><td colspan="5" class="text-center py-4 text-secondary">Haga clic en Calcular para liquidar las comisiones del período.</td></tr>
-                  </tbody>
-                </table>
+              <div class="card erp-table-panel">
+                <div class="table-responsive">
+                  <table class="table table-vcenter card-table">
+                    <thead>
+                      <tr>
+                        <th>Vendedor</th>
+                        <th>No. Venta</th>
+                        <th>Fecha</th>
+                        <th class="text-end">Total Venta</th>
+                        <th class="text-end">Comisión (2%)</th>
+                      </tr>
+                    </thead>
+                    <tbody id="comisiones-table-body">
+                      <tr><td colspan="5" class="text-center py-4 text-secondary">Haga clic en Calcular para liquidar las comisiones del período.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
@@ -169,87 +183,97 @@ export async function initVentas(container) {
                   <div class="text-secondary">Registro de artículos vendidos con descuento o por debajo del costo real</div>
                 </div>
               </div>
-              <div class="table-responsive">
-                <table class="table table-vcenter card-table table-hover table-striped">
-                  <thead>
-                    <tr>
-                      <th>No. Venta</th>
-                      <th>Fecha</th>
-                      <th>Producto</th>
-                      <th>Vendedor</th>
-                      <th class="text-end">Precio Base</th>
-                      <th class="text-end">Precio Vendido</th>
-                      <th class="text-center">Descuento (%)</th>
-                      <th class="text-end">Ahorro</th>
-                    </tr>
-                  </thead>
-                  <tbody id="descuentos-table-body">
-                    <!-- Dinámico -->
-                  </tbody>
-                </table>
+              <div class="card erp-table-panel">
+                <div class="table-responsive">
+                  <table class="table table-vcenter card-table table-hover">
+                    <thead>
+                      <tr>
+                        <th>No. Venta</th>
+                        <th>Fecha</th>
+                        <th>Producto</th>
+                        <th>Vendedor</th>
+                        <th class="text-end">Precio Base</th>
+                        <th class="text-end">Precio Vendido</th>
+                        <th class="text-center">Descuento (%)</th>
+                        <th class="text-end">Ahorro</th>
+                      </tr>
+                    </thead>
+                    <tbody id="descuentos-table-body">
+                      <!-- Dinámico -->
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
             <!-- TAB 4: HISTORIAL DE REPARACIONES -->
             <div class="tab-pane" id="tab-reparaciones" role="tabpanel">
-              <form id="form-filtros-reparaciones" class="row g-3 mb-4">
-                <div class="col-md-3">
-                  <label class="form-label">Buscar Orden / Cliente</label>
-                  <input type="text" id="filtro-buscar-reparacion" class="form-control" placeholder="No. Orden o Cliente...">
+              <div class="erp-list-workspace">
+              <div class="card erp-filter-card">
+                <div class="card-body">
+                  <form id="form-filtros-reparaciones" class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                      <label class="form-label">Buscar Orden / Cliente</label>
+                      <input type="text" id="filtro-buscar-reparacion" class="form-control" placeholder="No. Orden o Cliente...">
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label">Estado</label>
+                      <select id="filtro-estado-reparacion" class="form-select">
+                        <option value="">-- Todos --</option>
+                        <option value="recibido">Recibido</option>
+                        <option value="diagnostico">Diagnóstico</option>
+                        <option value="en_reparacion">En Reparación</option>
+                        <option value="listo">Listo para Entrega</option>
+                        <option value="entregado">Entregado</option>
+                        <option value="cancelado">Cancelado</option>
+                      </select>
+                    </div>
+                    ${isAdminOrGerente && ['admin', 'superadmin'].includes(usuario.rol) ? `
+                      <div class="col-md-2">
+                        <label class="form-label">Sede</label>
+                        <select id="filtro-sede-reparacion" class="form-select">
+                          <option value="">-- Todas --</option>
+                          ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                        </select>
+                      </div>
+                    ` : '<input type="hidden" id="filtro-sede-reparacion" value="">'}
+                    <div class="col-md-2">
+                      <label class="form-label">Desde</label>
+                      <input type="date" id="filtro-desde-reparacion" class="form-control">
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label">Hasta</label>
+                      <input type="date" id="filtro-hasta-reparacion" class="form-control">
+                    </div>
+                    <div class="col-md-1 d-flex align-items-end">
+                      <button type="submit" class="btn btn-primary w-100 erp-filter-submit" aria-label="Filtrar reparaciones facturadas"><i class="ti ti-filter me-1"></i>Filtrar</button>
+                    </div>
+                  </form>
                 </div>
-                <div class="col-md-2">
-                  <label class="form-label">Estado</label>
-                  <select id="filtro-estado-reparacion" class="form-select">
-                    <option value="">-- Todos --</option>
-                    <option value="recibido">Recibido</option>
-                    <option value="diagnostico">Diagnóstico</option>
-                    <option value="en_reparacion">En Reparación</option>
-                    <option value="listo">Listo para Entrega</option>
-                    <option value="entregado">Entregado</option>
-                    <option value="cancelado">Cancelado</option>
-                  </select>
-                </div>
-                ${isAdminOrGerente && ['admin', 'superadmin'].includes(usuario.rol) ? `
-                  <div class="col-md-2">
-                    <label class="form-label">Sede</label>
-                    <select id="filtro-sede-reparacion" class="form-select">
-                      <option value="">-- Todas --</option>
-                      ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
-                    </select>
-                  </div>
-                ` : '<input type="hidden" id="filtro-sede-reparacion" value="">'}
-                <div class="col-md-2">
-                  <label class="form-label">Desde</label>
-                  <input type="date" id="filtro-desde-reparacion" class="form-control">
-                </div>
-                <div class="col-md-2">
-                  <label class="form-label">Hasta</label>
-                  <input type="date" id="filtro-hasta-reparacion" class="form-control">
-                </div>
-                <div class="col-md-1 d-flex align-items-end">
-                  <button type="submit" class="btn btn-primary w-100" aria-label="Filtrar reparaciones facturadas"><i class="ti ti-filter"></i></button>
-                </div>
-              </form>
+              </div>
 
-              <div class="table-responsive">
-                <table class="table table-vcenter card-table table-hover table-striped">
-                  <thead>
-                    <tr>
-                      <th>No. Orden</th>
-                      <th>Fecha Registro</th>
-                      <th>Cliente</th>
-                      <th>Técnico</th>
-                      <th>Sede</th>
-                      <th>Estado</th>
-                      <th class="text-end">Mano de Obra</th>
-                      <th class="text-end">Costo Repuestos</th>
-                      <th class="text-end">Total Cobrado</th>
-                    </tr>
-                  </thead>
-                  <tbody id="reparaciones-table-body">
-                    <!-- Dinámico -->
-                  </tbody>
-                </table>
+              <div class="card erp-table-panel">
+                <div class="table-responsive">
+                  <table class="table table-vcenter card-table table-hover mb-0">
+                    <thead>
+                      <tr>
+                        <th>No. Orden</th>
+                        <th>Fecha Registro</th>
+                        <th>Cliente</th>
+                        <th>Técnico</th>
+                        <th>Sede</th>
+                        <th>Estado</th>
+                        <th class="text-end">Mano de Obra</th>
+                        <th class="text-end">Costo Repuestos</th>
+                        <th class="text-end">Total Cobrado</th>
+                      </tr>
+                    </thead>
+                    <tbody id="reparaciones-table-body">
+                      <!-- Dinámico -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
               </div>
             </div>
           </div>

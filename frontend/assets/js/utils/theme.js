@@ -79,8 +79,8 @@ export const DEFAULT_THEME = {
     ink: '#0b1220',
     inkSecondary: '#64748b',
     inkMuted: '#94a3b8',
-    borderSubtle: 'rgba(15, 23, 42, 0.07)',
-    borderHairline: 'rgba(15, 23, 42, 0.04)',
+    borderSubtle: 'rgba(15, 23, 42, 0.09)',
+    borderHairline: 'rgba(15, 23, 42, 0.055)',
     success: '#059669',
     warning: '#d97706',
     danger: '#dc2626'
@@ -95,7 +95,7 @@ export const DEFAULT_THEME = {
     fontWeights: '300;400;500;600;700;800'
   },
   layout: {
-    sidebarWidth: 252,
+    sidebarWidth: 236,
     borderRadiusSm: 8,
     borderRadiusMd: 12,
     borderRadiusLg: 16,
@@ -158,22 +158,22 @@ export const FONT_OPTIONS = [
 
 const SHADOW_SCALES = {
   low: {
-    xs: '0 1px 2px rgba(15, 23, 42, 0.02)',
-    sm: '0 1px 4px rgba(15, 23, 42, 0.03)',
-    md: '0 4px 16px -4px rgba(15, 23, 42, 0.05)',
-    lg: '0 8px 32px -8px rgba(15, 23, 42, 0.07)'
+    xs: '0 1px 2px rgba(15, 23, 42, 0.03)',
+    sm: '0 1px 6px rgba(15, 23, 42, 0.04)',
+    md: '0 6px 20px -6px rgba(15, 23, 42, 0.07)',
+    lg: '0 12px 40px -10px rgba(15, 23, 42, 0.1)'
   },
   medium: {
-    xs: '0 1px 2px rgba(15, 23, 42, 0.03)',
-    sm: '0 2px 8px rgba(15, 23, 42, 0.04)',
-    md: '0 8px 32px -8px rgba(15, 23, 42, 0.07)',
-    lg: '0 16px 48px -12px rgba(15, 23, 42, 0.09)'
+    xs: '0 1px 2px rgba(15, 23, 42, 0.04)',
+    sm: '0 2px 10px rgba(15, 23, 42, 0.055)',
+    md: '0 10px 36px -10px rgba(15, 23, 42, 0.1)',
+    lg: '0 20px 56px -14px rgba(15, 23, 42, 0.14)'
   },
   high: {
-    xs: '0 2px 4px rgba(15, 23, 42, 0.05)',
-    sm: '0 4px 12px rgba(15, 23, 42, 0.07)',
-    md: '0 12px 40px -8px rgba(15, 23, 42, 0.1)',
-    lg: '0 24px 64px -12px rgba(15, 23, 42, 0.14)'
+    xs: '0 2px 4px rgba(15, 23, 42, 0.06)',
+    sm: '0 4px 14px rgba(15, 23, 42, 0.08)',
+    md: '0 14px 44px -10px rgba(15, 23, 42, 0.13)',
+    lg: '0 28px 68px -14px rgba(15, 23, 42, 0.18)'
   }
 };
 
@@ -260,6 +260,7 @@ export function applyTheme(rawTheme) {
   root.style.setProperty('--radius-md', `${layout.borderRadiusMd}px`);
   root.style.setProperty('--radius-lg', `${layout.borderRadiusLg}px`);
   root.style.setProperty('--radius-xl', `${layout.borderRadiusXl}px`);
+  root.style.setProperty('--erp-radius', `${layout.borderRadiusMd}px`);
 
   root.style.setProperty('--shadow-xs', shadows.xs);
   root.style.setProperty('--shadow-sm', shadows.sm);
@@ -375,7 +376,7 @@ export function readThemeFromForm(formRoot) {
       fontWeights: FONT_OPTIONS.find(f => f.id === val('theme-font'))?.weights || '400;600;700'
     },
     layout: {
-      sidebarWidth: parseInt(val('theme-sidebar-width'), 10) || 252,
+      sidebarWidth: parseInt(val('theme-sidebar-width'), 10) || 236,
       borderRadiusSm: parseInt(val('theme-radius-sm'), 10) || 8,
       borderRadiusMd: parseInt(val('theme-radius-md'), 10) || 12,
       borderRadiusLg: parseInt(val('theme-radius-lg'), 10) || 16,

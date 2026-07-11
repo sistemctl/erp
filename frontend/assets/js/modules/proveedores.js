@@ -32,20 +32,21 @@ export async function initProveedores(container) {
         ` : ''
       })}
 
-      <!-- Buscador -->
-      <div class="card mb-4 d-print-none erp-filter-card">
+      <div class="erp-list-workspace">
+      <div class="card erp-filter-card d-print-none" role="search">
         <div class="card-body">
-          <div class="input-icon">
-            <span class="input-icon-addon"><i class="ti ti-search"></i></span>
-            <input type="text" id="prov-search-input" class="form-control form-control-lg" placeholder="Buscar proveedor por nombre, NIT o contacto…" spellcheck="false">
+          <div class="row g-2 align-items-end">
+            <div class="col-12 col-md-6 col-lg-5">
+              <label class="form-label" for="prov-search-input">Buscar</label>
+              <input type="text" id="prov-search-input" class="form-control" placeholder="Nombre, NIT o contacto…" spellcheck="false" autocomplete="off">
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Tabla de Proveedores -->
-      <div class="card">
+      <div class="card erp-table-panel">
         <div class="table-responsive">
-          <table class="table table-vcenter card-table table-hover table-striped">
+          <table class="table table-vcenter card-table table-hover mb-0">
             <thead>
               <tr>
                 <th>Nombre</th>
@@ -61,6 +62,7 @@ export async function initProveedores(container) {
             </tbody>
           </table>
         </div>
+      </div>
       </div>
     </div>
 

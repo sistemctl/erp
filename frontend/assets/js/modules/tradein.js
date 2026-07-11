@@ -121,10 +121,10 @@ export async function initTradeIn(container) {
 
         <!-- HISTORIAL DE TRADE-INS -->
         <div class="col-lg-7">
-          <div class="card">
+          <div class="card erp-table-panel">
             <div class="card-header"><h3 class="card-title">Historial de Equipos Recibidos</h3></div>
             <div class="table-responsive">
-              <table class="table table-vcenter card-table table-striped">
+              <table class="table table-vcenter card-table">
                 <thead>
                   <tr>
                     <th>Fecha</th>

@@ -34,8 +34,8 @@ export async function initCotizaciones(container) {
       })}
 
       <!-- Navigation tabs -->
-      <div class="card mb-4 d-print-none">
-        <div class="card-header">
+      <div class="card mb-3 d-print-none">
+        <div class="card-header bg-transparent border-bottom">
           <ul class="nav nav-tabs card-header-tabs" data-bs-toggle="tabs" role="tablist">
             <li class="nav-item" role="presentation">
               <a href="#tab-historial-cot" class="nav-link active" data-bs-toggle="tab" aria-selected="true" role="tab">
@@ -53,27 +53,35 @@ export async function initCotizaciones(container) {
           <div class="tab-content">
             <!-- TAB 1: HISTORIAL -->
             <div class="tab-pane active show" id="tab-historial-cot" role="tabpanel">
-              <div class="row g-3 mb-4">
-                <div class="col-md-4">
-                  <input type="text" id="filtro-cot-buscar" class="form-control" placeholder="Buscar por número o cliente…" spellcheck="false">
-                </div>
-                <div class="col-md-3">
-                  <select id="filtro-cot-estado" class="form-select">
-                    <option value="">-- Todos los Estados --</option>
-                    <option value="borrador">Borrador</option>
-                    <option value="enviada">Enviada</option>
-                    <option value="aprobada">Aprobada</option>
-                    <option value="rechazada">Rechazada</option>
-                    <option value="expirada">Expirada</option>
-                  </select>
-                </div>
-                <div class="col-md-3">
-                  <button id="btn-filtrar-cot" class="btn btn-primary"><i class="ti ti-search me-1"></i> Buscar</button>
+              <div class="erp-list-workspace">
+              <div class="card erp-filter-card">
+                <div class="card-body">
+                  <div class="row g-2 align-items-end">
+                    <div class="col-md-4">
+                      <label class="form-label" for="filtro-cot-buscar">Buscar</label>
+                      <input type="text" id="filtro-cot-buscar" class="form-control" placeholder="Número o cliente…" spellcheck="false">
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label" for="filtro-cot-estado">Estado</label>
+                      <select id="filtro-cot-estado" class="form-select">
+                        <option value="">-- Todos los Estados --</option>
+                        <option value="borrador">Borrador</option>
+                        <option value="enviada">Enviada</option>
+                        <option value="aprobada">Aprobada</option>
+                        <option value="rechazada">Rechazada</option>
+                        <option value="expirada">Expirada</option>
+                      </select>
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                      <button id="btn-filtrar-cot" type="button" class="btn btn-primary erp-filter-submit"><i class="ti ti-filter me-1"></i>Filtrar</button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div class="table-responsive">
-                <table class="table table-vcenter card-table table-hover table-striped">
+              <div class="card erp-table-panel">
+                <div class="table-responsive">
+                  <table class="table table-vcenter card-table table-hover mb-0">
                   <thead>
                     <tr>
                       <th>Número</th>
@@ -87,7 +95,9 @@ export async function initCotizaciones(container) {
                   <tbody id="cotizaciones-table-body">
                     <tr><td colspan="6" class="text-center py-4 text-secondary">Cargando cotizaciones…</td></tr>
                   </tbody>
-                </table>
+                  </table>
+                </div>
+              </div>
               </div>
             </div>
 

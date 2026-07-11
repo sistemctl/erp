@@ -30,10 +30,10 @@ export async function initFacturacion(container) {
         subtitle: 'Consulta, impresión y anulación de comprobantes'
       })}
 
-      <!-- Filtros -->
-      <div class="card mb-4 d-print-none erp-filter-card">
+      <div class="erp-list-workspace">
+      <div class="card erp-filter-card d-print-none">
         <div class="card-body">
-          <form id="form-filtros-facturacion" class="row g-3">
+          <form id="form-filtros-facturacion" class="row g-2 align-items-end">
             <div class="col-md-3">
               <label class="form-label">Buscar</label>
               <input type="text" id="filtro-buscar" class="form-control" placeholder="No. Factura o Cliente…" spellcheck="false">
@@ -67,16 +67,15 @@ export async function initFacturacion(container) {
               <input type="date" id="filtro-hasta" class="form-control">
             </div>
             <div class="col-md-1 d-flex align-items-end">
-              <button type="submit" class="btn btn-primary w-100" aria-label="Buscar factura"><i class="ti ti-search"></i></button>
+              <button type="submit" class="btn btn-primary w-100 erp-filter-submit" aria-label="Filtrar facturas"><i class="ti ti-filter me-1"></i>Filtrar</button>
             </div>
           </form>
         </div>
       </div>
 
-      <!-- Listado de Facturas -->
-      <div class="card">
+      <div class="card erp-table-panel">
         <div class="table-responsive">
-          <table class="table table-vcenter card-table table-hover table-striped">
+          <table class="table table-vcenter card-table table-hover mb-0">
             <thead>
               <tr>
                 <th>No. Factura</th>
@@ -94,6 +93,7 @@ export async function initFacturacion(container) {
             </tbody>
           </table>
         </div>
+      </div>
       </div>
     </div>
 

@@ -1,5 +1,6 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
+import { erpHeader } from '../utils/module-shell.js';
 
 export async function initDashboard(container) {
   let usuario = getUsuario();
@@ -70,34 +71,36 @@ export async function initDashboard(container) {
   }
 
   // Renderizar Estructura del Dashboard y Filtros
+  const dashFiltersHtml = `
+    <div class="dash-filters" role="group" aria-label="Filtros del panel">
+      ${isAdmin ? `
+        <label class="dash-filter">
+          <span class="dash-filter__label">Sede</span>
+          <select id="filter-sede" class="form-select form-select-sm" aria-label="Filtrar por sede">
+            <option value="" ${!initialSede ? 'selected' : ''}>Todas</option>
+            ${sedes.map(s => `<option value="${s.id}" ${String(s.id) === String(initialSede) ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+          </select>
+        </label>
+      ` : ''}
+      <label class="dash-filter">
+        <span class="dash-filter__label">Período</span>
+        <select id="filter-periodo" class="form-select form-select-sm" aria-label="Filtrar por período">
+          ${PERIODOS_VALIDOS.map(p => `<option value="${p}" ${p === initialPeriodo ? 'selected' : ''}>${PERIODO_LABELS_EARLY[p]}</option>`).join('')}
+        </select>
+      </label>
+    </div>
+  `;
+
   container.innerHTML = `
     <div class="container-xl erp-module dash">
-      <header class="dash-header d-print-none">
-        <div class="dash-header__intro">
-          <p class="dash-header__eyebrow">Panel de control</p>
-          <h1 class="dash-header__title">${config.empresa}</h1>
-          <p class="dash-header__sub">${requiresSede && usuario.sedeNombre
-            ? `${usuario.sedeNombre} · ${PERIODO_LABELS_EARLY[initialPeriodo] || 'período'}`
-            : 'Ventas, caja y operación en un vistazo'}</p>
-        </div>
-        <div class="dash-filters" role="group" aria-label="Filtros del panel">
-          ${isAdmin ? `
-            <label class="dash-filter">
-              <span class="dash-filter__label">Sede</span>
-              <select id="filter-sede" class="form-select form-select-sm" aria-label="Filtrar por sede">
-                <option value="" ${!initialSede ? 'selected' : ''}>Todas</option>
-                ${sedes.map(s => `<option value="${s.id}" ${String(s.id) === String(initialSede) ? 'selected' : ''}>${s.nombre}</option>`).join('')}
-              </select>
-            </label>
-          ` : ''}
-          <label class="dash-filter">
-            <span class="dash-filter__label">Período</span>
-            <select id="filter-periodo" class="form-select form-select-sm" aria-label="Filtrar por período">
-              ${PERIODOS_VALIDOS.map(p => `<option value="${p}" ${p === initialPeriodo ? 'selected' : ''}>${PERIODO_LABELS_EARLY[p]}</option>`).join('')}
-            </select>
-          </label>
-        </div>
-      </header>
+      ${erpHeader({
+        eyebrow: 'Panel de control',
+        title: config.empresa,
+        subtitle: requiresSede && usuario.sedeNombre
+          ? `${usuario.sedeNombre} · ${PERIODO_LABELS_EARLY[initialPeriodo] || 'período'}`
+          : 'Ventas, caja y operación en un vistazo',
+        actionsHtml: dashFiltersHtml
+      })}
 
       <section class="dash-pulse d-print-none" id="dash-pulse" aria-label="Balance del período">
         <div class="dash-pulse__glow" aria-hidden="true"></div>

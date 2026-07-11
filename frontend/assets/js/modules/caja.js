@@ -32,8 +32,8 @@ export async function initCaja(container) {
       })}
 
       <!-- Navigation tabs -->
-      <div class="card mb-4 d-print-none">
-        <div class="card-header">
+      <div class="card mb-3 d-print-none">
+        <div class="card-header bg-transparent border-bottom">
           <ul class="nav nav-tabs card-header-tabs" data-bs-toggle="tabs" role="tablist">
             <li class="nav-item" role="presentation">
               <a href="#tab-caja-activa" class="nav-link active" data-bs-toggle="tab" aria-selected="true" role="tab">
@@ -57,11 +57,11 @@ export async function initCaja(container) {
             <!-- TAB 1: CAJA ACTIVA -->
             <div class="tab-pane active show" id="tab-caja-activa" role="tabpanel">
               ${isAdminOrContador ? `
-                <div class="card mb-3 d-print-none shadow-sm">
+                <div class="card mb-2 d-print-none erp-filter-card">
                   <div class="card-body py-2">
-                    <div class="row align-items-center">
+                    <div class="row align-items-end g-2">
                       <div class="col-md-4">
-                        <label class="form-label small fw-bold mb-1 text-primary">Sede de Caja a Monitorear</label>
+                        <label class="form-label mb-1">Sede de Caja a Monitorear</label>
                         <select id="select-caja-sede" class="form-select form-select-sm">
                           ${sedes.map(s => `<option value="${s.id}" ${s.id === currentSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
                         </select>
@@ -80,62 +80,72 @@ export async function initCaja(container) {
 
             <!-- TAB 2: HISTORIAL DE CIERRES -->
             <div class="tab-pane" id="tab-historial-cajas" role="tabpanel">
-              <div class="alert alert-info py-2 mb-4 d-print-none">
+              <div class="alert alert-info py-2 mb-2 d-print-none">
                 <i class="ti ti-info-circle me-1"></i>
                 Consulte cierres por rango de fechas. Haga clic en una fila o en <strong>Ver análisis</strong> para ver el desglose exacto por método de pago de ese día.
               </div>
-              <form id="form-filtros-historial-caja" class="row g-3 mb-4">
-                ${['admin', 'superadmin'].includes(usuario.rol) ? `
-                  <div class="col-md-4">
-                    <label class="form-label">Sede</label>
-                    <select id="hist-caja-sede" class="form-select">
-                      <option value="">-- Todas las Sedes --</option>
-                      ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
-                    </select>
-                  </div>
-                ` : `<input type="hidden" id="hist-caja-sede" value="">`}
-                <div class="col-md-3">
-                  <label class="form-label">Desde</label>
-                  <input type="date" id="hist-caja-desde" class="form-control">
+              <div class="erp-list-workspace">
+              <div class="card erp-filter-card">
+                <div class="card-body">
+                  <form id="form-filtros-historial-caja" class="row g-2 align-items-end">
+                    ${['admin', 'superadmin'].includes(usuario.rol) ? `
+                      <div class="col-md-4">
+                        <label class="form-label">Sede</label>
+                        <select id="hist-caja-sede" class="form-select">
+                          <option value="">-- Todas las Sedes --</option>
+                          ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                        </select>
+                      </div>
+                    ` : `<input type="hidden" id="hist-caja-sede" value="">`}
+                    <div class="col-md-3">
+                      <label class="form-label">Desde</label>
+                      <input type="date" id="hist-caja-desde" class="form-control">
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label">Hasta</label>
+                      <input type="date" id="hist-caja-hasta" class="form-control">
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                      <button type="submit" class="btn btn-primary w-100 erp-filter-submit"><i class="ti ti-filter me-1"></i>Filtrar</button>
+                    </div>
+                  </form>
                 </div>
-                <div class="col-md-3">
-                  <label class="form-label">Hasta</label>
-                  <input type="date" id="hist-caja-hasta" class="form-control">
-                </div>
-                <div class="col-md-2 d-flex align-items-end">
-                  <button type="submit" class="btn btn-primary w-100"><i class="ti ti-search me-1"></i> Consultar</button>
-                </div>
-              </form>
+              </div>
 
-              <div class="table-responsive">
-                <table class="table table-vcenter card-table table-hover table-striped caja-historial-table">
-                  <thead>
-                    <tr>
-                      <th>Fecha</th>
-                      <th>Sede</th>
-                      <th>Cajero</th>
-                      <th class="text-end">Efectivo</th>
-                      <th class="text-end">Nequi</th>
-                      <th class="text-end">Daviplata</th>
-                      <th class="text-end">Tarjeta</th>
-                      <th class="text-end">Transf.</th>
-                      <th class="text-end">Total cobrado</th>
-                      <th class="text-end">Egresos</th>
-                      <th class="text-end">Diferencia</th>
-                      <th class="text-center">Estado</th>
-                      <th class="text-end">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody id="historial-cajas-table-body">
-                    <tr><td colspan="13" class="text-center py-4 text-secondary">Seleccione fechas y haga clic en Consultar.</td></tr>
-                  </tbody>
-                </table>
+              <div class="card erp-table-panel">
+                <div class="table-responsive">
+                  <table class="table table-vcenter card-table table-hover caja-historial-table mb-0">
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Sede</th>
+                        <th>Cajero</th>
+                        <th class="text-end">Efectivo</th>
+                        <th class="text-end">Nequi</th>
+                        <th class="text-end">Daviplata</th>
+                        <th class="text-end">Tarjeta</th>
+                        <th class="text-end">Transf.</th>
+                        <th class="text-end">Total cobrado</th>
+                        <th class="text-end">Egresos</th>
+                        <th class="text-end">Diferencia</th>
+                        <th class="text-center">Estado</th>
+                        <th class="text-end">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody id="historial-cajas-table-body">
+                      <tr><td colspan="13" class="text-center py-4 text-secondary">Seleccione fechas y haga clic en Consultar.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
               </div>
             </div>
 
             <!-- TAB 3: ANÁLISIS DE GASTOS -->
             <div class="tab-pane" id="tab-analisis-gastos" role="tabpanel">
-              <form id="form-analisis-gastos" class="row g-3 mb-4">
+              <div class="card mb-2 erp-filter-card">
+                <div class="card-body">
+                  <form id="form-analisis-gastos" class="row g-2 align-items-end">
                 ${isAdminOrContador ? `
                   <div class="col-md-3">
                     <label class="form-label">Sede</label>
@@ -154,9 +164,11 @@ export async function initCaja(container) {
                   </select>
                 </div>
                 <div class="col-md-2 d-flex align-items-end">
-                  <button type="submit" class="btn btn-primary w-100"><i class="ti ti-refresh me-1"></i> Actualizar</button>
+                  <button type="submit" class="btn btn-primary w-100 erp-filter-submit"><i class="ti ti-filter me-1"></i>Filtrar</button>
                 </div>
-              </form>
+                  </form>
+                </div>
+              </div>
 
               <div class="row g-4">
                 <div class="col-lg-4">

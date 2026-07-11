@@ -38,7 +38,7 @@ export async function initRentabilidad(container) {
       ${erpHeader({
         eyebrow: 'Rentabilidad',
         title: 'Análisis de reparaciones',
-        subtitle: 'Ingresos de mano de obra y costos de repuestos por técnico',
+        subtitle: 'Solo reparaciones entregadas: ingresos reales de mano de obra y repuestos',
         titleId: 'rentabilidad-title',
         subId: 'rentabilidad-subtitle'
       })}
@@ -61,9 +61,9 @@ export async function initRentabilidad(container) {
       <!-- SECCIÓN: REPARACIONES -->
       <div id="sec-reparaciones">
         <!-- Filtros Reparaciones -->
-        <div class="card mb-4 d-print-none">
+        <div class="card mb-2 d-print-none erp-filter-card">
           <div class="card-body">
-            <form id="form-filtros-reparaciones" class="row g-3">
+            <form id="form-filtros-reparaciones" class="row g-2 align-items-end">
               <div class="col-md-3">
                 <label class="form-label">Técnico</label>
                 <select id="filtro-tecnico" class="form-select">
@@ -80,19 +80,19 @@ export async function initRentabilidad(container) {
                 <input type="date" id="filtro-hasta-rep" class="form-control">
               </div>
               <div class="col-md-3 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary w-100"><i class="ti ti-filter me-1"></i> Filtrar</button>
+                <button type="submit" class="btn btn-primary w-100 erp-filter-submit"><i class="ti ti-filter me-1"></i>Filtrar</button>
               </div>
             </form>
           </div>
         </div>
 
         <!-- KPIs Reparaciones -->
-        <div class="row row-cards mb-4" id="kpis-reparaciones">
+        <div class="row row-cards mb-2" id="kpis-reparaciones">
           <!-- Dinámico -->
         </div>
 
         <!-- Tabla Reparaciones -->
-        <div class="card">
+        <div class="card erp-table-panel">
           <div class="card-header d-flex justify-content-between align-items-center">
             <h3 class="card-title">Desglose de Márgenes en Soporte Técnico</h3>
             <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
@@ -100,7 +100,7 @@ export async function initRentabilidad(container) {
             </button>
           </div>
           <div class="table-responsive">
-            <table class="table table-vcenter card-table table-hover table-striped">
+            <table class="table table-vcenter card-table table-hover">
               <thead>
                 <tr>
                   <th>Orden</th>
@@ -125,9 +125,9 @@ export async function initRentabilidad(container) {
       <!-- SECCIÓN: VENTAS -->
       <div id="sec-ventas" class="d-none">
         <!-- Filtros Ventas -->
-        <div class="card mb-4 d-print-none">
+        <div class="card mb-2 d-print-none erp-filter-card">
           <div class="card-body">
-            <form id="form-filtros-ventas" class="row g-3">
+            <form id="form-filtros-ventas" class="row g-2 align-items-end">
               <div class="col-md-3">
                 <label class="form-label">Sede</label>
                 <select id="filtro-sede" class="form-select">
@@ -151,19 +151,19 @@ export async function initRentabilidad(container) {
                 <input type="date" id="filtro-hasta-vta" class="form-control">
               </div>
               <div class="col-md-2 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary w-100"><i class="ti ti-filter me-1"></i> Filtrar</button>
+                <button type="submit" class="btn btn-primary w-100 erp-filter-submit"><i class="ti ti-filter me-1"></i>Filtrar</button>
               </div>
             </form>
           </div>
         </div>
 
         <!-- KPIs Ventas -->
-        <div class="row row-cards mb-4" id="kpis-ventas">
+        <div class="row row-cards mb-2" id="kpis-ventas">
           <!-- Dinámico -->
         </div>
 
         <!-- Tabla Ventas -->
-        <div class="card">
+        <div class="card erp-table-panel">
           <div class="card-header d-flex justify-content-between align-items-center">
             <h3 class="card-title">Desglose de Márgenes en Ventas Directas</h3>
             <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
@@ -171,7 +171,7 @@ export async function initRentabilidad(container) {
             </button>
           </div>
           <div class="table-responsive">
-            <table class="table table-vcenter card-table table-hover table-striped">
+            <table class="table table-vcenter card-table table-hover">
               <thead>
                 <tr>
                   <th>Venta</th>
@@ -197,9 +197,9 @@ export async function initRentabilidad(container) {
       <!-- SECCIÓN: CAJA -->
       <div id="sec-caja" class="d-none">
         <!-- Filtros Caja -->
-        <div class="card mb-4 d-print-none">
+        <div class="card mb-2 d-print-none erp-filter-card">
           <div class="card-body">
-            <form id="form-filtros-caja" class="row g-3">
+            <form id="form-filtros-caja" class="row g-2 align-items-end">
               <div class="col-md-4">
                 <label class="form-label">Sede</label>
                 <select id="filtro-sede-caja" class="form-select">
@@ -216,19 +216,19 @@ export async function initRentabilidad(container) {
                 <input type="date" id="filtro-hasta-caja" class="form-control">
               </div>
               <div class="col-md-2 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary w-100"><i class="ti ti-filter me-1"></i> Filtrar</button>
+                <button type="submit" class="btn btn-primary w-100 erp-filter-submit"><i class="ti ti-filter me-1"></i>Filtrar</button>
               </div>
             </form>
           </div>
         </div>
 
         <!-- KPIs Caja -->
-        <div class="row row-cards mb-4" id="kpis-caja">
+        <div class="row row-cards mb-2" id="kpis-caja">
           <!-- Dinámico -->
         </div>
 
         <!-- Tabla Caja -->
-        <div class="card">
+        <div class="card erp-table-panel">
           <div class="card-header d-flex justify-content-between align-items-center">
             <h3 class="card-title">Desglose Consolidado de Márgenes en Caja (Ventas y Reparaciones)</h3>
             <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
@@ -236,7 +236,7 @@ export async function initRentabilidad(container) {
             </button>
           </div>
           <div class="table-responsive">
-            <table class="table table-vcenter card-table table-hover table-striped">
+            <table class="table table-vcenter card-table table-hover">
               <thead>
                 <tr>
                   <th>Tipo</th>
@@ -288,7 +288,7 @@ export async function initRentabilidad(container) {
     secVentas.classList.add('d-none');
     secCaja.classList.add('d-none');
     titleEl.textContent = 'Análisis de Rentabilidad de Reparaciones';
-    subtitleEl.textContent = 'Comparativa de ingresos de mano de obra y costos de repuestos por técnico y equipo';
+    subtitleEl.textContent = 'Solo reparaciones entregadas: ingresos reales de mano de obra y repuestos';
     loadReparacionesReport();
   });
 
@@ -323,7 +323,7 @@ export async function initRentabilidad(container) {
     secReparaciones.classList.remove('d-none');
     secVentas.classList.add('d-none');
     titleEl.textContent = 'Análisis de Rentabilidad de Reparaciones';
-    subtitleEl.textContent = 'Comparativa de ingresos de mano de obra y costos de repuestos por técnico y equipo';
+    subtitleEl.textContent = 'Solo reparaciones entregadas: ingresos reales de mano de obra y repuestos';
     loadReparacionesReport();
   });
 
@@ -358,7 +358,7 @@ export async function initRentabilidad(container) {
       const data = await apiFetch(`/reparaciones/rentabilidad/reporte${query}`);
 
       if (data.length === 0) {
-        tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-secondary">No se encontraron registros de rentabilidad de reparaciones.</td></tr>`;
+        tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-secondary">No hay reparaciones entregadas (cobradas) en el período. El cobro se registra al entregar el equipo.</td></tr>`;
         kpisReparaciones.innerHTML = '';
         return;
       }

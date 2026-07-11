@@ -22,15 +22,16 @@ export function renderAuditLogTabHtml() {
         </div>
       </div>
 
-      <div class="card mb-3 erp-filter-card d-print-none">
+      <div class="erp-list-workspace">
+      <div class="card erp-filter-card d-print-none">
         <div class="card-body py-2">
-          <form id="form-audit-filter" class="row g-3">
+          <form id="form-audit-filter" class="row g-2 align-items-end">
             <div class="col-md-3">
-              <label class="form-label small fw-bold">Usuario / Email</label>
+              <label class="form-label">Usuario / Email</label>
               <input type="text" id="filter-usuario" class="form-control form-control-sm" placeholder="Buscar por nombre o correo…" spellcheck="false">
             </div>
             <div class="col-md-2">
-              <label class="form-label small fw-bold">Módulo</label>
+              <label class="form-label">Módulo</label>
               <select id="filter-modulo" class="form-select form-select-sm">
                 <option value="">Todos los módulos</option>
                 <option value="Autenticación">Autenticación</option>
@@ -50,7 +51,7 @@ export function renderAuditLogTabHtml() {
               </select>
             </div>
             <div class="col-md-2">
-              <label class="form-label small fw-bold">Acción</label>
+              <label class="form-label">Acción</label>
               <select id="filter-accion" class="form-select form-select-sm">
                 <option value="">Todas las acciones</option>
                 <option value="CREATE">CREATE</option>
@@ -62,21 +63,21 @@ export function renderAuditLogTabHtml() {
               </select>
             </div>
             <div class="col-md-2">
-              <label class="form-label small fw-bold">Desde</label>
+              <label class="form-label">Desde</label>
               <input type="date" id="filter-desde" class="form-control form-control-sm">
             </div>
             <div class="col-md-2">
-              <label class="form-label small fw-bold">Hasta</label>
+              <label class="form-label">Hasta</label>
               <input type="date" id="filter-hasta" class="form-control form-control-sm">
             </div>
             <div class="col-md-1 d-flex align-items-end">
-              <button type="submit" class="btn btn-primary btn-sm w-100" aria-label="Buscar bitácora"><i class="ti ti-search"></i></button>
+              <button type="submit" class="btn btn-primary btn-sm w-100 erp-filter-submit" aria-label="Buscar bitácora"><i class="ti ti-search"></i></button>
             </div>
           </form>
         </div>
       </div>
 
-      <div class="erp-table-panel">
+      <div class="card erp-table-panel">
         <div class="table-responsive">
           <table class="table table-vcenter card-table table-hover mb-0">
             <thead>
@@ -100,6 +101,7 @@ export function renderAuditLogTabHtml() {
             </tbody>
           </table>
         </div>
+      </div>
       </div>
     </div>
   `;

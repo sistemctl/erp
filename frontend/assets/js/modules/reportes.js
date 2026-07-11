@@ -63,9 +63,9 @@ export async function initReportes(container) {
         subtitle: 'Cartera, flujo de caja, ventas e inventario valorizado'
       })}
 
-      <div class="card mb-3 erp-filter-card">
+      <div class="card mb-2 erp-filter-card">
         <div class="card-body">
-          <div class="row g-3 align-items-end">
+          <div class="row g-2 align-items-end">
             ${needsSede ? `
             <div class="col-md-3">
               <label class="form-label">Sede</label>
@@ -92,7 +92,7 @@ export async function initReportes(container) {
         </div>
       </div>
 
-      <ul class="nav nav-tabs mb-3" role="tablist">
+      <ul class="nav nav-tabs mb-2" role="tablist">
         <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#rep-tab-cartera" type="button">Cartera</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#rep-tab-cpp" type="button">Cuentas por pagar</button></li>
         <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#rep-tab-flujo" type="button">Flujo de caja</button></li>
@@ -103,12 +103,12 @@ export async function initReportes(container) {
       <div class="tab-content">
         <div class="tab-pane fade show active" id="rep-tab-cartera">
           <div class="row g-3 mb-3" id="rep-cartera-kpis"></div>
-          <div class="card"><div class="table-responsive"><table class="table table-vcenter card-table"><thead><tr>
+          <div class="card erp-table-panel"><div class="table-responsive"><table class="table table-vcenter card-table"><thead><tr>
             <th>Cliente</th><th>Factura</th><th>Vencimiento</th><th class="text-end">Saldo</th><th>Estado</th><th class="text-center">Mora</th>
           </tr></thead><tbody id="rep-cartera-body"><tr><td colspan="6" class="text-center py-4 text-secondary">Cargando…</td></tr></tbody></table></div></div>
         </div>
         <div class="tab-pane fade" id="rep-tab-cpp">
-          <div class="card"><div class="table-responsive"><table class="table table-vcenter card-table"><thead><tr>
+          <div class="card erp-table-panel"><div class="table-responsive"><table class="table table-vcenter card-table"><thead><tr>
             <th>OC</th><th>Proveedor</th><th>Vencimiento</th><th class="text-end">Saldo</th><th class="text-center">Mora</th>
           </tr></thead><tbody id="rep-cpp-body"><tr><td colspan="5" class="text-center py-4 text-secondary">Cargando…</td></tr></tbody></table></div></div>
         </div>
@@ -124,7 +124,7 @@ export async function initReportes(container) {
         </div>
         <div class="tab-pane fade" id="rep-tab-inventario">
           <div class="row g-3 mb-3" id="rep-inv-kpis"></div>
-          <div class="card"><div class="table-responsive"><table class="table table-vcenter card-table table-sm"><thead><tr>
+          <div class="card erp-table-panel"><div class="table-responsive"><table class="table table-vcenter card-table table-sm"><thead><tr>
             <th>Producto</th><th>Sede</th><th class="text-end">Cant.</th><th class="text-end">Valor costo</th><th class="text-end">Valor venta</th>
           </tr></thead><tbody id="rep-inv-body"></tbody></table></div></div>
         </div>

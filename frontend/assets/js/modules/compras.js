@@ -1,6 +1,7 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
+import { erpHeader } from '../utils/module-shell.js';
 
 export async function initCompras(container) {
   const usuario = getUsuario();
@@ -113,14 +114,14 @@ export async function initCompras(container) {
 
   container.innerHTML = `
     <div class="container-xl erp-module compras-module">
-      <header class="compras-header d-print-none">
-        <div class="compras-header__eyebrow">Abastecimiento</div>
-        <h1 class="compras-header__title">Compras e inventario entrante</h1>
-        <p class="compras-header__sub">Órdenes de compra, recepción de mercancía y cuentas por pagar</p>
-      </header>
+      ${erpHeader({
+        eyebrow: 'Abastecimiento',
+        title: 'Compras e inventario entrante',
+        subtitle: 'Órdenes de compra, recepción de mercancía y cuentas por pagar'
+      })}
 
-      <div class="card compras-shell mb-4 d-print-none">
-        <div class="card-header compras-tabs-head">
+      <div class="card compras-shell mb-3 d-print-none">
+        <div class="card-header compras-tabs-head bg-transparent border-bottom">
           <ul class="nav nav-tabs card-header-tabs compras-tabs" data-bs-toggle="tabs" role="tablist">
             <li class="nav-item" role="presentation">
               <a href="#tab-ordenes-compra" class="nav-link active" data-bs-toggle="tab" aria-selected="true" role="tab">
@@ -234,7 +235,7 @@ export async function initCompras(container) {
 
                   <h3 class="mb-3">Artículos de la Orden</h3>
                   <div class="table-responsive mb-4">
-                    <table class="table table-vcenter table-striped">
+                    <table class="table table-vcenter">
                       <thead>
                         <tr>
                           <th>Producto</th>
@@ -260,7 +261,8 @@ export async function initCompras(container) {
 
             <!-- TAB 3: CUENTAS POR PAGAR (CPP) -->
             <div class="tab-pane" id="tab-cuentas-pagar" role="tabpanel">
-              <div class="card mb-3 erp-filter-card">
+              <div class="erp-list-workspace">
+              <div class="card erp-filter-card">
                 <div class="card-body py-2">
                   <div class="row g-2 align-items-end">
                     <div class="col-md-4">
@@ -277,8 +279,9 @@ export async function initCompras(container) {
                   </div>
                 </div>
               </div>
-              <div class="table-responsive">
-                <table class="table table-vcenter card-table table-striped table-hover">
+              <div class="card erp-table-panel">
+                <div class="table-responsive">
+                <table class="table table-vcenter card-table table-hover mb-0">
                   <thead>
                     <tr>
                       <th>Factura / OC No.</th>
@@ -295,6 +298,8 @@ export async function initCompras(container) {
                     <!-- Dinámico -->
                   </tbody>
                 </table>
+                </div>
+              </div>
               </div>
             </div>
           </div>

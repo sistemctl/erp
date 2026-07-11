@@ -151,18 +151,20 @@ exports.getFlujoCaja = async (req, res, next) => {
 
     const ingresos = await Venta.sum('total', { where: whereVentas }) || 0;
 
-    const egresos = await EgresoCaja.findAll({
-      where: { createdAt: { [Op.between]: [startDate, endDate] } },
+    // Usar .sum() (no findAll+SUM): Postgres rechaza SELECT id + SUM sin GROUP BY
+    const totalEgresos = parseFloat(await EgresoCaja.sum('monto', {
+      where: {
+        createdAt: { [Op.between]: [startDate, endDate] },
+        pagoCompraId: null // evita doble conteo con pagos de compra
+      },
       include: [{
         model: Caja,
         as: 'caja',
         attributes: [],
         required: true,
         ...(querySedeId ? { where: { sedeId: querySedeId } } : {})
-      }],
-      attributes: [[sequelize.fn('SUM', sequelize.col('EgresoCaja.monto')), 'total']]
-    });
-    const totalEgresos = parseFloat(egresos[0]?.getDataValue('total') || 0);
+      }]
+    }) || 0);
 
     const pagosCompra = await PagoCompra.sum('monto', {
       where: { createdAt: { [Op.between]: [startDate, endDate] } },

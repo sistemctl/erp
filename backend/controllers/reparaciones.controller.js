@@ -623,7 +623,10 @@ exports.getEtiquetaQr = async (req, res, next) => {
 exports.getRentabilidadReport = async (req, res, next) => {
   try {
     const { tecnico, desde, hasta } = req.query;
-    const where = {};
+    const where = {
+      // Solo órdenes ya cobradas (el cobro ocurre al entregar)
+      estado: 'entregado'
+    };
 
     if (tecnico) {
       where.tecnicoId = tecnico;
@@ -640,7 +643,7 @@ exports.getRentabilidadReport = async (req, res, next) => {
           model: OrdenReparacion,
           as: 'orden',
           where,
-          attributes: ['numeroOrden', 'tipoEquipo', 'marca', 'modelo', 'costoManoObra', 'costoRepuestos', 'createdAt'],
+          attributes: ['numeroOrden', 'tipoEquipo', 'marca', 'modelo', 'costoManoObra', 'costoRepuestos', 'createdAt', 'estado'],
           include: [{ model: Usuario, as: 'tecnico', attributes: ['nombre'] }]
         }
       ],

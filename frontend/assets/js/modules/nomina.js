@@ -48,8 +48,8 @@ export async function initNomina(container) {
       })}
 
       <!-- Navigation tabs -->
-      <div class="card mb-4 d-print-none">
-        <div class="card-header">
+      <div class="card mb-3 d-print-none">
+        <div class="card-header bg-transparent border-bottom">
           <ul class="nav nav-tabs card-header-tabs" data-bs-toggle="tabs" role="tablist">
             <li class="nav-item" role="presentation">
               <a href="#tab-empleados" class="nav-link active" data-bs-toggle="tab" aria-selected="true" role="tab">
@@ -67,15 +67,16 @@ export async function initNomina(container) {
           <div class="tab-content">
             <!-- TAB 1: EMPLEADOS -->
             <div class="tab-pane active show" id="tab-empleados" role="tabpanel">
-              <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
                 <h3 class="card-title mb-0">Listado de Empleados</h3>
                 <button id="btn-nuevo-empleado" class="btn btn-primary btn-sm">
                   <i class="ti ti-plus me-1"></i> Agregar Empleado
                 </button>
               </div>
 
-              <div class="table-responsive">
-                <table class="table table-vcenter card-table table-hover table-striped">
+              <div class="card erp-table-panel">
+                <div class="table-responsive">
+                  <table class="table table-vcenter card-table table-hover mb-0">
                   <thead>
                     <tr>
                       <th>Nombre</th>
@@ -93,6 +94,7 @@ export async function initNomina(container) {
                 </table>
               </div>
             </div>
+            </div>
 
             <!-- TAB 2: LIQUIDACIONES -->
             <div class="tab-pane" id="tab-liquidaciones" role="tabpanel">
@@ -103,8 +105,9 @@ export async function initNomina(container) {
                 </button>
               </div>
 
-              <div class="table-responsive">
-                <table class="table table-vcenter card-table table-hover table-striped">
+              <div class="card erp-table-panel">
+                <div class="table-responsive">
+                  <table class="table table-vcenter card-table table-hover">
                   <thead>
                     <tr>
                       <th>Colaborador</th>

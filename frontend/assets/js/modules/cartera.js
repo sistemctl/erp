@@ -20,15 +20,16 @@ export async function initCartera(container) {
         subtitle: 'Créditos, plazos de pago y recaudo por sede'
       })}
 
-      <div class="row g-3 mb-4" id="cartera-resumen-kpis">
+      <div class="row g-2 mb-2" id="cartera-resumen-kpis">
         <div class="col-md-4"><div class="card card-sm"><div class="card-body"><div class="text-secondary small">Total pendiente</div><div class="h2 mb-0" id="cartera-kpi-total">—</div></div></div></div>
         <div class="col-md-4"><div class="card card-sm"><div class="card-body"><div class="text-secondary small">Vencida</div><div class="h2 mb-0 text-danger" id="cartera-kpi-vencida">—</div></div></div></div>
         <div class="col-md-4"><div class="card card-sm"><div class="card-body"><div class="text-secondary small">Al día</div><div class="h2 mb-0 text-success" id="cartera-kpi-aldia">—</div></div></div></div>
       </div>
 
-      <div class="card mb-4 d-print-none erp-filter-card">
+      <div class="erp-list-workspace">
+      <div class="card erp-filter-card d-print-none">
         <div class="card-body">
-          <div class="row g-3">
+          <div class="row g-2 align-items-end">
             <div class="col-md-3">
               <label class="form-label">Antigüedad de Mora</label>
               <select id="filtro-morosidad" class="form-select">
@@ -49,7 +50,7 @@ export async function initCartera(container) {
               </select>
             </div>
             <div class="col-md-2 d-flex align-items-end">
-              <button id="btn-buscar-cartera" class="btn btn-primary w-100"><i class="ti ti-search me-1"></i> Consultar</button>
+              <button id="btn-buscar-cartera" class="btn btn-primary w-100 erp-filter-submit"><i class="ti ti-filter me-1"></i>Filtrar</button>
             </div>
             <div class="col-md-2 d-flex align-items-end">
               <button type="button" id="btn-export-cartera" class="btn btn-outline-secondary w-100"><i class="ti ti-download me-1"></i> CSV</button>
@@ -58,10 +59,10 @@ export async function initCartera(container) {
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-header"><h3 class="card-title">Cuentas por Cobrar Pendientes</h3></div>
+      <div class="card erp-table-panel">
+        <div class="card-header py-2"><h3 class="card-title">Cuentas por Cobrar Pendientes</h3></div>
         <div class="table-responsive">
-          <table class="table table-vcenter card-table table-hover table-striped">
+          <table class="table table-vcenter card-table table-hover mb-0">
             <thead>
               <tr>
                 <th>Cliente</th>
@@ -80,6 +81,7 @@ export async function initCartera(container) {
             </tbody>
           </table>
         </div>
+      </div>
       </div>
     </div>
 

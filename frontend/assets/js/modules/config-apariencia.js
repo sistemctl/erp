@@ -148,9 +148,9 @@ export function renderAparienciaTabHtml() {
                 <div class="col-md-6">
                   <label class="form-label fw-semibold d-flex justify-content-between">
                     <span>Ancho sidebar</span>
-                    <span id="theme-sidebar-width-val" class="text-secondary fw-normal">252px</span>
+                    <span id="theme-sidebar-width-val" class="text-secondary fw-normal">236px</span>
                   </label>
-                  <input type="range" id="theme-sidebar-width" class="form-range" min="220" max="300" step="2" value="252">
+                  <input type="range" id="theme-sidebar-width" class="form-range" min="220" max="300" step="2" value="236">
                 </div>
                 <div class="col-md-6">
                   <label class="form-label fw-semibold d-flex justify-content-between">

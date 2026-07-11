@@ -28,69 +28,89 @@ export async function initInventario(container) {
 
   // Renderizar maquetación base
   container.innerHTML = `
-    <div class="container-xl erp-module">
+    <div class="container-xl erp-module inv-module">
       ${erpHeader({
-        eyebrow: 'Inventario',
         title: 'Catálogo y existencias',
-        subtitle: 'Control de stock, traslados y administración de productos',
+        subtitle: 'Escanea o busca · stock por sede',
         actionsHtml: isAdminOrGerente ? `
           <div class="btn-list">
             <button id="btn-nuevo-producto" class="btn btn-primary">
-              <i class="ti ti-plus me-2"></i> Nuevo producto
+              <i class="ti ti-plus me-1"></i> Nuevo
             </button>
             <button id="btn-gestionar-categorias" class="btn btn-outline-primary">
-              <i class="ti ti-tags me-2"></i> Categorías
+              <i class="ti ti-tags me-1"></i> Categorías
             </button>
             <button id="btn-traslado" class="btn btn-warning">
-              <i class="ti ti-arrows-left-right me-2"></i> Traslado
+              <i class="ti ti-arrows-left-right me-1"></i> Traslado
             </button>
             <button id="btn-importar-csv" class="btn btn-outline-secondary">
-              <i class="ti ti-file-upload me-2"></i> Importar CSV
+              <i class="ti ti-file-upload me-1"></i> CSV
             </button>
           </div>
         ` : ''
       })}
 
-      <!-- Filtro de Sede -->
-      <div class="card mb-3 erp-filter-card">
+      <div class="erp-list-workspace">
+      <div class="card erp-filter-card d-print-none" role="search">
         <div class="card-body">
-          ${soloStockBajo ? `
-            <div class="alert alert-warning mb-3 py-2">
-              <i class="ti ti-alert-triangle me-1"></i>
-              Mostrando solo productos con stock bajo o agotado.
-              <a href="#/inventario" class="alert-link ms-1">Ver todo el inventario</a>
-            </div>
-          ` : ''}
-          <div class="row align-items-center">
-            <div class="col-md-4">
-              <label class="form-label">Sede a Consultar</label>
+          <div class="row g-2 align-items-end">
+            <div class="col-6 col-md-2">
+              <label class="form-label" for="select-sede-inventario">Sede</label>
               <select id="select-sede-inventario" class="form-select">
                 ${dataSedes.map(s => `<option value="${s.id}" ${s.id === (usuario.sedeId || dataSedes[0]?.id) ? 'selected' : ''}>${s.nombre}</option>`).join('')}
               </select>
             </div>
-            <div class="col-md-6 mt-3 mt-md-0">
-              <label class="form-label">Buscador</label>
-              <input type="text" id="search-inventario" class="form-control" placeholder="Buscar por nombre o código de barras…" spellcheck="false">
+            <div class="col-6 col-md-2">
+              <label class="form-label" for="filtro-categoria-inventario">Categoría</label>
+              <select id="filtro-categoria-inventario" class="form-select">
+                <option value="">Todas</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label" for="search-inventario">Buscar / escanear</label>
+              <div class="inv-scan-input">
+                <i class="ti ti-barcode inv-scan-input__icon" aria-hidden="true"></i>
+                <input type="text" id="search-inventario" class="form-control" placeholder="Nombre o código de barras…" spellcheck="false" autocomplete="off">
+              </div>
+            </div>
+            <div class="col-12 col-md d-flex align-items-end">
+              <div class="inv-filter-inline w-100">
+                <div class="inv-chips" role="group" aria-label="Estado de stock">
+                  <button type="button" class="inv-chip is-active" data-stock="todos">Todos</button>
+                  <button type="button" class="inv-chip" data-stock="ok">OK</button>
+                  <button type="button" class="inv-chip" data-stock="bajo">Bajo</button>
+                  <button type="button" class="inv-chip" data-stock="agotado">Agotado</button>
+                </div>
+                <div class="inv-chips" role="group" aria-label="Tipo de producto">
+                  <button type="button" class="inv-chip" data-serie="imei" aria-pressed="false">IMEI</button>
+                  <button type="button" class="inv-chip" data-interno="1" aria-pressed="false">Interno</button>
+                </div>
+                <div class="inv-filter-meta">
+                  <span class="inv-result-count" id="inv-result-count" aria-live="polite"></span>
+                  <button type="button" class="btn btn-sm btn-ghost-secondary inv-clear-filters" id="btn-limpiar-filtros-inv" title="Limpiar filtros">
+                    <i class="ti ti-x me-1"></i>Limpiar
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Tabla de stock -->
-      <div class="card">
+      <div class="card erp-table-panel inv-ledger">
         <div class="table-responsive">
-          <table class="table table-vcenter card-table table-hover">
+          <table class="table table-vcenter card-table table-hover mb-0">
             <thead>
               <tr>
-                <th>Código de Barras</th>
-                <th>Nombre</th>
-                <th>Categoría</th>
-                <th>Costo (COP)</th>
-                <th>Venta (COP)</th>
-                <th class="text-center">Existencias</th>
+                <th>SKU / código</th>
+                <th>Producto</th>
+                <th>Cat.</th>
+                <th class="text-end">Costo</th>
+                <th class="text-end">Venta</th>
+                <th class="text-end">Stock</th>
                 <th class="text-center">Estado</th>
-                <th class="text-center">Serie/IMEI</th>
-                ${isAdminOrGerente ? `<th class="w-1">Acciones</th>` : ''}
+                <th class="text-center">Serie</th>
+                ${isAdminOrGerente ? `<th class="w-1 text-end">Acciones</th>` : ''}
               </tr>
             </thead>
             <tbody id="inventario-table-body">
@@ -100,6 +120,7 @@ export async function initInventario(container) {
             </tbody>
           </table>
         </div>
+      </div>
       </div>
     </div>
 
@@ -465,6 +486,41 @@ export async function initInventario(container) {
 
   const selectSede = document.getElementById('select-sede-inventario');
   const searchInput = document.getElementById('search-inventario');
+  const selectCategoria = document.getElementById('filtro-categoria-inventario');
+  const resultCountEl = document.getElementById('inv-result-count');
+  const btnLimpiarFiltros = document.getElementById('btn-limpiar-filtros-inv');
+
+  let stockCache = [];
+  let stockCacheSedeId = null;
+  let filtroStock = soloStockBajo ? 'bajo' : 'todos';
+  let filtroSerie = false;
+  let filtroInterno = false;
+
+  const stockStatusOf = (item) => {
+    const qty = item.cantidad;
+    const min = item.producto?.stockMinimo ?? 0;
+    if (qty <= 0) return 'agotado';
+    if (qty <= min) return 'bajo';
+    return 'ok';
+  };
+
+  const syncStockChips = () => {
+    document.querySelectorAll('.inv-chip[data-stock]').forEach((chip) => {
+      chip.classList.toggle('is-active', chip.getAttribute('data-stock') === filtroStock);
+    });
+  };
+
+  const syncToggleChip = (selector, on) => {
+    const chip = document.querySelector(selector);
+    if (!chip) return;
+    chip.classList.toggle('is-active', on);
+    chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+  };
+
+  syncStockChips();
+  if (soloStockBajo) {
+    syncToggleChip('.inv-chip[data-stock="bajo"]', true);
+  }
 
   const syncProdFormMeta = () => {
     const meta = document.getElementById('prod-form-meta');
@@ -561,7 +617,7 @@ export async function initInventario(container) {
               const currentStockVal = parseStockInput(document.getElementById('prod-stock-actual').value);
               document.getElementById('prod-stock-actual').value = Math.max(0, currentStockVal - 1);
               
-              loadInventario();
+              loadInventario({ force: true });
             } catch (err) {
               showToast('Error', err.message, 'error');
             }
@@ -613,7 +669,7 @@ export async function initInventario(container) {
           const currentStockVal = parseStockInput(document.getElementById('prod-stock-actual').value);
           document.getElementById('prod-stock-actual').value = currentStockVal + series.length;
           
-          loadInventario();
+          loadInventario({ force: true });
         } catch (err) {
           showToast('Error', err.message, 'error');
         }
@@ -632,7 +688,7 @@ export async function initInventario(container) {
     }
   }, 100);
 
-  // Cargar Categorías en formulario
+  // Cargar Categorías en formulario + filtro
   const loadCategoriasList = async (selectedId = null) => {
     try {
       const list = await apiFetch('/productos/categorias').catch(() => []);
@@ -643,6 +699,13 @@ export async function initInventario(container) {
           selectCat.value = selectedId;
         }
       }
+      if (selectCategoria) {
+        const current = selectCategoria.value;
+        selectCategoria.innerHTML = `<option value="">Todas</option>${list.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('')}`;
+        if (current && list.some((c) => String(c.id) === String(current))) {
+          selectCategoria.value = current;
+        }
+      }
     } catch (e) {
       console.error(e);
     }
@@ -650,167 +713,255 @@ export async function initInventario(container) {
 
   await loadCategoriasList();
 
-  // Cargar datos iniciales
-  const loadInventario = async () => {
-    const sedeId = selectSede.value;
-    const query = searchInput.value;
-
+  const applyInventarioFilters = () => {
     const tbody = document.getElementById('inventario-table-body');
-    tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>`;
+    const query = (searchInput.value || '').trim().toLowerCase();
+    const catId = selectCategoria?.value || '';
+    const stock = stockCache;
 
-    try {
-      const stock = await apiFetch(`/inventario/stock?sedeId=${sedeId}`);
-      
-      const filtered = stock.filter(item => {
-        if (soloStockBajo && item.cantidad > item.producto.stockMinimo) return false;
-        if (!query) return true;
-        const q = query.toLowerCase();
-        return item.producto.nombre.toLowerCase().includes(q) || item.producto.codigoBarras.toLowerCase().includes(q);
-      });
+    const filtered = stock.filter((item) => {
+      const prod = item.producto;
+      if (!prod) return false;
+      if (catId && String(prod.categoriaId || prod.categoria?.id || '') !== String(catId)) return false;
+      const status = stockStatusOf(item);
+      if (filtroStock === 'ok' && status !== 'ok') return false;
+      // "Bajo" = necesita atención (bajo + agotado), como el aviso del dashboard
+      if (filtroStock === 'bajo' && status === 'ok') return false;
+      if (filtroStock === 'agotado' && status !== 'agotado') return false;
+      if (filtroSerie && !prod.tieneNumeroSerie) return false;
+      if (filtroInterno && !isInternalBarcode(prod.codigoBarras)) return false;
+      if (!query) return true;
+      return (prod.nombre || '').toLowerCase().includes(query) || (prod.codigoBarras || '').toLowerCase().includes(query);
+    });
 
-      if (filtered.length === 0) {
-        const emptyMsg = soloStockBajo
-          ? 'No hay productos con stock bajo en esta sede.'
-          : 'No se encontraron productos en el inventario.';
-        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-secondary">${emptyMsg}</td></tr>`;
-        return;
+    if (resultCountEl) {
+      resultCountEl.textContent = filtered.length
+        ? `${filtered.length} producto${filtered.length === 1 ? '' : 's'}`
+        : 'Sin resultados';
+    }
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-secondary">No hay productos con estos filtros. Prueba otra categoría, estado o búsqueda.</td></tr>`;
+      return;
+    }
+
+    const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+
+    tbody.innerHTML = filtered.map(item => {
+      const prod = item.producto;
+      const stockMin = prod.stockMinimo;
+      const stockQty = item.cantidad;
+
+      let statusBadge = '';
+      let statusClass = '';
+      if (stockQty <= 0) {
+        statusBadge = '<span class="inv-status inv-status--out">Agotado</span>';
+        statusClass = 'inv-qty--out';
+      } else if (stockQty <= stockMin) {
+        statusBadge = '<span class="inv-status inv-status--low">Bajo</span>';
+        statusClass = 'inv-qty--low';
+      } else {
+        statusBadge = '<span class="inv-status inv-status--ok">OK</span>';
+        statusClass = 'inv-qty--ok';
       }
 
-      const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+      const imgHtml = prod.imagenUrl 
+        ? `<img src="${prod.imagenUrl}" class="inv-thumb" alt="" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'24\\' height=\\'24\\' fill=\\'none\\' stroke=\\'%23ccc\\' stroke-width=\\'2\\'><rect width=\\'20\\' height=\\'20\\' x=\\'2\\' y=\\'2\\' rx=\\'2\\'/><circle cx=\\'9\\' cy=\\'9\\' r=\\'2\\'/><path d=\\'m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\\'/></svg>';">` 
+        : `<span class="inv-thumb inv-thumb--letter">${prod.nombre.charAt(0).toUpperCase()}</span>`;
 
-      tbody.innerHTML = filtered.map(item => {
-        const prod = item.producto;
-        const stockMin = prod.stockMinimo;
-        const stockQty = item.cantidad;
+      const codigoInterno = isInternalBarcode(prod.codigoBarras)
+        ? '<span class="inv-sku__tag">Interno</span>'
+        : '';
 
-        // Semáforo de stock
-        let statusBadge = '';
-        if (stockQty <= 0) {
-          statusBadge = '<span class="badge bg-red-lt">Agotado</span>';
-        } else if (stockQty <= stockMin) {
-          statusBadge = '<span class="badge bg-yellow-lt">Bajo Stock</span>';
-        } else {
-          statusBadge = '<span class="badge bg-green-lt">Excelente</span>';
-        }
+      const rowInteractive = isAdminOrGerente;
 
-        const imgHtml = prod.imagenUrl 
-          ? `<img src="${prod.imagenUrl}" class="avatar avatar-sm me-2 rounded" style="object-fit: cover;" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'24\\' height=\\'24\\' fill=\\'none\\' stroke=\\'%23ccc\\' stroke-width=\\'2\\'><rect width=\\'20\\' height=\\'20\\' x=\\'2\\' y=\\'2\\' rx=\\'2\\'/><circle cx=\\'9\\' cy=\\'9\\' r=\\'2\\'/><path d=\\'m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\\'/></svg>';">` 
-          : `<span class="avatar avatar-sm me-2 rounded bg-secondary-lt fw-bold">${prod.nombre.charAt(0).toUpperCase()}</span>`;
-
-        const codigoInterno = isInternalBarcode(prod.codigoBarras)
-          ? '<span class="badge bg-azure-lt ms-1">Interno</span>'
-          : '';
-
-        return `
-          <tr>
-            <td><code class="text-secondary">${prod.codigoBarras}</code>${codigoInterno}</td>
-            <td class="fw-semibold">
-              <div class="d-flex align-items-center">
-                ${imgHtml}
-                <div>${prod.nombre}</div>
-              </div>
+      return `
+        <tr class="${rowInteractive ? 'inv-row is-clickable' : ''}" ${rowInteractive ? `data-id="${item.productoId}" tabindex="0" role="button" aria-label="Editar ${prod.nombre}"` : ''}>
+          <td>
+            <div class="inv-sku">
+              <code class="inv-sku__code">${prod.codigoBarras}</code>
+              ${codigoInterno}
+            </div>
+          </td>
+          <td>
+            <div class="inv-product">
+              ${imgHtml}
+              <span class="inv-product__name" title="${prod.nombre}">${prod.nombre}</span>
+            </div>
+          </td>
+          <td class="inv-cat">${prod.categoria ? prod.categoria.nombre : 'General'}</td>
+          <td class="text-end inv-money">${formatter.format(prod.precioCosto)}</td>
+          <td class="text-end inv-money inv-money--sale">${formatter.format(prod.precioVenta)}</td>
+          <td class="text-end"><span class="inv-qty ${statusClass}">${stockQty}</span></td>
+          <td class="text-center">${statusBadge}</td>
+          <td class="text-center">${prod.tieneNumeroSerie ? '<span class="inv-status inv-status--imei">IMEI</span>' : '<span class="text-secondary">—</span>'}</td>
+          ${isAdminOrGerente ? `
+            <td class="erp-td-actions">
+              ${erpActions(`
+                ${erpAction('label', { className: 'btn-etiqueta', attrs: { 'data-id': item.productoId } })}
+                ${erpAction('edit', { className: 'btn-editar', attrs: { 'data-id': item.productoId } })}
+                ${erpAction('delete', { className: 'btn-eliminar', attrs: { 'data-id': item.productoId } })}
+              `)}
             </td>
-            <td>${prod.categoria ? prod.categoria.nombre : 'General'}</td>
-            <td>${formatter.format(prod.precioCosto)}</td>
-            <td>${formatter.format(prod.precioVenta)}</td>
-            <td class="text-center fw-bold ${stockQty <= stockMin ? 'text-danger' : 'text-success'}">${stockQty}</td>
-            <td class="text-center">${statusBadge}</td>
-            <td class="text-center">${prod.tieneNumeroSerie ? '<span class="badge bg-blue-lt">IMEI</span>' : '<span class="badge bg-secondary-lt">No aplica</span>'}</td>
-            ${isAdminOrGerente ? `
-              <td class="erp-td-actions">
-                ${erpActions(`
-                  ${erpAction('label', { className: 'btn-etiqueta', attrs: { 'data-id': item.productoId } })}
-                  ${erpAction('edit', { className: 'btn-editar', attrs: { 'data-id': item.productoId } })}
-                  ${erpAction('delete', { className: 'btn-eliminar', attrs: { 'data-id': item.productoId } })}
-                `)}
-              </td>
-            ` : ''}
-          </tr>
-        `;
-      }).join('');
+          ` : ''}
+        </tr>
+      `;
+    }).join('');
 
-      // Asignar click listeners
-      document.querySelectorAll('.btn-etiqueta').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const id = e.currentTarget.getAttribute('data-id');
-          const item = stock.find(s => s.productoId === id);
-          if (item?.producto) openEtiquetaModal(item.producto);
-        });
+    // Asignar click listeners
+    document.querySelectorAll('.btn-etiqueta').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = e.currentTarget.getAttribute('data-id');
+        const item = stockCache.find(s => s.productoId === id);
+        if (item?.producto) openEtiquetaModal(item.producto);
       });
+    });
 
-      document.querySelectorAll('.btn-editar').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const id = e.currentTarget.getAttribute('data-id');
-          // Buscar producto en la lista
-          const item = stock.find(s => s.productoId === id);
-          if (item) {
-            document.getElementById('producto-id').value = item.productoId;
-            document.getElementById('prod-nombre').value = item.producto.nombre;
-            document.getElementById('prod-codigo').value = item.producto.codigoBarras;
-            document.getElementById('prod-descripcion').value = item.producto.descripcion || '';
-            document.getElementById('prod-costo').value = item.producto.precioCosto;
-            document.getElementById('prod-venta').value = item.producto.precioVenta;
-            document.getElementById('prod-minimo').value = item.producto.stockMinimo;
-            document.getElementById('prod-categoria').value = item.producto.categoriaId;
-            document.getElementById('prod-serie').checked = item.producto.tieneNumeroSerie;
-            document.getElementById('prod-iva').checked = item.producto.tieneIVA;
-            document.getElementById('prod-reacondicionado').checked = item.producto.esReacondicionado;
-            document.getElementById('prod-imagen-url').value = item.producto.imagenUrl || '';
-            
-            const stockInput = document.getElementById('prod-stock-actual');
-            const adminNote = document.getElementById('admin-stock-note');
-            stockInput.value = item.cantidad;
-            document.getElementById('prod-stock-wrapper').classList.remove('d-none');
+    const abrirEdicionProducto = (id) => {
+      const item = stockCache.find(s => s.productoId === id);
+      if (!item) return;
 
-            if (['admin', 'superadmin'].includes(usuario.rol)) {
-              stockInput.removeAttribute('readonly');
-              adminNote.classList.remove('d-none');
-            } else {
-              stockInput.setAttribute('readonly', 'true');
-              adminNote.classList.add('d-none');
-            }
-            
-            // Mostrar u ocultar sección de seriales al abrir
-            const secSeriales = document.getElementById('sec-gestion-seriales');
-            if (item.producto.tieneNumeroSerie) {
-              secSeriales.classList.remove('d-none');
-              loadModalSerials(item.productoId);
-            } else {
-              secSeriales.classList.add('d-none');
-            }
+      document.getElementById('producto-id').value = item.productoId;
+      document.getElementById('prod-nombre').value = item.producto.nombre;
+      document.getElementById('prod-codigo').value = item.producto.codigoBarras;
+      document.getElementById('prod-descripcion').value = item.producto.descripcion || '';
+      document.getElementById('prod-costo').value = item.producto.precioCosto;
+      document.getElementById('prod-venta').value = item.producto.precioVenta;
+      document.getElementById('prod-minimo').value = item.producto.stockMinimo;
+      document.getElementById('prod-categoria').value = item.producto.categoriaId;
+      document.getElementById('prod-serie').checked = item.producto.tieneNumeroSerie;
+      document.getElementById('prod-iva').checked = item.producto.tieneIVA;
+      document.getElementById('prod-reacondicionado').checked = item.producto.esReacondicionado;
+      document.getElementById('prod-imagen-url').value = item.producto.imagenUrl || '';
 
-            document.getElementById('modal-producto-title').textContent = item.producto.nombre;
-            syncProdFormMeta();
-            modalProd.show();
+      const stockInput = document.getElementById('prod-stock-actual');
+      const adminNote = document.getElementById('admin-stock-note');
+      stockInput.value = item.cantidad;
+      document.getElementById('prod-stock-wrapper').classList.remove('d-none');
+
+      if (['admin', 'superadmin'].includes(usuario.rol)) {
+        stockInput.removeAttribute('readonly');
+        adminNote.classList.remove('d-none');
+      } else {
+        stockInput.setAttribute('readonly', 'true');
+        adminNote.classList.add('d-none');
+      }
+
+      const secSeriales = document.getElementById('sec-gestion-seriales');
+      if (item.producto.tieneNumeroSerie) {
+        secSeriales.classList.remove('d-none');
+        loadModalSerials(item.productoId);
+      } else {
+        secSeriales.classList.add('d-none');
+      }
+
+      document.getElementById('modal-producto-title').textContent = item.producto.nombre;
+      syncProdFormMeta();
+      modalProd.show();
+    };
+
+    document.querySelectorAll('.btn-editar').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        abrirEdicionProducto(e.currentTarget.getAttribute('data-id'));
+      });
+    });
+
+    document.querySelectorAll('.btn-eliminar').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = e.currentTarget.getAttribute('data-id');
+        const verificado = await showConfirm('Eliminar Producto', '¿Está seguro de eliminar este producto del catálogo de forma permanente?');
+        if (verificado) {
+          try {
+            await apiFetch(`/productos/${id}`, { method: 'DELETE' });
+            showToast('Éxito', 'Producto eliminado correctamente.', 'success');
+            stockCacheSedeId = null;
+            loadInventario({ force: true });
+          } catch (err) {
+            showToast('Error', err.message, 'error');
           }
-        });
+        }
       });
+    });
 
-      document.querySelectorAll('.btn-eliminar').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const id = e.currentTarget.getAttribute('data-id');
-          const verificado = await showConfirm('Eliminar Producto', '¿Está seguro de eliminar este producto del catálogo de forma permanente?');
-          if (verificado) {
-            try {
-              await apiFetch(`/productos/${id}`, { method: 'DELETE' });
-              showToast('Éxito', 'Producto eliminado correctamente.', 'success');
-              loadInventario();
-            } catch (err) {
-              showToast('Error', err.message, 'error');
-            }
-          }
-        });
+    // Fila completa clickeable (abre edición); botones internos ya detienen la propagación
+    document.querySelectorAll('.inv-row.is-clickable').forEach(row => {
+      row.addEventListener('click', () => abrirEdicionProducto(row.getAttribute('data-id')));
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          abrirEdicionProducto(row.getAttribute('data-id'));
+        }
       });
+    });
+  };
 
+  const loadInventario = async ({ force = false } = {}) => {
+    const sedeId = selectSede.value;
+    const tbody = document.getElementById('inventario-table-body');
+
+    if (!force && stockCacheSedeId === sedeId) {
+      applyInventarioFilters();
+      return;
+    }
+
+    tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>`;
+    if (resultCountEl) resultCountEl.textContent = 'Cargando…';
+
+    try {
+      stockCache = await apiFetch(`/inventario/stock?sedeId=${sedeId}`);
+      stockCacheSedeId = sedeId;
+      applyInventarioFilters();
     } catch (e) {
       console.error(e);
+      stockCache = [];
+      stockCacheSedeId = null;
       tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Error al cargar el inventario.</td></tr>`;
+      if (resultCountEl) resultCountEl.textContent = '';
     }
   };
 
   // Event Listeners de Filtros
-  selectSede.addEventListener('change', loadInventario);
-  searchInput.addEventListener('input', loadInventario);
+  selectSede.addEventListener('change', () => {
+    stockCacheSedeId = null;
+    loadInventario({ force: true });
+  });
+  searchInput.addEventListener('input', () => applyInventarioFilters());
+  selectCategoria?.addEventListener('change', () => applyInventarioFilters());
+
+  document.querySelectorAll('.inv-chip[data-stock]').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      filtroStock = chip.getAttribute('data-stock') || 'todos';
+      syncStockChips();
+      applyInventarioFilters();
+    });
+  });
+
+  document.querySelector('.inv-chip[data-serie="imei"]')?.addEventListener('click', () => {
+    filtroSerie = !filtroSerie;
+    syncToggleChip('.inv-chip[data-serie="imei"]', filtroSerie);
+    applyInventarioFilters();
+  });
+
+  document.querySelector('.inv-chip[data-interno="1"]')?.addEventListener('click', () => {
+    filtroInterno = !filtroInterno;
+    syncToggleChip('.inv-chip[data-interno="1"]', filtroInterno);
+    applyInventarioFilters();
+  });
+
+  btnLimpiarFiltros?.addEventListener('click', () => {
+    searchInput.value = '';
+    if (selectCategoria) selectCategoria.value = '';
+    filtroStock = 'todos';
+    filtroSerie = false;
+    filtroInterno = false;
+    syncStockChips();
+    syncToggleChip('.inv-chip[data-serie="imei"]', false);
+    syncToggleChip('.inv-chip[data-interno="1"]', false);
+    applyInventarioFilters();
+  });
 
   // Botón Nuevo Producto
   if (isAdminOrGerente) {
@@ -942,7 +1093,8 @@ export async function initInventario(container) {
           }
         }
         modalProd.hide();
-        loadInventario();
+        stockCacheSedeId = null;
+        loadInventario({ force: true });
       } catch (err) {
         alert(err.message);
       }
@@ -986,7 +1138,8 @@ export async function initInventario(container) {
       try {
         await apiFetch('/inventario/traslado', { method: 'POST', body: JSON.stringify(data) });
         modalTraslado.hide();
-        loadInventario();
+        stockCacheSedeId = null;
+        loadInventario({ force: true });
       } catch (err) {
         alert(err.message);
       }
@@ -1025,7 +1178,8 @@ export async function initInventario(container) {
 
         alert(data.message);
         modalCSV.hide();
-        loadInventario();
+        stockCacheSedeId = null;
+        loadInventario({ force: true });
       } catch (err) {
         alert(err.message);
       }

@@ -26,25 +26,26 @@ export async function initClientes(container) {
         subtitle: 'Historial de compras, reparaciones y control de deudas',
         actionsHtml: `
           <button id="btn-crear-cliente" class="btn btn-primary">
-            <i class="ti ti-plus me-2"></i> Crear cliente
+            <i class="ti ti-plus me-1"></i> Crear cliente
           </button>
         `
       })}
-      
-      <!-- Buscador -->
-      <div class="card mb-4 d-print-none">
+
+      <div class="erp-list-workspace">
+      <div class="card erp-filter-card d-print-none" role="search">
         <div class="card-body">
-          <div class="input-icon">
-            <span class="input-icon-addon"><i class="ti ti-search"></i></span>
-            <input type="text" id="crm-search-input" class="form-control form-control-lg" placeholder="Buscar cliente por nombre, documento o teléfono…" spellcheck="false">
+          <div class="row g-2 align-items-end">
+            <div class="col-12 col-md-6 col-lg-5">
+              <label class="form-label" for="crm-search-input">Buscar</label>
+              <input type="text" id="crm-search-input" class="form-control" placeholder="Nombre, documento o teléfono…" spellcheck="false" autocomplete="off">
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Tabla de Clientes -->
-      <div class="card">
+      <div class="card erp-table-panel">
         <div class="table-responsive">
-          <table class="table table-vcenter card-table table-hover table-striped">
+          <table class="table table-vcenter card-table table-hover mb-0">
             <thead>
               <tr>
                 <th>Nombre</th>
@@ -52,7 +53,7 @@ export async function initClientes(container) {
                 <th>Teléfono</th>
                 <th>Correo Electrónico</th>
                 <th>Dirección</th>
-                <th class="text-end">Acciones</th>
+                <th class="w-1 text-end">Acciones</th>
               </tr>
             </thead>
             <tbody id="crm-table-body">
@@ -60,6 +61,7 @@ export async function initClientes(container) {
             </tbody>
           </table>
         </div>
+      </div>
       </div>
     </div>
 
