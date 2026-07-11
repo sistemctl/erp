@@ -721,7 +721,9 @@ export async function initCompras(container) {
         
         // Tab switch programmatically back to list
         const tabListEl = document.querySelector('a[href="#tab-ordenes-compra"]');
-        bootstrap.Tab.getInstance(tabListEl).show();
+        if (tabListEl) {
+          bootstrap.Tab.getOrCreateInstance(tabListEl).show();
+        }
 
         await loadInitialData();
         renderComprasTable();

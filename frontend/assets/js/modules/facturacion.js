@@ -281,7 +281,10 @@ export async function initFacturacion(container) {
 
   // Void Invoice Action (Nota Crédito)
   async function anularFactura(id) {
-    const verificado = await showConfirm('Anular Factura', '¿Está seguro de que desea ANULAR esta factura mediante Nota de Crédito? Esta acción devolverá los productos al stock, anulará los IMEI vendidos y revertirá los ingresos en caja. Esta acción es irreversible.');
+    const verificado = await showConfirm(
+      'Anular factura completa',
+      'Esto anula TODA la factura (no es una devolución parcial de un producto). Devuelve el stock completo, revierte IMEI y ajusta la caja abierta. Irreversible. Para devolver solo un ítem use Historial de Ventas → Devolver.'
+    );
     if (!verificado) {
       return;
     }
