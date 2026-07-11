@@ -120,7 +120,7 @@ export async function initPos(container) {
 
     // Cargar clientes para ventas a crédito
     clientes = await apiFetch('/clientes').catch(() => [
-      { id: '1', nombre: 'Cliente General', documento: '22222222' },
+      { id: '1', nombre: 'Consumidor Final', documento: '22222222' },
       { id: '2', nombre: 'Juan Pérez', documento: '1019087654' },
       { id: '3', nombre: 'María López', documento: '52876345' }
     ]);
@@ -332,7 +332,7 @@ export async function initPos(container) {
                   <div class="mb-3">
                     <label class="form-label">Cliente (Opcional)</label>
                     <select id="checkout-cliente" class="form-select">
-                      <option value="">Cliente General (Sin registro)</option>
+                      <option value="">Consumidor Final</option>
                       ${clientes.map(c => `<option value="${c.id}">${c.nombre} (${c.documento})</option>`).join('')}
                     </select>
                   </div>
@@ -1203,8 +1203,8 @@ export async function initPos(container) {
       sedeNombre: sedeActual?.nombre || usuario.sedeNombre || '',
       sedeDireccion: sedeActual?.direccion || '',
       cajeroNombre: usuario.nombre,
-      clienteNombre: cliente?.nombre || '',
-      clienteDocumento: cliente?.documento || '',
+      clienteNombre: cliente?.nombre || 'Consumidor Final',
+      clienteDocumento: cliente?.documento || '222222222',
       clienteDireccion: cliente?.direccion || '',
       numeroFactura: res.numeroFactura,
       fecha: new Date(),

@@ -1,21 +1,33 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
+import { erpAction } from '../utils/action-buttons.js';
+import { showToast } from '../utils/toast.js';
+import { renderDevolucionReceipt } from '../utils/pos-receipt.js';
 
 export async function initVentas(container) {
   const usuario = getUsuario();
   const isAdminOrGerente = ['admin', 'superadmin', 'gerente_sede'].includes(usuario.rol);
-  const isContador = usuario.rol === 'contador';
+  const canDevolver = ['admin', 'superadmin', 'gerente_sede', 'cajero'].includes(usuario.rol);
+
+  // Evitar modal huérfano / backdrop pegado al reentrar al módulo
+  document.getElementById('modal-devolucion-venta')?.remove();
+  document.querySelectorAll('.modal-backdrop').forEach((el) => el.remove());
+  document.body.classList.remove('modal-open');
+  document.body.style.removeProperty('overflow');
+  document.body.style.removeProperty('padding-right');
 
   let ventas = [];
   let vendedores = [];
   let sedes = [];
+  let empresaConfig = {};
 
   async function loadInitialData() {
     try {
       ventas = await apiFetch('/ventas');
       vendedores = await apiFetch('/config/usuarios-operativos').then(users => users.filter(u => ['admin', 'superadmin', 'gerente_sede', 'cajero'].includes(u.rol)));
       sedes = await apiFetch('/config/sedes').catch(() => []);
+      empresaConfig = await apiFetch('/config/sistema').catch(() => ({}));
     } catch (e) {
       console.error('Error precargando datos en ventas:', e);
     }
@@ -28,10 +40,9 @@ export async function initVentas(container) {
       ${erpHeader({
         eyebrow: 'Ventas',
         title: 'Historial y comisiones',
-        subtitle: 'Transacciones, liquidación de comisiones y reporte de descuentos'
+        subtitle: 'Transacciones, devoluciones, liquidación de comisiones y reporte de descuentos'
       })}
 
-      <!-- Navigation tabs -->
       <div class="card mb-3 d-print-none">
         <div class="card-header bg-transparent border-bottom">
           <ul class="nav nav-tabs card-header-tabs" data-bs-toggle="tabs" role="tablist">
@@ -59,7 +70,6 @@ export async function initVentas(container) {
         </div>
         <div class="card-body">
           <div class="tab-content">
-            <!-- TAB 1: HISTORIAL DE VENTAS -->
             <div class="tab-pane active show" id="tab-historial" role="tabpanel">
               <div class="erp-list-workspace">
               <div class="card erp-filter-card">
@@ -113,18 +123,16 @@ export async function initVentas(container) {
                         <th>Ítems</th>
                         <th>Método Pago</th>
                         <th class="text-end">Total</th>
+                        <th class="text-end">Acciones</th>
                       </tr>
                     </thead>
-                    <tbody id="ventas-table-body">
-                      <!-- Dinámico -->
-                    </tbody>
+                    <tbody id="ventas-table-body"></tbody>
                   </table>
                 </div>
               </div>
               </div>
             </div>
 
-            <!-- TAB 2: COMISIONES -->
             <div class="tab-pane" id="tab-comisiones" role="tabpanel">
               <div class="card mb-2 erp-filter-card">
                 <div class="card-body">
@@ -150,11 +158,7 @@ export async function initVentas(container) {
                   </form>
                 </div>
               </div>
-
-              <div class="row row-cards mb-2" id="kpi-comisiones-wrapper">
-                <!-- KPI Card -->
-              </div>
-
+              <div class="row row-cards mb-2" id="kpi-comisiones-wrapper"></div>
               <div class="card erp-table-panel">
                 <div class="table-responsive">
                   <table class="table table-vcenter card-table">
@@ -175,7 +179,6 @@ export async function initVentas(container) {
               </div>
             </div>
 
-            <!-- TAB 3: REPORTE DE DESCUENTOS (PRICE OVERRIDE) -->
             <div class="tab-pane" id="tab-descuentos" role="tabpanel">
               <div class="row mb-3 align-items-center">
                 <div class="col">
@@ -198,15 +201,12 @@ export async function initVentas(container) {
                         <th class="text-end">Ahorro</th>
                       </tr>
                     </thead>
-                    <tbody id="descuentos-table-body">
-                      <!-- Dinámico -->
-                    </tbody>
+                    <tbody id="descuentos-table-body"></tbody>
                   </table>
                 </div>
               </div>
             </div>
 
-            <!-- TAB 4: HISTORIAL DE REPARACIONES -->
             <div class="tab-pane" id="tab-reparaciones" role="tabpanel">
               <div class="erp-list-workspace">
               <div class="card erp-filter-card">
@@ -251,7 +251,6 @@ export async function initVentas(container) {
                   </form>
                 </div>
               </div>
-
               <div class="card erp-table-panel">
                 <div class="table-responsive">
                   <table class="table table-vcenter card-table table-hover mb-0">
@@ -268,15 +267,72 @@ export async function initVentas(container) {
                         <th class="text-end">Total Cobrado</th>
                       </tr>
                     </thead>
-                    <tbody id="reparaciones-table-body">
-                      <!-- Dinámico -->
-                    </tbody>
+                    <tbody id="reparaciones-table-body"></tbody>
                   </table>
                 </div>
               </div>
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div id="dev-receipt-host" class="pos-receipt-print-host d-none" aria-hidden="true"></div>
+    </div>
+
+    <div class="modal modal-blur fade" id="modal-devolucion-venta" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+          <form id="form-devolucion-venta">
+            <div class="modal-header">
+              <h5 class="modal-title">Devolución de cliente</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+              <input type="hidden" id="dev-venta-id">
+              <p class="text-secondary small mb-3" id="dev-venta-meta"></p>
+              <div class="table-responsive mb-3">
+                <table class="table table-vcenter table-sm">
+                  <thead>
+                    <tr>
+                      <th style="width:2.5rem"></th>
+                      <th>Producto</th>
+                      <th class="text-center">Vendidos</th>
+                      <th class="text-center">Ya dev.</th>
+                      <th class="text-center" style="width:6rem">Devolver</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dev-items-body"></tbody>
+                </table>
+              </div>
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <label class="form-label fw-bold">Método de reembolso</label>
+                  <select id="dev-metodo" class="form-select" required>
+                    <option value="efectivo">Efectivo</option>
+                    <option value="nequi">Nequi</option>
+                    <option value="daviplata">Daviplata</option>
+                    <option value="tarjeta">Tarjeta</option>
+                    <option value="transferencia">Transferencia</option>
+                    <option value="credito">Ajuste a crédito</option>
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label fw-bold">Motivo</label>
+                  <input type="text" id="dev-motivo" class="form-control" placeholder="Ej. Cliente no lo necesita" required maxlength="240">
+                </div>
+              </div>
+              <div class="alert alert-info mt-3 mb-0 py-2 small">
+                Requiere caja abierta en la sede de la venta. El stock vuelve al inventario y se registra el reembolso.
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancelar</button>
+              <button type="submit" class="btn btn-danger">
+                <i class="ti ti-arrow-back me-1"></i>Procesar devolución
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
@@ -287,80 +343,316 @@ export async function initVentas(container) {
   const tbodyDescuentos = document.getElementById('descuentos-table-body');
   const tbodyReparaciones = document.getElementById('reparaciones-table-body');
   const kpisComisiones = document.getElementById('kpi-comisiones-wrapper');
-
+  const modalDevEl = document.getElementById('modal-devolucion-venta');
+  // Mover al body: evita que el modal quede detrás del blur / fuera de vista
+  // (position:fixed se rompe dentro de .erp-module por animación/transform y páginas altas)
+  if (modalDevEl && modalDevEl.parentElement !== document.body) {
+    document.body.appendChild(modalDevEl);
+  }
+  const modalDev = modalDevEl
+    ? (bootstrap.Modal.getInstance(modalDevEl) || new bootstrap.Modal(modalDevEl))
+    : null;
   const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
+  window.activeModuleCleanup = () => {
+    try { modalDev?.hide(); } catch (_) { /* ignore */ }
+    modalDevEl?.remove();
+    document.querySelectorAll('.modal-backdrop').forEach((el) => el.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('overflow');
+    document.body.style.removeProperty('padding-right');
+  };
+
+  function devolucionBadge(v) {
+    if (v.estado === 'anulada') {
+      return '<span class="badge badge-status-danger ms-1">Anulada</span>';
+    }
+    if (v.devolucionEstado === 'total') {
+      return '<span class="badge badge-status-warning ms-1">Devuelta</span>';
+    }
+    if (v.devolucionEstado === 'parcial') {
+      return '<span class="badge badge-status-info ms-1">Dev. parcial</span>';
+    }
+    return '';
+  }
+
+  function puedeDevolverVenta(v) {
+    if (!canDevolver) return false;
+    if (v.estado === 'anulada') return false;
+    if (v.devolucionEstado === 'total') return false;
+    return (v.items || []).some((i) => (i.cantidad - (parseInt(i.cantidadDevuelta, 10) || 0)) > 0);
+  }
+
+  function bindDevolverButtons() {
+    tbodyVentas.querySelectorAll('.btn-devolver-venta').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const venta = ventas.find((x) => String(x.id) === String(btn.dataset.id));
+        if (venta) openDevolucionModal(venta);
+      });
+    });
+  }
+
+  function formatItemsCell(v) {
+    if (!v.items?.length) return 'N/A';
+    return v.items.map((i) => {
+      const ya = parseInt(i.cantidadDevuelta, 10) || 0;
+      const nombre = i.producto ? i.producto.nombre : 'Producto';
+      if (ya <= 0) return `${nombre} (x${i.cantidad})`;
+      if (ya >= i.cantidad) return `${nombre} (x${i.cantidad} · devuelto)`;
+      return `${nombre} (x${i.cantidad} · ${ya} dev.)`;
+    }).join(', ');
+  }
+
   function renderVentasTable(data) {
+    ventas = data;
     if (data.length === 0) {
-      tbodyVentas.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-secondary">No se encontraron ventas.</td></tr>`;
+      tbodyVentas.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-secondary">No se encontraron ventas.</td></tr>`;
       return;
     }
 
-    tbodyVentas.innerHTML = data.map(v => {
-      const itemsStr = v.items ? v.items.map(i => `${i.producto ? i.producto.nombre : 'Producto'} (x${i.cantidad})`).join(', ') : 'N/A';
-      const pagosStr = v.pagos ? v.pagos.map(p => p.metodo.toUpperCase()).join('/') : 'Efectivo';
+    tbodyVentas.innerHTML = data.map((v) => {
+      const itemsStr = formatItemsCell(v);
+      const pagosStr = v.pagos ? v.pagos.map((p) => p.metodo.toUpperCase()).join('/') : 'Efectivo';
+      const actions = puedeDevolverVenta(v)
+        ? erpAction('return', { className: 'btn-devolver-venta', attrs: { 'data-id': v.id } })
+        : '<span class="text-secondary small">—</span>';
+      const rowClass = v.estado === 'anulada'
+        ? 'venta-row venta-row--anulada'
+        : v.devolucionEstado === 'total'
+          ? 'venta-row venta-row--devuelta'
+          : v.devolucionEstado === 'parcial'
+            ? 'venta-row venta-row--parcial'
+            : 'venta-row';
       return `
-        <tr>
-          <td><strong class="text-blue">${v.numeroVenta}</strong></td>
+        <tr class="${rowClass}">
+          <td><strong class="text-blue">${v.numeroVenta}</strong>${devolucionBadge(v)}</td>
           <td>${new Date(v.createdAt).toLocaleDateString()}</td>
-          <td>${v.cliente ? v.cliente.nombre : 'Cliente General'}</td>
+          <td>${v.cliente ? v.cliente.nombre : 'Consumidor Final'}</td>
           <td>${v.usuario ? v.usuario.nombre : 'Desconocido'}</td>
           <td>${v.sede ? v.sede.nombre : 'N/A'}</td>
           <td class="small text-secondary" style="max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${itemsStr}">${itemsStr}</td>
           <td>${pagosStr}</td>
           <td class="text-end fw-bold text-primary">${formatter.format(v.total)}</td>
+          <td class="text-end">${actions}</td>
         </tr>
       `;
     }).join('');
+    bindDevolverButtons();
   }
 
-  // Render initial ventas
-  renderVentasTable(ventas);
+  function openDevolucionModal(venta) {
+    try {
+      document.getElementById('dev-venta-id').value = venta.id;
+      document.getElementById('dev-venta-meta').textContent =
+        `${venta.numeroVenta} · ${venta.cliente?.nombre || 'Consumidor Final'} · ${venta.sede?.nombre || ''}`;
+      document.getElementById('dev-motivo').value = '';
 
-  // Filters Ventas History
-  document.getElementById('form-filtros-ventas').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    tbodyVentas.innerHTML = `<tr><td colspan="8" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>`;
+      const pagos = venta.pagos || [];
+      const metodoSelect = document.getElementById('dev-metodo');
+      if (venta.esCredito || venta.estado === 'credito') {
+        metodoSelect.value = 'credito';
+      } else if (pagos.length === 1 && [...metodoSelect.options].some((o) => o.value === pagos[0].metodo)) {
+        metodoSelect.value = pagos[0].metodo;
+      } else {
+        metodoSelect.value = 'efectivo';
+      }
+
+      const tbody = document.getElementById('dev-items-body');
+      tbody.innerHTML = (venta.items || []).map((item) => {
+        const ya = parseInt(item.cantidadDevuelta, 10) || 0;
+        const max = item.cantidad - ya;
+        if (max <= 0) {
+          return `
+            <tr class="text-secondary">
+              <td></td>
+              <td>${item.producto?.nombre || 'Producto'}</td>
+              <td class="text-center">${item.cantidad}</td>
+              <td class="text-center">${ya}</td>
+              <td class="text-center small">Completo</td>
+            </tr>
+          `;
+        }
+        return `
+          <tr>
+            <td>
+              <input type="checkbox" class="form-check-input dev-item-check" data-id="${item.id}" data-max="${max}" checked>
+            </td>
+            <td>${item.producto?.nombre || 'Producto'}</td>
+            <td class="text-center">${item.cantidad}</td>
+            <td class="text-center">${ya}</td>
+            <td>
+              <input type="number" class="form-control form-control-sm text-center dev-item-qty" data-id="${item.id}" min="1" max="${max}" value="${max}">
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      tbody.querySelectorAll('.dev-item-check').forEach((chk) => {
+        chk.addEventListener('change', () => {
+          const qty = tbody.querySelector(`.dev-item-qty[data-id="${chk.dataset.id}"]`);
+          if (qty) qty.disabled = !chk.checked;
+        });
+      });
+
+      if (!modalDev) {
+        showToast('Error', 'No se pudo abrir el formulario de devolución.', 'error');
+        return;
+      }
+      modalDev.show();
+    } catch (err) {
+      console.error('Error abriendo devolución:', err);
+      cleanupModalBackdrop();
+      showToast('Error', err.message || 'No se pudo abrir la devolución.', 'error');
+    }
+  }
+
+  function printDevolucion(dev) {
+    const items = (dev.items || []).map((i) => ({
+      cantidad: i.cantidad,
+      nombre: i.producto?.nombre || 'Producto',
+      montoLinea: i.montoLinea
+    }));
+    const html = renderDevolucionReceipt({
+      empresaConfig,
+      sedeNombre: dev.venta?.sede?.nombre || '',
+      cajeroNombre: dev.usuario?.nombre || usuario.nombre,
+      clienteNombre: dev.venta?.cliente?.nombre || '',
+      numeroDevolucion: dev.numero,
+      numeroVenta: dev.venta?.numeroVenta || '',
+      fecha: dev.createdAt || new Date(),
+      items,
+      total: dev.total,
+      metodoReembolso: dev.metodoReembolso,
+      motivo: dev.motivo
+    });
+    const popup = window.open('', '_blank', 'width=360,height=640');
+    if (!popup) {
+      showToast('Aviso', 'Permite ventanas emergentes para imprimir el comprobante.', 'warning');
+      return;
+    }
+    popup.document.write(`<!doctype html><html><head><title>${dev.numero || 'Devolución'}</title>
+      <link rel="stylesheet" href="/assets/css/custom.css">
+      <style>
+        body { margin: 0; padding: 12px; background: #fff; }
+        .pos-receipt { margin: 0 auto; }
+        @media print { button { display: none !important; } }
+      </style>
+    </head><body>
+      ${html}
+      <p style="text-align:center;margin-top:12px">
+        <button type="button" onclick="window.print()" style="padding:8px 16px;font-weight:600;cursor:pointer">Imprimir</button>
+      </p>
+    </body></html>`);
+    popup.document.close();
+  }
+
+  function cleanupModalBackdrop() {
+    document.querySelectorAll('.modal-backdrop').forEach((el) => el.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('overflow');
+    document.body.style.removeProperty('padding-right');
+  }
+
+  function hideDevolucionModal() {
+    return new Promise((resolve) => {
+      if (!modalDev || !modalDevEl?.classList.contains('show')) {
+        cleanupModalBackdrop();
+        resolve();
+        return;
+      }
+
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        cleanupModalBackdrop();
+        resolve();
+      };
+
+      modalDevEl.addEventListener('hidden.bs.modal', finish, { once: true });
+      modalDev.hide();
+      setTimeout(finish, 350);
+    });
+  }
+
+  async function loadVentasFiltradas() {
+    tbodyVentas.innerHTML = `<tr><td colspan="9" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>`;
     try {
       const buscar = document.getElementById('filtro-buscar-venta').value;
-      const usuario = document.getElementById('filtro-vendedor-venta').value;
+      const usuarioFiltro = document.getElementById('filtro-vendedor-venta').value;
       const sede = document.getElementById('filtro-sede-venta').value;
       const desde = document.getElementById('filtro-desde-venta').value;
       const hasta = document.getElementById('filtro-hasta-venta').value;
 
       const params = [];
-      if (buscar) params.push(`buscar=${buscar}`);
-      if (usuario) params.push(`usuario=${usuario}`);
+      if (buscar) params.push(`buscar=${encodeURIComponent(buscar)}`);
+      if (usuarioFiltro) params.push(`usuario=${usuarioFiltro}`);
       if (sede) params.push(`sede=${sede}`);
       if (desde) params.push(`desde=${desde}`);
       if (hasta) params.push(`hasta=${hasta}`);
 
-      const query = params.length > 0 ? '?' + params.join('&') : '';
-      const filtradas = await apiFetch(`/ventas${query}`);
-      renderVentasTable(filtradas);
+      const query = params.length > 0 ? `?${params.join('&')}` : '';
+      renderVentasTable(await apiFetch(`/ventas${query}`));
     } catch (err) {
-      tbodyVentas.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
+      tbodyVentas.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
+    }
+  }
+
+  document.getElementById('form-devolucion-venta').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const ventaId = document.getElementById('dev-venta-id').value;
+    const motivo = document.getElementById('dev-motivo').value.trim();
+    const metodoReembolso = document.getElementById('dev-metodo').value;
+    const items = [];
+    document.querySelectorAll('#dev-items-body .dev-item-check:checked').forEach((chk) => {
+      const qtyEl = document.querySelector(`.dev-item-qty[data-id="${chk.dataset.id}"]`);
+      const cantidad = parseInt(qtyEl?.value, 10);
+      if (cantidad > 0) items.push({ itemVentaId: chk.dataset.id, cantidad });
+    });
+
+    if (!items.length) {
+      showToast('Aviso', 'Seleccione al menos un producto a devolver.', 'warning');
+      return;
+    }
+
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    try {
+      const res = await apiFetch(`/ventas/${ventaId}/devolucion`, {
+        method: 'POST',
+        body: JSON.stringify({ items, motivo, metodoReembolso })
+      });
+      await hideDevolucionModal();
+      showToast('Éxito', res.message || 'Devolución registrada.', 'success');
+      await loadVentasFiltradas();
+      if (res.devolucion) printDevolucion(res.devolucion);
+    } catch (err) {
+      showToast('Error', err.message, 'error');
+    } finally {
+      btn.disabled = false;
     }
   });
 
-  // Calculate & Render Comisiones
+  renderVentasTable(ventas);
+
+  document.getElementById('form-filtros-ventas').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await loadVentasFiltradas();
+  });
+
   document.getElementById('form-filtros-comisiones').addEventListener('submit', async (e) => {
     e.preventDefault();
     tbodyComisiones.innerHTML = `<tr><td colspan="5" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>`;
     kpisComisiones.innerHTML = '';
-
     try {
-      const usuario = document.getElementById('filtro-vendedor-comision').value;
+      const usuarioFiltro = document.getElementById('filtro-vendedor-comision').value;
       const desde = document.getElementById('filtro-desde-comision').value;
       const hasta = document.getElementById('filtro-hasta-comision').value;
-
       const params = [];
-      if (usuario) params.push(`usuario=${usuario}`);
+      if (usuarioFiltro) params.push(`usuario=${usuarioFiltro}`);
       if (desde) params.push(`desde=${desde}`);
       if (hasta) params.push(`hasta=${hasta}`);
-
-      const query = params.length > 0 ? '?' + params.join('&') : '';
-      const data = await apiFetch(`/ventas/comisiones${query}`);
+      const data = await apiFetch(`/ventas/comisiones${params.length ? `?${params.join('&')}` : ''}`);
 
       if (!data.comisiones || data.comisiones.length === 0) {
         tbodyComisiones.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-secondary">No hay comisiones para el rango y vendedor seleccionado.</td></tr>`;
@@ -396,7 +688,7 @@ export async function initVentas(container) {
         </div>
       `;
 
-      tbodyComisiones.innerHTML = data.comisiones.map(c => `
+      tbodyComisiones.innerHTML = data.comisiones.map((c) => `
         <tr>
           <td><strong>${c.vendedor}</strong></td>
           <td><span class="badge bg-blue text-white">${c.numeroVenta}</span></td>
@@ -405,13 +697,11 @@ export async function initVentas(container) {
           <td class="text-end fw-bold text-success">${formatter.format(c.comision)}</td>
         </tr>
       `).join('');
-
     } catch (err) {
       tbodyComisiones.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
     }
   });
 
-  // Render Descuentos Tab (Price Override)
   async function loadDescuentos() {
     tbodyDescuentos.innerHTML = `<tr><td colspan="8" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>`;
     try {
@@ -420,13 +710,11 @@ export async function initVentas(container) {
         tbodyDescuentos.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-secondary">No se registran transacciones con Price Override (descuentos).</td></tr>`;
         return;
       }
-
-      tbodyDescuentos.innerHTML = data.map(item => {
+      tbodyDescuentos.innerHTML = data.map((item) => {
         const venta = item.venta || {};
         const base = parseFloat(item.precioBase);
         const modificado = parseFloat(item.precioModificado);
         const ahorro = (base - modificado) * item.cantidad;
-
         return `
           <tr>
             <td><strong class="text-blue">${venta.numeroVenta || 'N/A'}</strong></td>
@@ -445,21 +733,14 @@ export async function initVentas(container) {
     }
   }
 
-  // Load descuentos upon tab activation
   const tabEl = document.querySelector('a[href="#tab-descuentos"]');
-  if (tabEl) {
-    tabEl.addEventListener('shown.bs.tab', () => {
-      loadDescuentos();
-    });
-  }
+  if (tabEl) tabEl.addEventListener('shown.bs.tab', () => loadDescuentos());
 
-  // Render & Load Reparaciones
   function renderReparacionesTable(data) {
     if (data.length === 0) {
       tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-secondary">No se encontraron órdenes de reparación.</td></tr>`;
       return;
     }
-
     const badgeClasses = {
       recibido: 'bg-secondary text-white',
       diagnostico: 'bg-warning text-dark',
@@ -468,8 +749,7 @@ export async function initVentas(container) {
       entregado: 'bg-success text-white',
       cancelado: 'bg-danger text-white'
     };
-
-    tbodyReparaciones.innerHTML = data.map(o => `
+    tbodyReparaciones.innerHTML = data.map((o) => `
       <tr>
         <td><strong class="text-blue">${o.numeroOrden}</strong></td>
         <td>${new Date(o.createdAt).toLocaleDateString()}</td>
@@ -492,33 +772,25 @@ export async function initVentas(container) {
       const sede = document.getElementById('filtro-sede-reparacion').value;
       const desde = document.getElementById('filtro-desde-reparacion').value;
       const hasta = document.getElementById('filtro-hasta-reparacion').value;
-
       const params = [];
       if (buscar) params.push(`buscar=${buscar}`);
       if (estado) params.push(`estado=${estado}`);
       if (sede) params.push(`sede=${sede}`);
       if (desde) params.push(`desde=${desde}`);
       if (hasta) params.push(`hasta=${hasta}`);
-
-      const query = params.length > 0 ? '?' + params.join('&') : '';
-      const data = await apiFetch(`/reparaciones${query}`);
-      renderReparacionesTable(data);
+      renderReparacionesTable(await apiFetch(`/reparaciones${params.length ? `?${params.join('&')}` : ''}`));
     } catch (err) {
       tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
     }
   }
 
-  // Bind submit event to reparaciones filters form
   document.getElementById('form-filtros-reparaciones').addEventListener('submit', (e) => {
     e.preventDefault();
     loadReparaciones();
   });
 
-  // Load reparaciones upon tab activation
   const tabReparacionesEl = document.querySelector('a[href="#tab-reparaciones"]');
   if (tabReparacionesEl) {
-    tabReparacionesEl.addEventListener('shown.bs.tab', () => {
-      loadReparaciones();
-    });
+    tabReparacionesEl.addEventListener('shown.bs.tab', () => loadReparaciones());
   }
 }

@@ -56,6 +56,12 @@ const Venta = sequelize.define('Venta', {
     defaultValue: 'completada',
     allowNull: false
   },
+  /** ninguna | parcial | total — no pisa anulada */
+  devolucionEstado: {
+    type: DataTypes.STRING(20),
+    allowNull: false,
+    defaultValue: 'ninguna'
+  },
   observaciones: {
     type: DataTypes.TEXT,
     allowNull: true

@@ -48,6 +48,11 @@ const ItemVenta = sequelize.define('ItemVenta', {
   autorizadoPorAdmin: {
     type: DataTypes.BOOLEAN,
     defaultValue: false
+  },
+  cantidadDevuelta: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
   }
 }, {
   tableName: 'ItemsVenta'

@@ -14,13 +14,48 @@ const {
   TradeIn,
   Cliente,
   Sede,
+  DevolucionVenta,
+  ItemDevolucion,
+  EgresoCaja,
+  CategoriaEgreso,
   sequelize
 } = require('../models');
 const { Op } = require('sequelize');
 const { resolveQuerySede } = require('../utils/sede');
 const { calcularFechaVencimientoCredito, getDiasPlazoCredito } = require('../utils/credito');
 const { findCajaAbierta } = require('../utils/caja-abierta');
+const { ensureConsumidorFinal } = require('../utils/consumidor-final');
 const emailService = require('../services/email.service');
+
+const METODOS_CAJA = {
+  efectivo: 'totalVentasEfectivo',
+  nequi: 'totalVentasNequi',
+  daviplata: 'totalVentasDaviplata',
+  tarjeta: 'totalVentasTarjeta',
+  transferencia: 'totalVentasTransferencia'
+};
+
+function montoUnitarioItem(item) {
+  const qty = Math.max(1, parseInt(item.cantidad, 10) || 1);
+  const sub = parseFloat(item.subtotal) || 0;
+  const ivaUnit = parseFloat(item.iva) || 0;
+  return (sub / qty) + ivaUnit;
+}
+
+async function ensureCategoriaDevolucion(transaction) {
+  let cat = await CategoriaEgreso.findOne({
+    where: { nombre: { [Op.iLike]: 'Devolución cliente' } },
+    transaction
+  });
+  if (!cat) {
+    cat = await CategoriaEgreso.create({
+      nombre: 'Devolución cliente',
+      descripcion: 'Reembolsos por devoluciones de venta',
+      activa: true
+    }, { transaction });
+  }
+  return cat;
+}
 
 exports.procesarVenta = async (req, res, next) => {
   const transaction = await sequelize.transaction();
@@ -42,13 +77,28 @@ exports.procesarVenta = async (req, res, next) => {
     const sedeId = bodySedeId || req.usuario.sedeId;
 
     if (!sedeId) {
+      await transaction.rollback();
       return res.status(400).json({ error: 'Debe especificar una sede para la venta.' });
     }
 
     const usuarioId = req.usuario.userId;
 
     if (!items || items.length === 0) {
+      await transaction.rollback();
       return res.status(400).json({ error: 'No se puede procesar una venta sin artículos.' });
+    }
+
+    // Cliente: crédito exige registrado; resto usa Consumidor Final (créalo si no existe)
+    let resolvedClienteId = clienteId || null;
+    if (esCredito && !resolvedClienteId) {
+      await transaction.rollback();
+      return res.status(400).json({
+        error: 'Debe seleccionar un cliente registrado para realizar ventas a crédito.'
+      });
+    }
+    if (!resolvedClienteId) {
+      const consumidor = await ensureConsumidorFinal({ sedeId, transaction });
+      resolvedClienteId = consumidor.id;
     }
 
     // 1. Verificar Caja Abierta (compartida por sede o del usuario)
@@ -59,6 +109,7 @@ exports.procesarVenta = async (req, res, next) => {
     });
 
     if (!caja) {
+      await transaction.rollback();
       return res.status(400).json({ error: 'Debe abrir caja antes de realizar ventas.' });
     }
 
@@ -123,7 +174,7 @@ exports.procesarVenta = async (req, res, next) => {
     // 3. Crear Venta
     const venta = await Venta.create({
       numeroVenta,
-      clienteId: clienteId || null,
+      clienteId: resolvedClienteId,
       usuarioId,
       sedeId,
       subtotal: parseFloat(subtotal),
@@ -206,7 +257,7 @@ exports.procesarVenta = async (req, res, next) => {
 
         await serieReg.update({
           estado: 'vendido',
-          clienteId: clienteId || null,
+          clienteId: resolvedClienteId,
           fechaVenta: new Date()
         }, { transaction });
       }
@@ -234,7 +285,7 @@ exports.procesarVenta = async (req, res, next) => {
       else if (pago.metodo === 'transferencia') transferenciaPagada += montoNum;
       else if (pago.metodo === 'trade_in') {
         const tradeIn = await TradeIn.findOne({
-          where: { clienteId, ventaId: null },
+          where: { clienteId: resolvedClienteId, ventaId: null },
           order: [['createdAt', 'DESC']],
           transaction
         });
@@ -262,7 +313,7 @@ exports.procesarVenta = async (req, res, next) => {
     const factura = await Factura.create({
       numeroFactura,
       ventaId: venta.id,
-      clienteId: clienteId || null,
+      clienteId: resolvedClienteId,
       sedeId,
       subtotal: parseFloat(subtotal),
       iva: parseFloat(iva),
@@ -275,7 +326,7 @@ exports.procesarVenta = async (req, res, next) => {
     if (esCredito) {
       await CuentaPorCobrar.create({
         facturaId: factura.id,
-        clienteId,
+        clienteId: resolvedClienteId,
         totalOriginal: parseFloat(total),
         totalAbonado: totalPagado,
         saldoPendiente,
@@ -436,13 +487,334 @@ exports.getVentas = async (req, res, next) => {
         { model: Usuario, as: 'usuario', attributes: ['nombre'] },
         { model: Sede, as: 'sede', attributes: ['nombre'] },
         { model: PagoVenta, as: 'pagos' },
-        { model: ItemVenta, as: 'items', include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'precioCosto'] }] }
+        { model: ItemVenta, as: 'items', include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'precioCosto', 'tieneNumeroSerie'] }] },
+        { model: Factura, as: 'factura', attributes: ['id', 'numeroFactura', 'estado'] }
       ],
       order: [['createdAt', 'DESC']]
     });
 
     return res.json(ventas);
   } catch (error) {
+    next(error);
+  }
+};
+
+// --- DEVOLUCIONES DE VENTA (parcial / total) ---
+
+exports.getDevolucionesVenta = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const venta = await Venta.findByPk(id, { attributes: ['id', 'sedeId'] });
+    if (!venta) {
+      return res.status(404).json({ error: 'Venta no encontrada.' });
+    }
+
+    const querySedeId = resolveQuerySede(null, req.usuario);
+    if (querySedeId && String(venta.sedeId) !== String(querySedeId)) {
+      return res.status(403).json({ error: 'No tiene acceso a esta venta.' });
+    }
+
+    const devoluciones = await DevolucionVenta.findAll({
+      where: { ventaId: id },
+      include: [
+        { model: Usuario, as: 'usuario', attributes: ['nombre'] },
+        {
+          model: ItemDevolucion,
+          as: 'items',
+          include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras'] }]
+        }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+
+    return res.json(devoluciones);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.crearDevolucionVenta = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const { items: itemsBody, motivo, metodoReembolso } = req.body;
+
+    if (!motivo || !String(motivo).trim()) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'Debe indicar el motivo de la devolución.' });
+    }
+
+    if (!Array.isArray(itemsBody) || itemsBody.length === 0) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'Seleccione al menos un ítem a devolver.' });
+    }
+
+    const venta = await Venta.findByPk(id, {
+      include: [
+        { model: ItemVenta, as: 'items', include: [{ model: Producto, as: 'producto' }] },
+        { model: PagoVenta, as: 'pagos' },
+        { model: Cliente, as: 'cliente', attributes: ['id', 'nombre', 'documento'] },
+        { model: Factura, as: 'factura' },
+        { model: Sede, as: 'sede', attributes: ['id', 'nombre'] }
+      ],
+      transaction
+    });
+
+    if (!venta) {
+      await transaction.rollback();
+      return res.status(404).json({ error: 'Venta no encontrada.' });
+    }
+
+    if (venta.estado === 'anulada') {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'No se puede devolver una venta anulada.' });
+    }
+
+    if (venta.devolucionEstado === 'total') {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'Esta venta ya fue devuelta por completo.' });
+    }
+
+    const querySedeId = resolveQuerySede(null, req.usuario);
+    if (querySedeId && String(venta.sedeId) !== String(querySedeId)) {
+      await transaction.rollback();
+      return res.status(403).json({ error: 'No tiene acceso a esta venta.' });
+    }
+
+    const { caja } = await findCajaAbierta({
+      sedeId: venta.sedeId,
+      usuarioId: req.usuario.userId,
+      transaction
+    });
+
+    if (!caja) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'Debe abrir caja en esta sede antes de registrar una devolución.' });
+    }
+
+    const itemsById = new Map(venta.items.map((i) => [i.id, i]));
+    const lineas = [];
+    let totalDev = 0;
+
+    for (const row of itemsBody) {
+      const itemVentaId = row.itemVentaId || row.id;
+      const cantidad = parseInt(row.cantidad, 10);
+      if (!itemVentaId || !cantidad || cantidad <= 0) {
+        await transaction.rollback();
+        return res.status(400).json({ error: 'Cantidad de devolución inválida.' });
+      }
+
+      const item = itemsById.get(itemVentaId);
+      if (!item) {
+        await transaction.rollback();
+        return res.status(400).json({ error: 'Ítem de venta no válido.' });
+      }
+
+      const yaDev = parseInt(item.cantidadDevuelta, 10) || 0;
+      const disponible = item.cantidad - yaDev;
+      if (cantidad > disponible) {
+        await transaction.rollback();
+        return res.status(400).json({
+          error: `Solo puede devolver ${disponible} ud(s) de ${item.producto?.nombre || 'producto'}.`
+        });
+      }
+
+      const montoLinea = Math.round(montoUnitarioItem(item) * cantidad * 100) / 100;
+      totalDev += montoLinea;
+      lineas.push({ item, cantidad, montoLinea });
+    }
+
+    totalDev = Math.round(totalDev * 100) / 100;
+
+    let metodo = String(metodoReembolso || '').toLowerCase();
+    if (!metodo || metodo === 'mismo') {
+      if (venta.esCredito || venta.estado === 'credito') {
+        metodo = 'credito';
+      } else if (venta.pagos?.length === 1) {
+        metodo = venta.pagos[0].metodo;
+      } else {
+        metodo = 'efectivo';
+      }
+    }
+
+    const metodosValidos = [...Object.keys(METODOS_CAJA), 'credito'];
+    if (!metodosValidos.includes(metodo)) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'Método de reembolso inválido.' });
+    }
+
+    const countDev = await DevolucionVenta.count({ transaction });
+    const numero = `DEV-${String(countDev + 1).padStart(6, '0')}`;
+
+    const devolucion = await DevolucionVenta.create({
+      numero,
+      ventaId: venta.id,
+      sedeId: venta.sedeId,
+      usuarioId: req.usuario.userId,
+      cajaId: caja.id,
+      motivo: String(motivo).trim(),
+      total: totalDev,
+      metodoReembolso: metodo
+    }, { transaction });
+
+    for (const { item, cantidad, montoLinea } of lineas) {
+      await ItemDevolucion.create({
+        devolucionId: devolucion.id,
+        itemVentaId: item.id,
+        productoId: item.productoId,
+        cantidad,
+        montoLinea
+      }, { transaction });
+
+      const nuevaDevuelta = (parseInt(item.cantidadDevuelta, 10) || 0) + cantidad;
+      await item.update({ cantidadDevuelta: nuevaDevuelta }, { transaction });
+
+      const stock = await StockSede.findOne({
+        where: { productoId: item.productoId, sedeId: venta.sedeId },
+        transaction
+      });
+      if (stock) {
+        await stock.update({ cantidad: stock.cantidad + cantidad }, { transaction });
+      } else {
+        await StockSede.create({
+          productoId: item.productoId,
+          sedeId: venta.sedeId,
+          cantidad
+        }, { transaction });
+      }
+
+      await MovimientoInventario.create({
+        productoId: item.productoId,
+        sedeId: venta.sedeId,
+        tipo: 'entrada',
+        cantidad,
+        motivo: `Devolución cliente ${numero} (venta ${venta.numeroVenta})`,
+        referenciaId: devolucion.id,
+        usuarioId: req.usuario.userId
+      }, { transaction });
+
+      if (item.producto?.tieneNumeroSerie) {
+        const series = await NumeroSerie.findAll({
+          where: {
+            productoId: item.productoId,
+            sedeId: venta.sedeId,
+            estado: 'vendido',
+            ...(venta.clienteId ? { clienteId: venta.clienteId } : {})
+          },
+          order: [['updatedAt', 'DESC']],
+          limit: cantidad,
+          transaction
+        });
+
+        for (const s of series) {
+          await s.update({
+            estado: 'en_stock',
+            clienteId: null,
+            fechaVenta: null
+          }, { transaction });
+        }
+      }
+    }
+
+    // Ajuste de caja / crédito
+    if (metodo === 'credito' && venta.factura) {
+      const cpc = await CuentaPorCobrar.findOne({
+        where: { facturaId: venta.factura.id },
+        transaction
+      });
+      if (cpc) {
+        const nuevoSaldo = Math.max(0, parseFloat(cpc.saldoPendiente) - totalDev);
+        await cpc.update({
+          saldoPendiente: nuevoSaldo,
+          estado: nuevoSaldo <= 0 ? 'pagada' : cpc.estado
+        }, { transaction });
+        const nuevoSaldoVenta = Math.max(0, parseFloat(venta.saldoPendiente || 0) - totalDev);
+        await venta.update({ saldoPendiente: nuevoSaldoVenta }, { transaction });
+      }
+    } else if (METODOS_CAJA[metodo]) {
+      if (metodo === 'efectivo') {
+        const disponible = parseFloat(caja.montoApertura)
+          + parseFloat(caja.totalVentasEfectivo)
+          - parseFloat(caja.totalEgresos);
+        if (totalDev > disponible + 0.01) {
+          await transaction.rollback();
+          return res.status(400).json({
+            error: `No hay suficiente efectivo en caja para reembolsar (disponible: $${disponible.toLocaleString('es-CO')}).`
+          });
+        }
+        const cat = await ensureCategoriaDevolucion(transaction);
+        await EgresoCaja.create({
+          cajaId: caja.id,
+          usuarioId: req.usuario.userId,
+          categoriaId: cat.id,
+          monto: totalDev,
+          motivo: `Devolución ${numero} — ${venta.numeroVenta}: ${String(motivo).trim()}`,
+          requirioPin: false
+        }, { transaction });
+        await caja.update({
+          totalEgresos: parseFloat(caja.totalEgresos) + totalDev
+        }, { transaction });
+      } else {
+        const campo = METODOS_CAJA[metodo];
+        const actual = parseFloat(caja[campo]) || 0;
+        await caja.update({
+          [campo]: Math.max(0, actual - totalDev)
+        }, { transaction });
+      }
+    }
+
+    // Recalcular estado de devolución de la venta
+    await venta.reload({
+      include: [{ model: ItemVenta, as: 'items' }],
+      transaction
+    });
+    const allReturned = venta.items.every(
+      (i) => (parseInt(i.cantidadDevuelta, 10) || 0) >= i.cantidad
+    );
+    const anyReturned = venta.items.some(
+      (i) => (parseInt(i.cantidadDevuelta, 10) || 0) > 0
+    );
+    await venta.update({
+      devolucionEstado: allReturned ? 'total' : anyReturned ? 'parcial' : 'ninguna'
+    }, { transaction });
+
+    await transaction.commit();
+
+    if (req.logAudit) {
+      await req.logAudit({
+        accion: 'CREATE',
+        modulo: 'Devoluciones',
+        registroId: devolucion.id,
+        valorNuevo: { numero, ventaId: venta.id, total: totalDev, metodo }
+      });
+    }
+
+    const completa = await DevolucionVenta.findByPk(devolucion.id, {
+      include: [
+        { model: Usuario, as: 'usuario', attributes: ['nombre'] },
+        {
+          model: ItemDevolucion,
+          as: 'items',
+          include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras'] }]
+        },
+        {
+          model: Venta,
+          as: 'venta',
+          attributes: ['id', 'numeroVenta', 'devolucionEstado'],
+          include: [
+            { model: Cliente, as: 'cliente', attributes: ['nombre', 'documento'] },
+            { model: Sede, as: 'sede', attributes: ['nombre'] }
+          ]
+        }
+      ]
+    });
+
+    return res.status(201).json({
+      message: 'Devolución registrada con éxito.',
+      devolucion: completa
+    });
+  } catch (error) {
+    await transaction.rollback();
     next(error);
   }
 };

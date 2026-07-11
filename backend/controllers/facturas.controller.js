@@ -21,6 +21,7 @@ const {
 const { Op } = require('sequelize');
 const PDFDocument = require('pdfkit');
 const { resolveQuerySede } = require('../utils/sede');
+const { findCajaAbierta } = require('../utils/caja-abierta');
 const { generarFacturaPDF } = require('../utils/factura-pdf');
 const emailService = require('../services/email.service');
 
@@ -131,6 +132,20 @@ exports.anularFactura = async (req, res, next) => {
       return res.status(400).json({ error: 'Esta factura ya se encuentra anulada.' });
     }
 
+    // Bloquear anulación si ya hubo devoluciones parciales/totales del cliente
+    if (factura.ventaId) {
+      const ventaPrev = await Venta.findByPk(factura.ventaId, {
+        attributes: ['id', 'devolucionEstado'],
+        transaction
+      });
+      if (ventaPrev?.devolucionEstado && ventaPrev.devolucionEstado !== 'ninguna') {
+        await transaction.rollback();
+        return res.status(400).json({
+          error: 'Esta venta tiene devoluciones registradas. Use el flujo de devoluciones en Historial de Ventas; la anulación total no aplica.'
+        });
+      }
+    }
+
     const valorAnterior = factura.toJSON();
 
     // 1. Marcar Factura como anulada
@@ -147,7 +162,7 @@ exports.anularFactura = async (req, res, next) => {
       });
 
       if (venta) {
-        await venta.update({ estado: 'cancelada' }, { transaction });
+        await venta.update({ estado: 'anulada' }, { transaction });
 
         // Devolver productos al Stock de la Sede y registrar movimientos
         for (const item of venta.items) {
@@ -165,7 +180,7 @@ exports.anularFactura = async (req, res, next) => {
             sedeId: factura.sedeId,
             tipo: 'entrada',
             cantidad: item.cantidad,
-            motivo: `Devolución por anulación de Factura #${factura.numeroFactura}`,
+            motivo: `Anulación administrativa de Factura #${factura.numeroFactura}`,
             referenciaId: factura.id,
             usuarioId: req.usuario.userId
           }, { transaction });
@@ -201,8 +216,9 @@ exports.anularFactura = async (req, res, next) => {
         }
 
         // Revertir flujos de dinero de la Caja Abierta
-        const caja = await Caja.findOne({
-          where: { sedeId: factura.sedeId, estado: 'abierta' },
+        const { caja } = await findCajaAbierta({
+          sedeId: factura.sedeId,
+          usuarioId: req.usuario.userId,
           transaction
         });
 

@@ -4,7 +4,8 @@ const METODO_LABELS = {
   daviplata: 'Daviplata',
   tarjeta: 'Tarjeta',
   transferencia: 'Transferencia',
-  trade_in: 'Trade-in'
+  trade_in: 'Trade-in',
+  credito: 'Ajuste crédito'
 };
 
 function fmtAmount(n) {
@@ -54,7 +55,7 @@ export function renderPosReceipt({
   const ciudad = sedeNombre || 'Colombia';
   const telLine = telefono ? `Tels: ${telefono}` : 'Tels: /';
 
-  const cliente = clienteNombre || 'CLIENTE GENERAL';
+  const cliente = clienteNombre || 'CONSUMIDOR FINAL';
   const docCliente = clienteDocumento || '222222222-0';
   const dirCliente = clienteDireccion || '—';
 
@@ -161,6 +162,70 @@ export function renderPosReceipt({
       <footer class="pos-receipt__foot">
         <p>Elaborado por: ${empresaConfig.empresa || empresa} / POS</p>
         ${nit ? `<p>Nit: ${nit}</p>` : ''}
+      </footer>
+    </article>
+  `;
+}
+
+/**
+ * Comprobante de devolución de cliente (mismo layout térmico).
+ */
+export function renderDevolucionReceipt({
+  empresaConfig = {},
+  sedeNombre = '',
+  cajeroNombre = '',
+  clienteNombre = '',
+  numeroDevolucion = '',
+  numeroVenta = '',
+  fecha = new Date(),
+  items = [],
+  total = 0,
+  metodoReembolso = 'efectivo',
+  motivo = ''
+}) {
+  const empresa = (empresaConfig.empresa || 'TechStore Colombia').toUpperCase();
+  const nit = empresaConfig.nit || '';
+  const itemRows = items.map((item) => `
+    <tr>
+      <td class="pos-receipt__ct">${item.cantidad}</td>
+      <td class="pos-receipt__desc">${item.nombre || 'Producto'}</td>
+      <td class="pos-receipt__val">${fmtAmount(item.montoLinea)}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <article class="pos-receipt" id="pos-print-receipt">
+      <header class="pos-receipt__head">
+        <p class="pos-receipt__empresa">${empresa}</p>
+        ${nit ? `<p>${nit}</p>` : ''}
+        <p>${sedeNombre || 'Colombia'}</p>
+      </header>
+      <hr class="pos-receipt__rule pos-receipt__rule--thick">
+      <p class="pos-receipt__title">Devolución : ${numeroDevolucion}</p>
+      ${fieldLine('Fecha', fmtSiigoDate(fecha))}
+      ${fieldLine('Venta origen', numeroVenta)}
+      ${fieldLine('Cliente', clienteNombre || 'CONSUMIDOR FINAL')}
+      ${cajeroNombre ? fieldLine('Cajero', cajeroNombre) : ''}
+      <hr class="pos-receipt__rule pos-receipt__rule--thick">
+      <table class="pos-receipt__items">
+        <thead>
+          <tr><th>CT</th><th>Descripción</th><th>Valor</th></tr>
+        </thead>
+        <tbody>${itemRows}</tbody>
+      </table>
+      <hr class="pos-receipt__rule pos-receipt__rule--dash">
+      <div class="pos-receipt__total">
+        <span>Total reembolso:</span>
+        <span>${fmtAmount(total)}</span>
+      </div>
+      <div class="pos-receipt__pay-line">
+        <span>${METODO_LABELS[metodoReembolso] || metodoReembolso}</span>
+        <span>${fmtAmount(total)}</span>
+      </div>
+      ${motivo ? `<p class="pos-receipt__line" style="margin-top:8px"><span>Motivo :</span> ${motivo}</p>` : ''}
+      <hr class="pos-receipt__rule pos-receipt__rule--thick">
+      <footer class="pos-receipt__foot">
+        <p>Comprobante de devolución de cliente</p>
       </footer>
     </article>
   `;

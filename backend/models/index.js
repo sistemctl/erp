@@ -35,6 +35,8 @@ const MovimientoInventario = require('./MovimientoInventario');
 const Notificacion = require('./Notificacion');
 const AuditLog = require('./AuditLog');
 const ConfiguracionSistema = require('./ConfiguracionSistema');
+const DevolucionVenta = require('./DevolucionVenta');
+const ItemDevolucion = require('./ItemDevolucion');
 
 // --- Relaciones ---
 
@@ -81,6 +83,22 @@ Producto.hasMany(ItemVenta, { foreignKey: 'productoId', as: 'itemsVenta' });
 // PagoVenta <-> Venta
 PagoVenta.belongsTo(Venta, { foreignKey: 'ventaId', as: 'venta' });
 Venta.hasMany(PagoVenta, { foreignKey: 'ventaId', as: 'pagos' });
+
+// DevolucionVenta <-> Venta, Sede, Usuario, Caja
+DevolucionVenta.belongsTo(Venta, { foreignKey: 'ventaId', as: 'venta' });
+DevolucionVenta.belongsTo(Sede, { foreignKey: 'sedeId', as: 'sede' });
+DevolucionVenta.belongsTo(Usuario, { foreignKey: 'usuarioId', as: 'usuario' });
+DevolucionVenta.belongsTo(Caja, { foreignKey: 'cajaId', as: 'caja' });
+Venta.hasMany(DevolucionVenta, { foreignKey: 'ventaId', as: 'devoluciones' });
+Sede.hasMany(DevolucionVenta, { foreignKey: 'sedeId', as: 'devolucionesVenta' });
+Usuario.hasMany(DevolucionVenta, { foreignKey: 'usuarioId', as: 'devolucionesVenta' });
+
+// ItemDevolucion <-> DevolucionVenta, ItemVenta, Producto
+ItemDevolucion.belongsTo(DevolucionVenta, { foreignKey: 'devolucionId', as: 'devolucion' });
+ItemDevolucion.belongsTo(ItemVenta, { foreignKey: 'itemVentaId', as: 'itemVenta' });
+ItemDevolucion.belongsTo(Producto, { foreignKey: 'productoId', as: 'producto' });
+DevolucionVenta.hasMany(ItemDevolucion, { foreignKey: 'devolucionId', as: 'items' });
+ItemVenta.hasMany(ItemDevolucion, { foreignKey: 'itemVentaId', as: 'devoluciones' });
 
 // Cotizacion <-> Cliente, Usuario, Sede, Venta, OrdenReparacion
 Cotizacion.belongsTo(Cliente, { foreignKey: 'clienteId', as: 'cliente' });
@@ -252,5 +270,7 @@ module.exports = {
   MovimientoInventario,
   Notificacion,
   AuditLog,
-  ConfiguracionSistema
+  ConfiguracionSistema,
+  DevolucionVenta,
+  ItemDevolucion
 };

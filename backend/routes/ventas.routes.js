@@ -8,5 +8,7 @@ router.get('/', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente
 router.post('/', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'cajero']), ventasController.procesarVenta);
 router.get('/descuentos', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'contador']), ventasController.getDescuentos);
 router.get('/comisiones', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'contador']), ventasController.getComisiones);
+router.get('/:id/devoluciones', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'contador', 'cajero']), ventasController.getDevolucionesVenta);
+router.post('/:id/devolucion', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'cajero']), ventasController.crearDevolucionVenta);
 
 module.exports = router;
