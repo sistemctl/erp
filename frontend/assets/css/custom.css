@@ -3272,10 +3272,14 @@ body.btn-style-square .btn:not(.btn-icon) {
   color: var(--erp-accent);
   pointer-events: none;
   opacity: 0.85;
+  z-index: 1;
 }
 
+/* Más específico que .erp-module .erp-filter-card .form-control { padding: … !important } */
+.erp-module .inv-scan-input .form-control,
+.erp-module .erp-filter-card .inv-scan-input .form-control,
 .inv-scan-input .form-control {
-  padding-left: 2rem !important;
+  padding-left: 2.15rem !important;
   font-family: var(--inv-mono);
   letter-spacing: 0.01em;
 }
@@ -3681,10 +3685,13 @@ body.btn-style-square .btn:not(.btn-icon) {
   font-size: 1rem;
   color: var(--erp-muted);
   pointer-events: none;
+  z-index: 1;
 }
 
+/* Más específico que .erp-module .form-control { padding: … !important } */
+.erp-module .rep-search-wrap .form-control,
 .rep-search-wrap .form-control {
-  padding-left: 2.35rem !important;
+  padding-left: 2.4rem !important;
 }
 
 .rep-toolbar {
