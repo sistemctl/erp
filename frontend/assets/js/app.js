@@ -334,8 +334,9 @@ async function router() {
         await initNomina(contentContainer);
         break;
       case '#/compras':
-        const { initCompras } = await import('./modules/compras.js');
+        const { initCompras, destroyCompras } = await import('./modules/compras.js');
         await initCompras(contentContainer);
+        window.activeModuleCleanup = destroyCompras;
         break;
       case '#/proveedores':
         const { initProveedores } = await import('./modules/proveedores.js');

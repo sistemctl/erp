@@ -2,8 +2,11 @@ import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
 import { erpHeader } from '../utils/module-shell.js';
+import { initBarcodeScanner, destroyBarcodeScanner } from '../utils/barcode.js';
+import { showToast } from '../utils/toast.js';
 
 export async function initCompras(container) {
+  destroyBarcodeScanner();
   const usuario = getUsuario();
   const isAdminOrContador = ['admin', 'superadmin', 'contador'].includes(usuario.rol);
   const isAdminOrGerente = ['admin', 'superadmin', 'gerente_sede'].includes(usuario.rol);
@@ -215,10 +218,18 @@ export async function initCompras(container) {
                   <div class="row g-2 align-items-end mb-4 border p-3 rounded bg-light-lt">
                     <div class="col-md-6">
                       <label class="form-label">Producto del Catálogo</label>
-                      <select id="oc-producto-select" class="form-select select2">
+                      <select id="oc-producto-select" class="form-select select2" aria-describedby="oc-producto-scan-hint">
                         <option value="">-- Buscar Producto --</option>
-                        ${productos.map(p => `<option value="${p.id}">${p.nombre} (Costo sugerido: $${p.precioCosto})</option>`).join('')}
+                        ${productos.map((p) => {
+                          const codigo = p.codigoBarras || 's/c';
+                          const costo = Number(p.precioCosto) || 0;
+                          return `<option value="${p.id}" data-barcode="${String(codigo).replace(/"/g, '&quot;')}">${p.nombre} · ${codigo} (Costo sugerido: $${costo})</option>`;
+                        }).join('')}
                       </select>
+                      <div id="oc-producto-scan-hint" class="form-hint mt-1">
+                        <i class="ti ti-barcode me-1" aria-hidden="true"></i>
+                        Escanee el código de barras para seleccionar y agregar el producto
+                      </div>
                     </div>
                     <div class="col-md-2">
                       <label class="form-label">Costo Unitario ($)</label>
@@ -608,6 +619,39 @@ export async function initCompras(container) {
   const tbodyCart = document.getElementById('oc-items-body');
   const labelTotal = document.getElementById('oc-cart-total');
 
+  function findProductoByBarcode(barcode) {
+    const code = String(barcode || '').trim().toLowerCase();
+    if (!code) return null;
+    return productos.find((p) => String(p.codigoBarras || '').trim().toLowerCase() === code) || null;
+  }
+
+  function selectProductoEnFormulario(prod) {
+    if (!selectProd || !prod) return;
+    selectProd.value = prod.id;
+    if (inputCosto) {
+      inputCosto.value = Math.round(Number(prod.precioCosto) || 0);
+    }
+    if (inputCant && (!inputCant.value || parseInt(inputCant.value, 10) < 1)) {
+      inputCant.value = 1;
+    }
+    selectProd.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function addProductoAlCarrito({ productoId, nombre, cantidadPedida, precioUnitario }) {
+    const exist = cartItems.find((item) => item.productoId === productoId);
+    if (exist) {
+      exist.cantidadPedida += cantidadPedida;
+    } else {
+      cartItems.push({
+        productoId,
+        nombre,
+        cantidadPedida,
+        precioUnitario
+      });
+    }
+    renderCart();
+  }
+
   if (selectProd) {
     selectProd.addEventListener('change', () => {
       const pId = selectProd.value;
@@ -631,20 +675,50 @@ export async function initCompras(container) {
       const prod = productos.find(p => p.id === pId);
       if (!prod) return;
 
-      // Check duplicates
-      const exist = cartItems.find(item => item.productoId === pId);
-      if (exist) {
-        exist.cantidadPedida += cant;
-      } else {
-        cartItems.push({
-          productoId: pId,
-          nombre: prod.nombre,
-          cantidadPedida: cant,
-          precioUnitario: costo
-        });
+      addProductoAlCarrito({
+        productoId: pId,
+        nombre: prod.nombre,
+        cantidadPedida: cant,
+        precioUnitario: costo
+      });
+    });
+
+    // Lector USB HID: escanea en "Nueva OC" y agrega al pedido
+    initBarcodeScanner((barcode) => {
+      const tabNuevaOc = document.getElementById('tab-nueva-oc');
+      if (!tabNuevaOc || !tabNuevaOc.classList.contains('active')) return;
+
+      const prod = findProductoByBarcode(barcode);
+      if (!prod) {
+        showToast('Código no encontrado', `No hay producto con código: ${barcode}`, 'error');
+        return;
       }
 
-      renderCart();
+      selectProductoEnFormulario(prod);
+
+      const costo = Math.round(Number(prod.precioCosto) || 0);
+      const cant = parseInt(inputCant?.value || 1, 10) || 1;
+
+      if (costo <= 0) {
+        showToast(
+          'Producto encontrado',
+          `${prod.nombre}: indique el costo unitario y pulse Agregar.`,
+          'warning'
+        );
+        inputCosto?.focus();
+        inputCosto?.select?.();
+        return;
+      }
+
+      addProductoAlCarrito({
+        productoId: prod.id,
+        nombre: prod.nombre,
+        cantidadPedida: cant,
+        precioUnitario: costo
+      });
+
+      if (inputCant) inputCant.value = 1;
+      showToast('Producto agregado', `${prod.nombre} × ${cant}`, 'success');
     });
   }
 
@@ -1249,3 +1323,8 @@ export async function initCompras(container) {
     updatePagoHints();
   }
 }
+
+export function destroyCompras() {
+  destroyBarcodeScanner();
+}
+

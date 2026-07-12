@@ -7,6 +7,11 @@
  * Uso:
  *   node scripts/migrate-odoo.js --dry-run
  *   node scripts/migrate-odoo.js --execute
+ *   node scripts/migrate-odoo.js --inventory-only --dry-run
+ *   node scripts/migrate-odoo.js --inventory-only --execute
+ *
+ * --inventory-only: limpia solo categorías/productos/stock (y FKs de líneas)
+ *   y migra categorías + productos + stock a la sede principal existente.
  *
  * Variables en backend/.env:
  *   DB_*          → destino erp_techstore
@@ -34,6 +39,7 @@ const {
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const EXECUTE = args.includes('--execute');
+const INVENTORY_ONLY = args.includes('--inventory-only');
 
 const stats = {
   sedes: { inserted: 0, skipped: 0 },
@@ -89,7 +95,9 @@ async function columnExists(db, tableName, columnName) {
 }
 
 async function probeOdoo(odoo) {
-  const required = ['res_partner', 'product_template'];
+  const required = INVENTORY_ONLY
+    ? ['product_template']
+    : ['res_partner', 'product_template'];
   const optional = [
     'product_product',
     'product_category',
@@ -100,11 +108,12 @@ async function probeOdoo(odoo) {
     'sale_order_line',
     'account_move',
     'purchase_order',
-    'purchase_order_line'
+    'purchase_order_line',
+    'res_partner'
   ];
 
   const present = {};
-  for (const t of [...required, ...optional]) {
+  for (const t of [...new Set([...required, ...optional])]) {
     present[t] = await tableExists(odoo, t);
   }
 
@@ -163,7 +172,7 @@ async function countOdoo(odoo, present) {
   return counts;
 }
 
-const TABLES_TO_TRUNCATE = [
+const TABLES_TO_TRUNCATE_FULL = [
   'AuditLogs',
   'Abonos',
   'CuentasPorCobrar',
@@ -197,17 +206,90 @@ const TABLES_TO_TRUNCATE = [
   'Sedes'
 ];
 
+/** Solo inventario: conserva sedes, usuarios, clientes, ventas cabecera, etc. */
+const TABLES_TO_TRUNCATE_INVENTORY = [
+  'ItemsDevolucion',
+  'ItemsVenta',
+  'ItemsCotizacion',
+  'RepuestosOrden',
+  'ItemsOrdenCompra',
+  'MovimientosInventario',
+  'NumerosSerie',
+  'StockSedes',
+  'Productos',
+  'Categorias'
+];
+
 async function cleanErp(transaction) {
+  if (INVENTORY_ONLY) {
+    console.log('Limpiando solo inventario (conservando sedes, usuarios y resto)...');
+    try {
+      await sequelize.query(
+        'UPDATE "TradeIns" SET "productoInventarioId" = NULL WHERE "productoInventarioId" IS NOT NULL',
+        { transaction }
+      );
+    } catch (e) {
+      warn(`UPDATE TradeIns: ${e.message}`);
+    }
+    for (const table of TABLES_TO_TRUNCATE_INVENTORY) {
+      try {
+        await sequelize.query(`TRUNCATE TABLE "${table}" CASCADE`, { transaction });
+      } catch (e) {
+        warn(`TRUNCATE ${table}: ${e.message}`);
+      }
+    }
+    return;
+  }
+
   console.log('Limpiando erp_techstore (conservando Usuarios y ConfiguracionesSistema)...');
   await sequelize.query('UPDATE "Usuarios" SET "sedeId" = NULL', { transaction });
 
-  for (const table of TABLES_TO_TRUNCATE) {
+  for (const table of TABLES_TO_TRUNCATE_FULL) {
     try {
       await sequelize.query(`TRUNCATE TABLE "${table}" CASCADE`, { transaction });
     } catch (e) {
       warn(`TRUNCATE ${table}: ${e.message}`);
     }
   }
+}
+
+/** Odoo 16+ puede devolver jsonb { "es_CO": "..." } o string. */
+function localizeText(raw, fallback = '') {
+  if (raw == null) return fallback;
+  if (typeof raw === 'object') {
+    return String(
+      raw.es_CO || raw.es_ES || raw.en_US || Object.values(raw)[0] || fallback
+    );
+  }
+  const s = String(raw).trim();
+  if (s.startsWith('{') && s.includes(':')) {
+    try {
+      return localizeText(JSON.parse(s), fallback);
+    } catch {
+      return s || fallback;
+    }
+  }
+  return s || fallback;
+}
+
+/** Odoo 18: standard_price en product_product suele ser jsonb {"1": 23000}. */
+function parseMoney(raw) {
+  if (raw == null || raw === '') return 0;
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : 0;
+  if (typeof raw === 'object') {
+    const vals = Object.values(raw).map((v) => Number(v)).filter((n) => Number.isFinite(n));
+    return vals.length ? vals[0] : 0;
+  }
+  const s = String(raw).trim();
+  if (s.startsWith('{')) {
+    try {
+      return parseMoney(JSON.parse(s));
+    } catch {
+      return Number(s) || 0;
+    }
+  }
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
 }
 
 function uniqueBarcode(raw, odooId, used) {
@@ -223,7 +305,41 @@ function uniqueBarcode(raw, odooId, used) {
   return code;
 }
 
+async function migrateSedesExisting(transaction) {
+  console.log('→ Sedes (reutilizar existentes)');
+  const map = new Map();
+  const sedes = await Sede.findAll({
+    where: { activa: true },
+    order: [['createdAt', 'ASC']],
+    transaction: EXECUTE ? transaction : undefined
+  });
+
+  if (!sedes.length) {
+    if (EXECUTE) {
+      const sede = await Sede.create(
+        { nombre: 'Principal', direccion: 'Migrada desde Odoo', telefono: null, activa: true },
+        { transaction }
+      );
+      map.set('default', sede.id);
+      stats.sedes.inserted = 1;
+    } else {
+      stats.sedes.inserted = 1;
+      map.set('default', 'dry-run-sede');
+    }
+    return map;
+  }
+
+  map.set('default', sedes[0].id);
+  stats.sedes.skipped = sedes.length;
+  console.log(`  Usando sede principal: ${sedes[0].nombre} (${sedes[0].id})`);
+  return map;
+}
+
 async function migrateSedes(odoo, present, transaction) {
+  if (INVENTORY_ONLY) {
+    return migrateSedesExisting(transaction);
+  }
+
   console.log('→ Sedes');
   const map = new Map(); // odoo warehouse id → erp uuid
   let rows = [];
@@ -269,7 +385,7 @@ async function migrateSedes(odoo, present, transaction) {
     if (EXECUTE) {
       const sede = await Sede.create(
         {
-          nombre: String(r.name || `Sede ${r.id}`).slice(0, 255),
+          nombre: String(localizeText(r.name, `Sede ${r.id}`)).slice(0, 255),
           direccion: String(r.direccion || 'Sin dirección').slice(0, 255) || 'Sin dirección',
           telefono: r.telefono ? String(r.telefono).slice(0, 50) : null,
           activa: true
@@ -317,10 +433,10 @@ async function migrateCategorias(odoo, present, transaction) {
   }
 
   for (const r of rows) {
-    const nombre = String(r.complete_name || r.name || `Cat ${r.id}`).slice(0, 255);
+    const nombre = String(localizeText(r.complete_name || r.name, `Cat ${r.id}`)).slice(0, 255);
     if (EXECUTE) {
       const cat = await Categoria.create(
-        { nombre, descripcion: r.name ? String(r.name).slice(0, 255) : null },
+        { nombre, descripcion: r.name ? String(localizeText(r.name)).slice(0, 255) : null },
         { transaction }
       );
       map.set(r.id, cat.id);
@@ -417,12 +533,7 @@ async function migrateProductos(odoo, present, catMap, transaction) {
   }
 
   for (const r of rows) {
-    let nombre = r.name_raw;
-    // Odoo 16+ sometimes stores name as JSON {"en_US":"..."}
-    if (nombre && typeof nombre === 'object') {
-      nombre = nombre.es_CO || nombre.es_ES || nombre.en_US || Object.values(nombre)[0] || `Producto ${r.product_id}`;
-    }
-    nombre = String(nombre || `Producto ${r.product_id}`).slice(0, 255);
+    const nombre = String(localizeText(r.name_raw, `Producto ${r.product_id}`)).slice(0, 255);
 
     const codigoBarras = uniqueBarcode(r.barcode || r.default_code, r.product_id, usedBarcodes);
     const categoriaId = catMap.get(r.categ_id) || catMap.get('default');
@@ -431,14 +542,20 @@ async function migrateProductos(odoo, present, catMap, transaction) {
       continue;
     }
 
+    const precioVenta = parseMoney(r.list_price);
+    const precioCosto = parseMoney(r.standard_price);
+    const descripcionRaw = r.description_sale
+      ? localizeText(r.description_sale, '')
+      : '';
+
     if (EXECUTE) {
       const prod = await Producto.create(
         {
           nombre,
           codigoBarras,
-          descripcion: r.description_sale ? String(r.description_sale).slice(0, 5000) : null,
-          precioVenta: Number(r.list_price) || 0,
-          precioCosto: Number(r.standard_price) || 0,
+          descripcion: descripcionRaw ? String(descripcionRaw).slice(0, 5000) : null,
+          precioVenta,
+          precioCosto,
           tieneIVA: true,
           stockMinimo: 0,
           tieneNumeroSerie: false,
@@ -569,6 +686,40 @@ async function migratePartners(odoo, sedeMap, transaction) {
 
 async function migrateStock(odoo, present, productMap, sedeMap, transaction) {
   console.log('→ Stock');
+  const defaultSedeId = sedeMap.get('default');
+  const allSedeIds = [];
+
+  if (INVENTORY_ONLY && EXECUTE) {
+    const sedes = await Sede.findAll({
+      where: { activa: true },
+      attributes: ['id'],
+      transaction
+    });
+    for (const s of sedes) allSedeIds.push(s.id);
+  } else if (defaultSedeId) {
+    allSedeIds.push(defaultSedeId);
+  }
+
+  // Inicializar stock 0 en todas las sedes para cada producto importado
+  if (EXECUTE && allSedeIds.length) {
+    const uniqueErpIds = [...new Set(
+      [...productMap.entries()]
+        .filter(([k]) => !String(k).startsWith('tmpl:'))
+        .map(([, v]) => v)
+        .filter((id) => id && !String(id).startsWith('dry-'))
+    )];
+
+    for (const productoId of uniqueErpIds) {
+      for (const sedeId of allSedeIds) {
+        await StockSede.findOrCreate({
+          where: { productoId, sedeId },
+          defaults: { productoId, sedeId, cantidad: 0 },
+          transaction
+        });
+      }
+    }
+  }
+
   if (!present.stock_quant) {
     warn('Sin stock_quant: se omite inventario');
     return;
@@ -577,7 +728,7 @@ async function migrateStock(odoo, present, productMap, sedeMap, transaction) {
   const hasWarehouseOnLocation = await columnExists(odoo, 'stock_location', 'warehouse_id');
   let rows;
 
-  if (present.stock_location && hasWarehouseOnLocation) {
+  if (present.stock_location && hasWarehouseOnLocation && !INVENTORY_ONLY) {
     rows = await odoo.query(
       `SELECT q.product_id, loc.warehouse_id, SUM(q.quantity)::float AS qty
        FROM stock_quant q
@@ -589,7 +740,7 @@ async function migrateStock(odoo, present, productMap, sedeMap, transaction) {
       { type: QueryTypes.SELECT }
     );
   } else {
-    // Sin warehouse en location: todo a sede default
+    // Inventory-only (o sin warehouse en location): todo a sede default
     rows = await odoo.query(
       `SELECT q.product_id, NULL AS warehouse_id, SUM(q.quantity)::float AS qty
        FROM stock_quant q
@@ -607,7 +758,9 @@ async function migrateStock(odoo, present, productMap, sedeMap, transaction) {
       stats.stock.skipped += 1;
       continue;
     }
-    const sedeId = (r.warehouse_id && sedeMap.get(r.warehouse_id)) || sedeMap.get('default');
+    const sedeId = INVENTORY_ONLY
+      ? defaultSedeId
+      : ((r.warehouse_id && sedeMap.get(r.warehouse_id)) || defaultSedeId);
     if (!sedeId) {
       stats.stock.skipped += 1;
       continue;
@@ -620,7 +773,12 @@ async function migrateStock(odoo, present, productMap, sedeMap, transaction) {
     const [productoId, sedeId] = key.split('|');
     if (cantidad <= 0) continue;
     if (EXECUTE) {
-      await StockSede.create({ productoId, sedeId, cantidad }, { transaction });
+      const [stock] = await StockSede.findOrCreate({
+        where: { productoId, sedeId },
+        defaults: { productoId, sedeId, cantidad: 0 },
+        transaction
+      });
+      await stock.update({ cantidad }, { transaction });
     }
     stats.stock.inserted += 1;
   }
@@ -961,6 +1119,8 @@ async function main() {
     console.error('Indica --dry-run o --execute');
     console.error('  node scripts/migrate-odoo.js --dry-run');
     console.error('  node scripts/migrate-odoo.js --execute');
+    console.error('  node scripts/migrate-odoo.js --inventory-only --dry-run');
+    console.error('  node scripts/migrate-odoo.js --inventory-only --execute');
     process.exit(1);
   }
   if (DRY_RUN && EXECUTE) {
@@ -969,6 +1129,7 @@ async function main() {
   }
 
   console.log('Migración Odoo → ERP TechStore');
+  console.log(`Modo: ${INVENTORY_ONLY ? 'SOLO INVENTARIO' : 'COMPLETA'}`);
   console.log(`Destino: ${process.env.DB_NAME || 'erp_techstore'} @ ${process.env.DB_HOST || 'localhost'}`);
   console.log(`Origen:  ${process.env.ODOO_DB_NAME || 'odoo_db'} @ ${process.env.ODOO_DB_HOST || process.env.DB_HOST || 'localhost'}`);
   console.log('IMPORTANTE: haz backup de erp_techstore antes de --execute\n');
@@ -995,32 +1156,39 @@ async function main() {
       if (EXECUTE) {
         await cleanErp(transaction);
       } else {
-        console.log('(dry-run) se omitiría TRUNCATE de tablas de negocio\n');
+        console.log(
+          INVENTORY_ONLY
+            ? '(dry-run) se omitiría TRUNCATE de inventario (productos/categorías/stock)\n'
+            : '(dry-run) se omitiría TRUNCATE de tablas de negocio\n'
+        );
       }
 
       const sedeMap = await migrateSedes(odoo, present, transaction);
       const catMap = await migrateCategorias(odoo, present, transaction);
       const productMap = await migrateProductos(odoo, present, catMap, transaction);
-      const { clienteMap, proveedorMap } = await migratePartners(odoo, sedeMap, transaction);
       await migrateStock(odoo, present, productMap, sedeMap, transaction);
 
-      let usuarioId = 'dry-user';
-      if (EXECUTE) {
-        usuarioId = await getDefaultUsuarioId(sedeMap, transaction);
-      } else {
-        const u = await Usuario.findOne({ where: { activo: true }, order: [['createdAt', 'ASC']] });
-        if (!u) warn('No hay usuarios locales; en --execute se creará admin.migracion@local');
-        else usuarioId = u.id;
-      }
+      if (!INVENTORY_ONLY) {
+        const { clienteMap, proveedorMap } = await migratePartners(odoo, sedeMap, transaction);
 
-      const orderMap = await migrateVentas(
-        odoo, present, productMap, clienteMap, sedeMap, usuarioId, transaction
-      );
-      await migrateFacturas(odoo, present, clienteMap, sedeMap, orderMap, transaction);
-      await migrateCompras(
-        odoo, present, productMap, proveedorMap, sedeMap, usuarioId, transaction
-      );
-      await rebindUsuarios(sedeMap, transaction);
+        let usuarioId = 'dry-user';
+        if (EXECUTE) {
+          usuarioId = await getDefaultUsuarioId(sedeMap, transaction);
+        } else {
+          const u = await Usuario.findOne({ where: { activo: true }, order: [['createdAt', 'ASC']] });
+          if (!u) warn('No hay usuarios locales; en --execute se creará admin.migracion@local');
+          else usuarioId = u.id;
+        }
+
+        const orderMap = await migrateVentas(
+          odoo, present, productMap, clienteMap, sedeMap, usuarioId, transaction
+        );
+        await migrateFacturas(odoo, present, clienteMap, sedeMap, orderMap, transaction);
+        await migrateCompras(
+          odoo, present, productMap, proveedorMap, sedeMap, usuarioId, transaction
+        );
+        await rebindUsuarios(sedeMap, transaction);
+      }
 
       if (EXECUTE) {
         await transaction.commit();
