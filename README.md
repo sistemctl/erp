@@ -61,7 +61,8 @@ erp/
 │   └── seeders/          # Datos de prueba
 ├── frontend/             # SPA estática (sin build)
 ├── Dockerfile            # Imagen del ERP
-├── docker-compose.erp.yml
+├── docker-compose.yml          # Dokploy / producción
+├── docker-compose.erp.yml      # Local sin Dokploy
 ├── .env.docker.example   # Variables para Docker Compose
 └── docker/homelab/       # Stack opcional Pi-hole + Nginx (proxy/DNS local)
 ```
@@ -229,6 +230,55 @@ Reinicia el contenedor del ERP:
 ```bash
 docker compose -f docker-compose.erp.yml restart erp
 ```
+
+---
+
+## Instalación con Dokploy
+
+Despliegue en un VPS con [Dokploy](https://dokploy.com) usando el compose de producción (`docker-compose.yml`).
+
+### 1. Crear el servicio Compose
+
+1. En Dokploy: **Project** → **Create Service** → **Compose**
+2. Compose Type: **Docker Compose** (no Stack; hace falta `build`)
+3. Provider: GitHub / Git → repo `sistemctl/erp` → rama `3.0` (o la que uses)
+4. **Compose Path:** `./docker-compose.yml`
+5. Guardar
+
+### 2. Variables de entorno
+
+En la pestaña **Environment**, pega el contenido de [`.env.docker.example`](.env.docker.example) y define al menos:
+
+```env
+DB_PASS=tu_contraseña_segura
+JWT_SECRET=genera_una_clave_aleatoria_de_32_caracteres_o_mas
+PUBLIC_BASE_URL=https://erp.tudominio.com
+CORS_ORIGINS=https://erp.tudominio.com
+```
+
+Usa el mismo dominio que vas a configurar en Dokploy.
+
+### 3. Dominio
+
+1. Pestaña **Domains** → Add Domain
+2. Servicio: **erp**
+3. Puerto: **3000**
+4. Activa HTTPS / certificado Let's Encrypt
+5. Apunta el DNS (A/CNAME) al servidor de Dokploy
+
+### 4. Desplegar
+
+Pulsa **Deploy** y espera a que construya la imagen y arranque `postgres` + `erp`.
+
+Comprueba salud:
+
+```
+https://erp.tudominio.com/api/health
+```
+
+Volúmenes persistentes: `pgdata` (PostgreSQL) y `erp_uploads` (archivos). Puedes respaldarlos desde **Volume Backups** en Dokploy.
+
+> Local sin Dokploy: sigue usando `docker-compose.erp.yml` (no requiere la red `dokploy-network`).
 
 ---
 

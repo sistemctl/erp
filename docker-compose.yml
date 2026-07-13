@@ -1,19 +1,28 @@
-# ERP TechStore — PostgreSQL + aplicación Node.js (uso local)
-# Uso: cp .env.docker.example .env && docker compose -f docker-compose.erp.yml up -d --build
-# Para Dokploy usa: docker-compose.yml
+# ERP TechStore — Docker Compose para Dokploy
+#
+# En Dokploy:
+#   1. Nuevo servicio → Compose → tipo "Docker Compose"
+#   2. Provider Git → repo sistemctl/erp → rama 3.0 (o la que uses)
+#   3. Compose Path: ./docker-compose.yml
+#   4. Environment: pega las variables de .env.docker.example (DB_PASS, JWT_SECRET, etc.)
+#   5. Domains: servicio "erp", puerto 3000, tu dominio + HTTPS
+#   6. Deploy
+#
+# Para uso local sin Dokploy usa: docker-compose.erp.yml
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: erp-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-erp_techstore}
       POSTGRES_USER: ${DB_USER:-erp_user}
-      POSTGRES_PASSWORD: ${DB_PASS:?Defina DB_PASS en el archivo .env}
+      POSTGRES_PASSWORD: ${DB_PASS:?Defina DB_PASS en Environment de Dokploy}
       TZ: ${TZ:-America/Bogota}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
@@ -25,13 +34,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: erp-app
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+    # Solo expuesto a la red Docker; Dokploy/Traefik enruta el dominio
     ports:
-      - "${ERP_HOST_PORT:-3000}:3000"
+      - "3000"
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -40,8 +49,8 @@ services:
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-erp_techstore}
       DB_USER: ${DB_USER:-erp_user}
-      DB_PASS: ${DB_PASS:?Defina DB_PASS en el archivo .env}
-      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET en el archivo .env}
+      DB_PASS: ${DB_PASS:?Defina DB_PASS en Environment de Dokploy}
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET en Environment de Dokploy}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
@@ -53,9 +62,16 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
     volumes:
       - erp_uploads:/app/backend/uploads
+    networks:
+      - dokploy-network
+      - internal
 
 volumes:
   pgdata:
-    name: erp_pgdata
   erp_uploads:
-    name: erp_uploads
+
+networks:
+  dokploy-network:
+    external: true
+  internal:
+    driver: bridge
