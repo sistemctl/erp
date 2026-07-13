@@ -18,7 +18,7 @@ El backend sirve la API REST (`/api/*`), archivos subidos (`/uploads`) y el fron
 1. [Requisitos](#requisitos)
 2. [Estructura del repositorio](#estructura-del-repositorio)
 3. [Variables de entorno](#variables-de-entorno)
-4. [Instalación con Docker](#instalación-con-docker)
+4. [Instalación con Dokploy](#instalación-con-dokploy)
 5. [Instalación en servidor Linux](#instalación-en-servidor-linux)
 6. [Datos de prueba (seeder)](#datos-de-prueba-seeder)
 7. [Migración desde Odoo](#migración-desde-odoo-odoo_db--erp_techstore)
@@ -30,12 +30,12 @@ El backend sirve la API REST (`/api/*`), archivos subidos (`/uploads`) y el fron
 
 ## Requisitos
 
-### Instalación con Docker
+### Instalación con Dokploy
 
 | Herramienta | Versión mínima |
 |-------------|----------------|
-| [Docker Engine](https://docs.docker.com/engine/install/) | 24+ |
-| [Docker Compose](https://docs.docker.com/compose/install/) | v2+ |
+| [Dokploy](https://dokploy.com) en un VPS | reciente |
+| Docker Engine + Compose (gestionado por Dokploy) | 24+ / v2+ |
 | Git | cualquier versión reciente |
 
 ### Instalación nativa en Linux
@@ -61,10 +61,8 @@ erp/
 │   └── seeders/          # Datos de prueba
 ├── frontend/             # SPA estática (sin build)
 ├── Dockerfile            # Imagen del ERP
-├── docker-compose.yml          # Dokploy / producción
-├── docker-compose.erp.yml      # Local sin Dokploy
-├── .env.docker.example   # Variables para Docker Compose
-└── docker/homelab/       # Stack opcional Pi-hole + Nginx (proxy/DNS local)
+├── docker-compose.yml    # Dokploy (postgres + erp)
+└── .env.docker.example   # Variables para Environment de Dokploy
 ```
 
 ---
@@ -75,7 +73,7 @@ Copia la plantilla según el método de instalación:
 
 | Método | Archivo plantilla | Destino |
 |--------|-------------------|---------|
-| Docker | [`.env.docker.example`](.env.docker.example) | `.env` (raíz del repo) |
+| Dokploy | [`.env.docker.example`](.env.docker.example) | Environment del servicio Compose |
 | Linux / desarrollo | [`backend/.env.example`](backend/.env.example) | `backend/.env` |
 
 ### Variables obligatorias
@@ -112,136 +110,23 @@ Copia la plantilla según el método de instalación:
 
 ---
 
-## Instalación con Docker
-
-Despliega **PostgreSQL** y el **ERP** en contenedores. No necesitas instalar Node.js ni PostgreSQL en tu máquina.
-
-### 1. Clonar el repositorio
-
-```bash
-git clone https://github.com/sistemctl/erp.git
-cd erp
-```
-
-### 2. Configurar variables de entorno
-
-Copia la plantilla y edítala:
-
-```bash
-cp .env.docker.example .env
-```
-
-Abre `.env` y cambia **obligatoriamente** estos valores:
-
-```env
-DB_PASS=tu_contraseña_segura
-JWT_SECRET=genera_una_clave_aleatoria_de_32_caracteres_o_mas
-```
-
-Si el puerto `3000` ya está en uso en tu equipo, cambia también:
-
-```env
-ERP_HOST_PORT=3001
-```
-
-### 3. Construir e iniciar los contenedores
-
-```bash
-docker compose -f docker-compose.erp.yml up -d --build
-```
-
-La primera ejecución puede tardar varios minutos: descarga imágenes, instala dependencias con `npm ci` y sincroniza la base de datos.
-
-### 4. Verificar que todo funciona
-
-```bash
-# Estado de los contenedores
-docker compose -f docker-compose.erp.yml ps
-
-# Logs del ERP
-docker compose -f docker-compose.erp.yml logs -f erp
-
-# Comprobar que responde
-curl http://localhost:3000/api/health
-```
-
-Respuesta esperada:
-
-```json
-{"ok":true,"puerto":3000,"urlPublica":"http://localhost:3000"}
-```
-
-> Si cambiaste `ERP_HOST_PORT`, usa ese puerto en lugar de `3000`.
-
-### 5. Abrir la aplicación
-
-En el navegador:
-
-```
-http://localhost:3000
-```
-
-Usa el puerto que hayas definido en `ERP_HOST_PORT` si no es el `3000`.
-
-### 6. Cargar datos de prueba (opcional)
-
-```bash
-docker compose -f docker-compose.erp.yml exec erp node seeders/seeder.js
-```
-
-Credenciales después del seeder:
-
-| Rol | Email | Contraseña |
-|-----|-------|------------|
-| Admin | `admin@techstore.com` | `admin123` |
-
-### Comandos útiles
-
-```bash
-# Detener contenedores
-docker compose -f docker-compose.erp.yml down
-
-# Detener y borrar volúmenes (elimina la base de datos)
-docker compose -f docker-compose.erp.yml down -v
-
-# Reiniciar solo el ERP
-docker compose -f docker-compose.erp.yml restart erp
-
-# Actualizar después de un git pull
-git pull
-docker compose -f docker-compose.erp.yml up -d --build
-
-# Respaldo de PostgreSQL
-docker compose -f docker-compose.erp.yml exec postgres \
-  pg_dump -U erp_user erp_techstore > backup_$(date +%F).sql
-```
-
-### HTTPS con Nginx delante de Docker (opcional)
-
-Si publicas el ERP con un dominio, configura un proxy inverso en el host apuntando al puerto `ERP_HOST_PORT` y agrega en `.env`:
-
-```env
-PUBLIC_BASE_URL=https://erp.tudominio.com
-CORS_ORIGINS=https://erp.tudominio.com
-```
-
-Reinicia el contenedor del ERP:
-
-```bash
-docker compose -f docker-compose.erp.yml restart erp
-```
-
----
-
 ## Instalación con Dokploy
 
-Despliegue en un VPS con [Dokploy](https://dokploy.com) usando el compose de producción (`docker-compose.yml`).
+Despliegue en un VPS con [Dokploy](https://dokploy.com) usando [`docker-compose.yml`](docker-compose.yml).
+
+| Capa | Puerto |
+|------|--------|
+| Contenedor `erp` | **3000** (`PORT=3000`) |
+| Host / IP del VPS | **8080** (mapeo `8080:3000`) |
+| Dokploy Domains | **3000** (proxy → contenedor) |
+
+PostgreSQL **no** publica el puerto 5432: solo está en la red `internal` del stack. Solo el contenedor `erp` puede conectarse.
 
 ### 1. Crear el servicio Compose
 
 1. En Dokploy: **Project** → **Create Service** → **Compose**
 2. Compose Type: **Docker Compose** (no Stack; hace falta `build`)
-3. Provider: GitHub / Git → repo `sistemctl/erp` → rama `3.0` (o la que uses)
+3. Provider: GitHub / Git → repo → rama
 4. **Compose Path:** `./docker-compose.yml`
 5. Guardar
 
@@ -276,9 +161,33 @@ Comprueba salud:
 https://erp.tudominio.com/api/health
 ```
 
+Acceso directo por IP (sin dominio):
+
+```
+http://IP_DEL_VPS:8080
+```
+
 Volúmenes persistentes: `pgdata` (PostgreSQL) y `erp_uploads` (archivos). Puedes respaldarlos desde **Volume Backups** en Dokploy.
 
-> Local sin Dokploy: sigue usando `docker-compose.erp.yml` (no requiere la red `dokploy-network`).
+### 5. Seed opcional
+
+```bash
+docker compose exec erp node seeders/seeder.js
+```
+
+### Comandos útiles
+
+```bash
+# Logs
+docker compose logs -f erp
+
+# Reiniciar solo el ERP
+docker compose restart erp
+
+# Respaldo de PostgreSQL
+docker compose exec postgres \
+  pg_dump -U erp_user erp_techstore > backup_$(date +%F).sql
+```
 
 ---
 
@@ -476,8 +385,8 @@ El seeder **borra datos existentes** y carga sedes, usuarios, productos y config
 # Instalación nativa
 cd backend && node seeders/seeder.js
 
-# Docker
-docker compose -f docker-compose.erp.yml exec erp node seeders/seeder.js
+# Docker (Dokploy)
+docker compose exec erp node seeders/seeder.js
 ```
 
 ---
@@ -524,8 +433,8 @@ node scripts/migrate-odoo.js --execute
 Con Docker (si el contenedor alcanza ambas bases):
 
 ```bash
-docker compose -f docker-compose.erp.yml exec erp node scripts/migrate-odoo.js --dry-run
-docker compose -f docker-compose.erp.yml exec erp node scripts/migrate-odoo.js --execute
+docker compose exec erp node scripts/migrate-odoo.js --dry-run
+docker compose exec erp node scripts/migrate-odoo.js --execute
 ```
 
 > Si Odoo y el ERP están en el mismo PostgreSQL del host, desde Docker usa `DB_HOST=host.docker.internal` (o la IP del host) y lo mismo en `ODOO_DB_HOST`.
@@ -534,10 +443,10 @@ docker compose -f docker-compose.erp.yml exec erp node scripts/migrate-odoo.js -
 
 ## Mantenimiento
 
-| Tarea | Docker | Linux |
-|-------|--------|-------|
-| Ver logs | `docker compose -f docker-compose.erp.yml logs -f erp` | `journalctl -u erp -f` |
-| Reiniciar | `docker compose -f docker-compose.erp.yml restart erp` | `sudo systemctl restart erp` |
+| Tarea | Docker (Dokploy) | Linux |
+|-------|------------------|-------|
+| Ver logs | `docker compose logs -f erp` | `journalctl -u erp -f` |
+| Reiniciar | `docker compose restart erp` | `sudo systemctl restart erp` |
 | Respaldo BD | `pg_dump` vía contenedor `postgres` | `pg_dump` local |
 | Subidas | Volumen `erp_uploads` | `backend/uploads/` |
 
@@ -553,8 +462,8 @@ docker compose -f docker-compose.erp.yml exec erp node scripts/migrate-odoo.js -
 
 ### Puerto 3000 ya en uso
 
-- Cambia `ERP_HOST_PORT` en `.env` (Docker) o `PORT` en `backend/.env` (Linux).
-- En Linux con systemd, reinicia el servicio después del cambio.
+- Docker/Dokploy: el contenedor usa 3000; el host publica **8080**. Si 8080 está ocupado, cambia el mapeo en `docker-compose.yml`.
+- Linux: cambia `PORT` en `backend/.env` y reinicia el servicio.
 
 ### Error CORS en el navegador
 
@@ -570,7 +479,7 @@ docker compose -f docker-compose.erp.yml exec erp node scripts/migrate-odoo.js -
 ### Health check falla en Docker
 
 - La primera sincronización de Sequelize puede tardar. Espera hasta 90 segundos.
-- Revisa logs: `docker compose -f docker-compose.erp.yml logs erp`
+- Revisa logs: `docker compose logs erp`
 
 ### Subidas de archivos no persisten (Docker)
 
@@ -584,7 +493,6 @@ docker compose -f docker-compose.erp.yml exec erp node scripts/migrate-odoo.js -
 |-----------|-----------|
 | [`INSTRUCCIONES_IA_DESARROLLADOR.md`](INSTRUCCIONES_IA_DESARROLLADOR.md) | Guía técnica detallada para desarrollo |
 | [`Plan_ERP_TechStore.md`](Plan_ERP_TechStore.md) | Plan funcional y arquitectura |
-| [`docker/homelab/README.md`](docker/homelab/README.md) | Stack opcional Pi-hole + Nginx para DNS/HTTPS en red local (no sustituye el Docker del ERP) |
 
 ---
 

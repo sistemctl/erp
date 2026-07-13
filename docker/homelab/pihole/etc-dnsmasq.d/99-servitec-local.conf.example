@@ -1,5 +1,0 @@
-# Copie este archivo a 99-servitec-local.conf y reemplace HOST_IP
-# O ejecute: .\scripts\setup-local-dns.ps1
-
-address=/servitec.erp.local/HOST_IP
-address=/servitec.pi-hole.local/HOST_IP

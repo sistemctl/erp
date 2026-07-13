@@ -2,13 +2,18 @@
 #
 # En Dokploy:
 #   1. Nuevo servicio → Compose → tipo "Docker Compose"
-#   2. Provider Git → repo sistemctl/erp → rama 3.0 (o la que uses)
+#   2. Provider Git → repo → rama
 #   3. Compose Path: ./docker-compose.yml
-#   4. Environment: pega las variables de .env.docker.example (DB_PASS, JWT_SECRET, etc.)
+#   4. Environment: pega las variables de .env.docker.example
 #   5. Domains: servicio "erp", puerto 3000, tu dominio + HTTPS
 #   6. Deploy
 #
-# Para uso local sin Dokploy usa: docker-compose.erp.yml
+# Puertos:
+#   Contenedor erp → 3000
+#   Host / IP     → 8080  (mapeo 8080:3000)
+#   Domains       → 3000  (proxy de Dokploy al contenedor)
+#
+# Postgres solo en red internal (sin ports; no expuesto a internet).
 
 services:
   postgres:
@@ -38,9 +43,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # Contenedor 3000 → host 3000 (acceso por IP:3000 o dominio)
     ports:
-      - "3000:3000"
+      - "8080:3000"
     environment:
       NODE_ENV: production
       PORT: 3000

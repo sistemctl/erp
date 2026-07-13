@@ -31,3 +31,16 @@ Thumbs.db
 # Scratch files
 scratch/
 backend/scratch/
+
+# Database dumps and backups (never commit)
+*.sql
+*.backup
+backup_*.json
+erp_*.sql
+erp_*.backup
+
+# One-off / local tooling
+temp_deploy/
+.agents/
+.cursor/skills/
+skills-lock.json
