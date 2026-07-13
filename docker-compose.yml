@@ -38,9 +38,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # Solo expuesto a la red Docker; Dokploy/Traefik enruta el dominio
+    # Contenedor 3000 → host 3000 (acceso por IP:3000 o dominio)
     ports:
-      - "3000"
+      - "3000:3000"
     environment:
       NODE_ENV: production
       PORT: 3000
