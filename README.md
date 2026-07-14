@@ -93,7 +93,7 @@ Copia la plantilla según el método de instalación:
 |----------|-------------|
 | `NODE_ENV` | `production` en servidores reales |
 | `PORT` | Puerto HTTP interno (por defecto `3000`) |
-| `PUBLIC_BASE_URL` | URL pública con HTTPS, ej. `https://starsystem.turnocedes.com` |
+| `PUBLIC_BASE_URL` | URL pública con HTTPS, ej. `https://erp.tudominio.com` |
 | `CORS_ORIGINS` | Orígenes permitidos separados por coma (dominio e IP) |
 
 ### Variables opcionales
@@ -137,8 +137,8 @@ En la pestaña **Environment**, pega el contenido de [`.env.docker.example`](.en
 ```env
 DB_PASS=tu_contraseña_segura
 JWT_SECRET=genera_una_clave_aleatoria_de_32_caracteres_o_mas
-PUBLIC_BASE_URL=https://starsystem.turnocedes.com
-CORS_ORIGINS=https://starsystem.turnocedes.com,http://IP_DEL_VPS:8080
+PUBLIC_BASE_URL=https://erp.tudominio.com
+CORS_ORIGINS=https://erp.tudominio.com,http://IP_DEL_VPS:8080
 ```
 
 Usa el dominio de Dokploy en `PUBLIC_BASE_URL` y añade la IP `:8080` en `CORS_ORIGINS` si también entras por IP. Si cambia la IP del VPS, actualiza el segundo origen.
@@ -148,7 +148,7 @@ Usa el dominio de Dokploy en `PUBLIC_BASE_URL` y añade la IP `:8080` en `CORS_O
 1. Pestaña **Domains** → Add Domain
 2. Servicio: **erp**
 3. Puerto: **3000**
-4. Host: `starsystem.turnocedes.com`
+4. Host: `erp.tudominio.com`
 5. Activa HTTPS / certificado Let's Encrypt
 6. Apunta el DNS (A/CNAME) al servidor de Dokploy
 
@@ -159,7 +159,7 @@ Pulsa **Deploy** y espera a que construya la imagen y arranque `postgres` + `erp
 Comprueba salud:
 
 ```
-https://starsystem.turnocedes.com/api/health
+https://erp.tudominio.com/api/health
 ```
 
 Acceso directo por IP (mapeo host `8080` → contenedor `3000`):
@@ -265,8 +265,8 @@ DB_USER=erp_user
 DB_PASS=tu_contraseña_segura
 JWT_SECRET=genera_una_clave_aleatoria_de_32_caracteres_o_mas
 JWT_EXPIRES_IN=8h
-PUBLIC_BASE_URL=https://starsystem.turnocedes.com
-CORS_ORIGINS=https://starsystem.turnocedes.com,http://IP_DEL_VPS:8080
+PUBLIC_BASE_URL=https://erp.tudominio.com
+CORS_ORIGINS=https://erp.tudominio.com,http://IP_DEL_VPS:8080
 ```
 
 ### 7. Instalar dependencias y probar el arranque
@@ -323,13 +323,13 @@ sudo systemctl status erp
 
 ### 9. Configurar Nginx como proxy inverso
 
-Reemplaza `starsystem.turnocedes.com` si usas otro dominio:
+Reemplaza `erp.tudominio.com` si usas otro dominio:
 
 ```bash
 sudo tee /etc/nginx/sites-available/erp > /dev/null <<'EOF'
 server {
     listen 80;
-    server_name starsystem.turnocedes.com;
+    server_name erp.tudominio.com;
 
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -352,7 +352,7 @@ sudo systemctl reload nginx
 ### 10. Habilitar HTTPS con Let's Encrypt
 
 ```bash
-sudo certbot --nginx -d starsystem.turnocedes.com
+sudo certbot --nginx -d erp.tudominio.com
 ```
 
 Certbot renovará el certificado automáticamente.
@@ -485,7 +485,7 @@ docker compose exec erp node scripts/migrate-odoo.js --execute
 ### Error CORS en el navegador
 
 - En producción define `CORS_ORIGINS` con cada origen exacto (protocolo + host + puerto si aplica).
-- Ejemplo: `CORS_ORIGINS=https://starsystem.turnocedes.com,http://IP_DEL_VPS:8080`
+- Ejemplo: `CORS_ORIGINS=https://erp.tudominio.com,http://IP_DEL_VPS:8080`
 
 ### `502 Bad Gateway` detrás de Nginx
 
