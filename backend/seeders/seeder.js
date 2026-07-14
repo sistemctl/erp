@@ -34,6 +34,14 @@ const runSeeder = async () => {
     // 2. Crear Usuarios (uno por rol)
     const usuarios = await Usuario.bulkCreate([
       {
+        nombre: 'Super Administrador',
+        email: 'admin@licoreria.com',
+        password: 'admin123',
+        rol: 'superadmin',
+        sedeId: null,
+        activo: true
+      },
+      {
         nombre: 'Admin TechStore',
         email: 'admin@techstore.com',
         password: 'admin123',

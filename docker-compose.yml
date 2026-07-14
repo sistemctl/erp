@@ -3,15 +3,17 @@
 # En Dokploy:
 #   1. Nuevo servicio → Compose → tipo "Docker Compose"
 #   2. Provider Git → repo → rama
-#   3. Compose Path: ./docker-compose.yml
+#   3. Compose Path: ./docker-compose.yml  (con el punto al inicio)
 #   4. Environment: pega las variables de .env.docker.example
-#   5. Domains: servicio "erp", puerto 3000, tu dominio + HTTPS
+#      (PUBLIC_BASE_URL + CORS_ORIGINS con dominio e IP)
+#   5. Domains: servicio "erp", puerto 3000, HTTPS
+#      Dominio: starsystem.turnocedes.com
 #   6. Deploy
 #
 # Puertos:
 #   Contenedor erp → 3000
-#   Host / IP     → 8080  (mapeo 8080:3000)
-#   Domains       → 3000  (proxy de Dokploy al contenedor)
+#   Host / IP      → 8080  (http://187.33.148.48:8080)
+#   Domains        → 3000  (proxy Dokploy → contenedor)
 #
 # Postgres solo en red internal (sin ports; no expuesto a internet).
 

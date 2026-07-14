@@ -93,8 +93,8 @@ Copia la plantilla según el método de instalación:
 |----------|-------------|
 | `NODE_ENV` | `production` en servidores reales |
 | `PORT` | Puerto HTTP interno (por defecto `3000`) |
-| `PUBLIC_BASE_URL` | URL pública con HTTPS, ej. `https://erp.tudominio.com` |
-| `CORS_ORIGINS` | Dominios permitidos separados por coma |
+| `PUBLIC_BASE_URL` | URL pública con HTTPS, ej. `https://starsystem.turnocedes.com` |
+| `CORS_ORIGINS` | Orígenes permitidos separados por coma (dominio e IP) |
 
 ### Variables opcionales
 
@@ -106,7 +106,7 @@ Copia la plantilla según el método de instalación:
 | `SMTP_*` | Correo saliente (también configurable en la UI) |
 | `TWILIO_*` | SMS/WhatsApp (también configurable en la UI) |
 
-> **Nota:** Con `NODE_ENV=production`, las IPs de red local **no** se aceptan automáticamente por CORS. Debes definir `CORS_ORIGINS` con tus dominios HTTPS.
+> **Nota:** Con `NODE_ENV=production`, las IPs públicas **no** se aceptan automáticamente por CORS. Incluye dominio e IP en `CORS_ORIGINS` (ej. dominio HTTPS + `http://IP:8080`).
 
 ---
 
@@ -137,19 +137,20 @@ En la pestaña **Environment**, pega el contenido de [`.env.docker.example`](.en
 ```env
 DB_PASS=tu_contraseña_segura
 JWT_SECRET=genera_una_clave_aleatoria_de_32_caracteres_o_mas
-PUBLIC_BASE_URL=https://erp.tudominio.com
-CORS_ORIGINS=https://erp.tudominio.com
+PUBLIC_BASE_URL=https://starsystem.turnocedes.com
+CORS_ORIGINS=https://starsystem.turnocedes.com,http://187.33.148.48:8080
 ```
 
-Usa el mismo dominio que vas a configurar en Dokploy.
+Usa el dominio de Dokploy en `PUBLIC_BASE_URL` y añade la IP `:8080` en `CORS_ORIGINS` si también entras por IP. Si cambia la IP del VPS, actualiza el segundo origen.
 
 ### 3. Dominio
 
 1. Pestaña **Domains** → Add Domain
 2. Servicio: **erp**
 3. Puerto: **3000**
-4. Activa HTTPS / certificado Let's Encrypt
-5. Apunta el DNS (A/CNAME) al servidor de Dokploy
+4. Host: `starsystem.turnocedes.com`
+5. Activa HTTPS / certificado Let's Encrypt
+6. Apunta el DNS (A/CNAME) al servidor de Dokploy
 
 ### 4. Desplegar
 
@@ -158,13 +159,13 @@ Pulsa **Deploy** y espera a que construya la imagen y arranque `postgres` + `erp
 Comprueba salud:
 
 ```
-https://erp.tudominio.com/api/health
+https://starsystem.turnocedes.com/api/health
 ```
 
-Acceso directo por IP (sin dominio):
+Acceso directo por IP (mapeo host `8080` → contenedor `3000`):
 
 ```
-http://IP_DEL_VPS:8080
+http://187.33.148.48:8080
 ```
 
 Volúmenes persistentes: `pgdata` (PostgreSQL) y `erp_uploads` (archivos). Puedes respaldarlos desde **Volume Backups** en Dokploy.
@@ -174,6 +175,13 @@ Volúmenes persistentes: `pgdata` (PostgreSQL) y `erp_uploads` (archivos). Puede
 ```bash
 docker compose exec erp node seeders/seeder.js
 ```
+
+Credenciales iniciales del seeder (tras ejecutarlo):
+
+| Rol | Email | Contraseña |
+|-----|-------|------------|
+| Superadmin | `admin@licoreria.com` | `admin123` |
+| Admin | `admin@techstore.com` | `admin123` |
 
 ### Comandos útiles
 
@@ -257,8 +265,8 @@ DB_USER=erp_user
 DB_PASS=tu_contraseña_segura
 JWT_SECRET=genera_una_clave_aleatoria_de_32_caracteres_o_mas
 JWT_EXPIRES_IN=8h
-PUBLIC_BASE_URL=https://erp.tudominio.com
-CORS_ORIGINS=https://erp.tudominio.com
+PUBLIC_BASE_URL=https://starsystem.turnocedes.com
+CORS_ORIGINS=https://starsystem.turnocedes.com,http://187.33.148.48:8080
 ```
 
 ### 7. Instalar dependencias y probar el arranque
@@ -315,13 +323,13 @@ sudo systemctl status erp
 
 ### 9. Configurar Nginx como proxy inverso
 
-Reemplaza `erp.tudominio.com` por tu dominio real:
+Reemplaza `starsystem.turnocedes.com` si usas otro dominio:
 
 ```bash
 sudo tee /etc/nginx/sites-available/erp > /dev/null <<'EOF'
 server {
     listen 80;
-    server_name erp.tudominio.com;
+    server_name starsystem.turnocedes.com;
 
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -344,7 +352,7 @@ sudo systemctl reload nginx
 ### 10. Habilitar HTTPS con Let's Encrypt
 
 ```bash
-sudo certbot --nginx -d erp.tudominio.com
+sudo certbot --nginx -d starsystem.turnocedes.com
 ```
 
 Certbot renovará el certificado automáticamente.
@@ -388,6 +396,15 @@ cd backend && node seeders/seeder.js
 # Docker (Dokploy)
 docker compose exec erp node seeders/seeder.js
 ```
+
+| Rol | Email | Contraseña |
+|-----|-------|------------|
+| Superadmin | `admin@licoreria.com` | `admin123` |
+| Admin | `admin@techstore.com` | `admin123` |
+| Gerente sede | `gerente@techstore.com` | `gerente123` |
+| Cajero | `cajero@techstore.com` | `cajero123` |
+| Técnico | `tecnico@techstore.com` | `tecnico123` |
+| Contador | `contador@techstore.com` | `contador123` |
 
 ---
 
@@ -467,8 +484,8 @@ docker compose exec erp node scripts/migrate-odoo.js --execute
 
 ### Error CORS en el navegador
 
-- En producción define `CORS_ORIGINS` con la URL exacta (protocolo + dominio).
-- Ejemplo: `CORS_ORIGINS=https://erp.tudominio.com`
+- En producción define `CORS_ORIGINS` con cada origen exacto (protocolo + host + puerto si aplica).
+- Ejemplo: `CORS_ORIGINS=https://starsystem.turnocedes.com,http://187.33.148.48:8080`
 
 ### `502 Bad Gateway` detrás de Nginx
 
