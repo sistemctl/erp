@@ -12,7 +12,7 @@
 #
 # Puertos:
 #   Contenedor erp → 3000
-#   Host / IP      → 8080  (http://187.33.148.48:8080)
+#   Host / IP      → 8080  (http://IP_DEL_VPS:8080)
 #   Domains        → 3000  (proxy Dokploy → contenedor)
 #
 # Postgres solo en red internal (sin ports; no expuesto a internet).

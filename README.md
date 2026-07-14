@@ -138,7 +138,7 @@ En la pestaña **Environment**, pega el contenido de [`.env.docker.example`](.en
 DB_PASS=tu_contraseña_segura
 JWT_SECRET=genera_una_clave_aleatoria_de_32_caracteres_o_mas
 PUBLIC_BASE_URL=https://starsystem.turnocedes.com
-CORS_ORIGINS=https://starsystem.turnocedes.com,http://187.33.148.48:8080
+CORS_ORIGINS=https://starsystem.turnocedes.com,http://IP_DEL_VPS:8080
 ```
 
 Usa el dominio de Dokploy en `PUBLIC_BASE_URL` y añade la IP `:8080` en `CORS_ORIGINS` si también entras por IP. Si cambia la IP del VPS, actualiza el segundo origen.
@@ -165,7 +165,7 @@ https://starsystem.turnocedes.com/api/health
 Acceso directo por IP (mapeo host `8080` → contenedor `3000`):
 
 ```
-http://187.33.148.48:8080
+http://IP_DEL_VPS:8080
 ```
 
 Volúmenes persistentes: `pgdata` (PostgreSQL) y `erp_uploads` (archivos). Puedes respaldarlos desde **Volume Backups** en Dokploy.
@@ -266,7 +266,7 @@ DB_PASS=tu_contraseña_segura
 JWT_SECRET=genera_una_clave_aleatoria_de_32_caracteres_o_mas
 JWT_EXPIRES_IN=8h
 PUBLIC_BASE_URL=https://starsystem.turnocedes.com
-CORS_ORIGINS=https://starsystem.turnocedes.com,http://187.33.148.48:8080
+CORS_ORIGINS=https://starsystem.turnocedes.com,http://IP_DEL_VPS:8080
 ```
 
 ### 7. Instalar dependencias y probar el arranque
@@ -485,7 +485,7 @@ docker compose exec erp node scripts/migrate-odoo.js --execute
 ### Error CORS en el navegador
 
 - En producción define `CORS_ORIGINS` con cada origen exacto (protocolo + host + puerto si aplica).
-- Ejemplo: `CORS_ORIGINS=https://starsystem.turnocedes.com,http://187.33.148.48:8080`
+- Ejemplo: `CORS_ORIGINS=https://starsystem.turnocedes.com,http://IP_DEL_VPS:8080`
 
 ### `502 Bad Gateway` detrás de Nginx
 
