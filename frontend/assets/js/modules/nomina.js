@@ -21,6 +21,15 @@ export async function initNomina(container) {
     return;
   }
 
+  // Evitar modal/backdrop huérfanos y fixed roto dentro de .erp-module
+  ['modal-empleado', 'modal-calcular-nomina', 'modal-detalle-liquidacion'].forEach((id) => {
+    document.getElementById(id)?.remove();
+  });
+  document.querySelectorAll('.modal-backdrop').forEach((el) => el.remove());
+  document.body.classList.remove('modal-open');
+  document.body.style.removeProperty('overflow');
+  document.body.style.removeProperty('padding-right');
+
   let empleados = [];
   let nominas = [];
   let sedes = [];
@@ -133,81 +142,124 @@ export async function initNomina(container) {
 
     <!-- Modal Empleado Form -->
     <div class="modal modal-blur fade" id="modal-empleado" tabindex="-1" role="dialog" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered" role="document">
+      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" role="document">
         <div class="modal-content">
-          <form id="form-empleado">
+          <form id="form-empleado" class="nomina-emp-form">
             <input type="hidden" id="emp-id">
-            <div class="modal-header">
-              <h5 class="modal-title" id="modal-title-empleado">Registrar Empleado</h5>
+            <div class="modal-header nomina-emp-modal__header">
+              <div class="nomina-emp-modal__intro">
+                <p class="nomina-emp-modal__eyebrow">Ficha de nómina</p>
+                <h5 class="modal-title" id="modal-title-empleado">Registrar Empleado</h5>
+              </div>
               <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-              <div class="mb-3">
-                <label class="form-label required">Nombre Completo</label>
-                <input type="text" id="emp-nombre" class="form-control" required placeholder="Ej: Diana Valencia">
-              </div>
-              <div class="mb-3">
-                <label class="form-label required">Cédula de Ciudadanía</label>
-                <input type="text" id="emp-documento" class="form-control" required placeholder="Ej: 1020456789">
-              </div>
-              <div class="row">
-                <div class="col-6 mb-3">
-                  <label class="form-label">Teléfono</label>
-                  <input type="text" id="emp-telefono" class="form-control" placeholder="Ej: 3109876543">
+            <div class="modal-body nomina-emp-modal__body">
+              <section class="nomina-emp-section" aria-labelledby="emp-sec-identidad">
+                <header class="nomina-emp-section__head">
+                  <span class="nomina-emp-section__index" aria-hidden="true">01</span>
+                  <h6 class="nomina-emp-section__title" id="emp-sec-identidad">Identidad</h6>
+                </header>
+                <div class="row g-2 g-md-3">
+                  <div class="col-md-7">
+                    <label class="form-label required" for="emp-nombre">Nombre completo</label>
+                    <input type="text" id="emp-nombre" class="form-control" required placeholder="Ej: Diana Valencia" autocomplete="name">
+                  </div>
+                  <div class="col-md-5">
+                    <label class="form-label required" for="emp-documento">Cédula</label>
+                    <input type="text" id="emp-documento" class="form-control" required placeholder="Ej: 1020456789" inputmode="numeric" autocomplete="off">
+                  </div>
                 </div>
-                <div class="col-6 mb-3">
-                  <label class="form-label">Email</label>
-                  <input type="email" id="emp-email" class="form-control" placeholder="Ej: diana@techstore.com" spellcheck="false">
+              </section>
+
+              <section class="nomina-emp-section" aria-labelledby="emp-sec-contacto">
+                <header class="nomina-emp-section__head">
+                  <span class="nomina-emp-section__index" aria-hidden="true">02</span>
+                  <h6 class="nomina-emp-section__title" id="emp-sec-contacto">Contacto</h6>
+                </header>
+                <div class="row g-2 g-md-3">
+                  <div class="col-sm-5">
+                    <label class="form-label" for="emp-telefono">Teléfono</label>
+                    <input type="text" id="emp-telefono" class="form-control" placeholder="Ej: 3109876543" inputmode="tel" autocomplete="tel">
+                  </div>
+                  <div class="col-sm-7">
+                    <label class="form-label" for="emp-email">Email</label>
+                    <input type="email" id="emp-email" class="form-control" placeholder="Ej: diana@empresa.com" spellcheck="false" autocomplete="email">
+                  </div>
                 </div>
-              </div>
-              <div class="row">
-                <div class="col-6 mb-3">
-                  <label class="form-label">Cargo</label>
-                  <input type="text" id="emp-cargo" class="form-control" placeholder="Ej: Técnico Senior">
+              </section>
+
+              <section class="nomina-emp-section" aria-labelledby="emp-sec-contrato">
+                <header class="nomina-emp-section__head">
+                  <span class="nomina-emp-section__index" aria-hidden="true">03</span>
+                  <h6 class="nomina-emp-section__title" id="emp-sec-contrato">Contrato / sede</h6>
+                </header>
+                <div class="row g-2 g-md-3">
+                  <div class="col-md-6">
+                    <label class="form-label" for="emp-cargo">Cargo</label>
+                    <input type="text" id="emp-cargo" class="form-control" placeholder="Ej: Técnico Senior">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label required" for="emp-sede">Sede</label>
+                    <select id="emp-sede" class="form-select" required>
+                      ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label required" for="emp-contrato">Tipo de contrato</label>
+                    <select id="emp-contrato" class="form-select" required>
+                      <option value="indefinido">Indefinido</option>
+                      <option value="fijo">Término fijo</option>
+                      <option value="prestacion_servicios">Prestación de servicios</option>
+                    </select>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label required" for="emp-fecha-ingreso">Fecha de ingreso</label>
+                    <input type="date" id="emp-fecha-ingreso" class="form-control" required>
+                  </div>
                 </div>
-                <div class="col-6 mb-3">
-                  <label class="form-label required">Sede Principal</label>
-                  <select id="emp-sede" class="form-select" required>
-                    ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
-                  </select>
+                <div class="nomina-emp-wage" role="group" aria-label="Remuneración mensual">
+                  <div class="nomina-emp-wage__rail" aria-hidden="true"></div>
+                  <div class="nomina-emp-wage__body">
+                    <div class="nomina-emp-wage__meta">
+                      <span class="nomina-emp-wage__eyebrow">Remuneración</span>
+                      <span class="nomina-emp-wage__hint">Base + auxilio</span>
+                    </div>
+                    <div class="nomina-emp-wage__salary">
+                      <label class="form-label required" for="emp-salario">Salario mensual (COP)</label>
+                      <div class="nomina-emp-wage__amount">
+                        <span class="nomina-emp-wage__currency" aria-hidden="true">$</span>
+                        <input type="number" id="emp-salario" class="form-control" min="0" required placeholder="0">
+                      </div>
+                    </div>
+                    <div class="form-check form-switch nomina-emp-switch">
+                      <input class="form-check-input" type="checkbox" role="switch" id="emp-aux-transporte" checked>
+                      <label class="form-check-label" for="emp-aux-transporte">
+                        <span class="nomina-emp-switch__title">Auxilio de transporte</span>
+                        <span class="nomina-emp-switch__hint">Aplica si gana ≤ 2 SMLV</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div class="row">
-                <div class="col-6 mb-3">
-                  <label class="form-label required">Tipo Contrato</label>
-                  <select id="emp-contrato" class="form-select" required>
-                    <option value="indefinido">Indefinido</option>
-                    <option value="fijo">Término Fijo</option>
-                    <option value="prestacion_servicios">Prestación de Servicios</option>
-                  </select>
+              </section>
+
+              <section class="nomina-emp-section nomina-emp-section--last" aria-labelledby="emp-sec-pago">
+                <header class="nomina-emp-section__head">
+                  <span class="nomina-emp-section__index" aria-hidden="true">04</span>
+                  <h6 class="nomina-emp-section__title" id="emp-sec-pago">Pago</h6>
+                </header>
+                <div class="row g-2 g-md-3">
+                  <div class="col-md-5">
+                    <label class="form-label" for="emp-banco">Banco</label>
+                    <input type="text" id="emp-banco" class="form-control" placeholder="Bancolombia" autocomplete="off">
+                  </div>
+                  <div class="col-md-7">
+                    <label class="form-label" for="emp-cuenta">Número de cuenta</label>
+                    <input type="text" id="emp-cuenta" class="form-control" placeholder="987-654321-01" autocomplete="off">
+                  </div>
                 </div>
-                <div class="col-6 mb-3">
-                  <label class="form-label required">Salario Mensual ($ COP)</label>
-                  <input type="number" id="emp-salario" class="form-control" min="0" required placeholder="COP">
-                </div>
-              </div>
-              <div class="mb-3">
-                <label class="form-check form-switch mt-2">
-                  <input class="form-check-input" type="checkbox" id="emp-aux-transporte" checked>
-                  <span class="form-check-label">Aplica Auxilio de Transporte (Si gana <= 2 SMLV)</span>
-                </label>
-              </div>
-              <div class="mb-3">
-                <label class="form-label required">Fecha de Ingreso</label>
-                <input type="date" id="emp-fecha-ingreso" class="form-control" required>
-              </div>
-              <div class="row">
-                <div class="col-6 mb-3">
-                  <label class="form-label">Banco</label>
-                  <input type="text" id="emp-banco" class="form-control" placeholder="Bancolombia">
-                </div>
-                <div class="col-6 mb-3">
-                  <label class="form-label">Cuenta de Ahorros</label>
-                  <input type="text" id="emp-cuenta" class="form-control" placeholder="987-654321-01">
-                </div>
-              </div>
+              </section>
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer nomina-emp-modal__footer">
               <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancelar</button>
               <button type="submit" class="btn btn-primary ms-auto">Guardar Colaborador</button>
             </div>
@@ -297,9 +349,33 @@ export async function initNomina(container) {
 
   const tbodyEmp = document.getElementById('empleados-table-body');
   const tbodyNom = document.getElementById('nominas-table-body');
-  const modalEmp = new bootstrap.Modal(document.getElementById('modal-empleado'));
-  const modalCalc = new bootstrap.Modal(document.getElementById('modal-calcular-nomina'));
-  const modalDetalle = new bootstrap.Modal(document.getElementById('modal-detalle-liquidacion'));
+
+  // position:fixed se rompe dentro de .erp-module (animación); mover modales a body
+  const modalEmpEl = document.getElementById('modal-empleado');
+  const modalCalcEl = document.getElementById('modal-calcular-nomina');
+  const modalDetalleEl = document.getElementById('modal-detalle-liquidacion');
+  [modalEmpEl, modalCalcEl, modalDetalleEl].forEach((el) => {
+    if (el && el.parentElement !== document.body) {
+      document.body.appendChild(el);
+    }
+  });
+
+  const modalEmp = new bootstrap.Modal(modalEmpEl);
+  const modalCalc = new bootstrap.Modal(modalCalcEl);
+  const modalDetalle = new bootstrap.Modal(modalDetalleEl);
+
+  window.activeModuleCleanup = () => {
+    try { modalEmp.hide(); } catch (_) { /* ignore */ }
+    try { modalCalc.hide(); } catch (_) { /* ignore */ }
+    try { modalDetalle.hide(); } catch (_) { /* ignore */ }
+    modalEmpEl?.remove();
+    modalCalcEl?.remove();
+    modalDetalleEl?.remove();
+    document.querySelectorAll('.modal-backdrop').forEach((el) => el.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('overflow');
+    document.body.style.removeProperty('padding-right');
+  };
 
   const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 

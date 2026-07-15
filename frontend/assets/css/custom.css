@@ -7881,3 +7881,299 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
     font-size: 0.58rem;
   }
 }
+
+/* Nómina · ficha colaborador (modal)
+   Form wraps header/body/footer, so Bootstrap scrollable needs flex+min-height:0
+   so .modal-body (not .modal-content) is the scroll container. */
+#modal-empleado .modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 3.5rem);
+  overflow: hidden;
+}
+
+#modal-empleado .nomina-emp-form {
+  --nomina-emp-ink: var(--erp-ink, var(--ink));
+  --nomina-emp-muted: var(--erp-muted, var(--ink-secondary));
+  --nomina-emp-line: var(--erp-line, var(--border-subtle));
+  --nomina-emp-surface: var(--erp-surface, var(--surface));
+  --nomina-emp-canvas: var(--canvas, #f8fafc);
+  --nomina-emp-accent: var(--erp-accent, var(--accent-color));
+  --nomina-emp-accent-soft: var(--erp-accent-soft, var(--accent-soft));
+  --nomina-emp-wage: color-mix(in srgb, var(--nomina-emp-accent) 9%, var(--nomina-emp-surface));
+  --nomina-emp-wage-line: color-mix(in srgb, var(--nomina-emp-accent) 28%, var(--nomina-emp-line));
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+#modal-empleado .nomina-emp-modal__header {
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 1.15rem !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--nomina-emp-accent) 5%, var(--nomina-emp-surface)) 0%, var(--nomina-emp-surface) 100%);
+}
+
+#modal-empleado .nomina-emp-modal__eyebrow {
+  margin: 0 0 0.12rem;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--nomina-emp-accent);
+  line-height: 1.2;
+}
+
+#modal-empleado .nomina-emp-modal__intro .modal-title {
+  margin: 0;
+  font-size: 1.05rem !important;
+  letter-spacing: -0.02em;
+}
+
+#modal-empleado .modal-body.nomina-emp-modal__body,
+#modal-empleado .nomina-emp-modal__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.85rem 1.15rem 1rem !important;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+#modal-empleado .nomina-emp-modal__footer {
+  flex-shrink: 0;
+  padding: 0.65rem 1.15rem !important;
+  gap: 0.4rem;
+}
+
+.nomina-emp-section {
+  margin: 0;
+  padding: 0.85rem 0.9rem 0.9rem 0.95rem;
+  border-radius: var(--erp-radius, var(--radius-md));
+  border: 1px solid var(--nomina-emp-line);
+  background: color-mix(in srgb, var(--nomina-emp-surface) 86%, var(--nomina-emp-canvas));
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--nomina-emp-accent) 45%, transparent);
+}
+
+.nomina-emp-section--last {
+  margin-bottom: 0;
+}
+
+.nomina-emp-section__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin: 0 0 0.7rem;
+  padding: 0 0 0.45rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--nomina-emp-line) 80%, transparent);
+}
+
+.nomina-emp-section__index {
+  flex: 0 0 auto;
+  min-width: 1.35rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  color: color-mix(in srgb, var(--nomina-emp-accent) 75%, var(--nomina-emp-muted));
+  line-height: 1.2;
+}
+
+.nomina-emp-section__title {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  color: var(--nomina-emp-muted);
+  line-height: 1.25;
+}
+
+.nomina-emp-form .form-label {
+  margin-bottom: 0.28rem;
+  font-size: 0.76rem;
+  font-weight: 550;
+  color: var(--nomina-emp-ink);
+}
+
+.nomina-emp-form .form-control,
+.nomina-emp-form .form-select {
+  min-height: 2.15rem;
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
+}
+
+/* Signature · wage strip (pay decision) */
+.nomina-emp-wage {
+  display: flex;
+  margin-top: 0.75rem;
+  border-radius: calc(var(--erp-radius, var(--radius-md)) - 2px);
+  border: 1px solid var(--nomina-emp-wage-line);
+  background:
+    linear-gradient(135deg, var(--nomina-emp-wage) 0%, color-mix(in srgb, var(--nomina-emp-surface) 92%, var(--nomina-emp-canvas)) 62%);
+  overflow: hidden;
+}
+
+.nomina-emp-wage__rail {
+  flex: 0 0 0.28rem;
+  background: linear-gradient(180deg, var(--nomina-emp-accent) 0%, color-mix(in srgb, var(--nomina-emp-accent) 55%, transparent) 100%);
+}
+
+.nomina-emp-wage__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.65rem 0.8rem 0.75rem;
+}
+
+.nomina-emp-wage__meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.nomina-emp-wage__eyebrow {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--nomina-emp-accent);
+  line-height: 1.2;
+}
+
+.nomina-emp-wage__hint {
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--nomina-emp-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.nomina-emp-wage__amount {
+  position: relative;
+}
+
+.nomina-emp-wage__currency {
+  position: absolute;
+  left: 0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: var(--nomina-emp-muted);
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.nomina-emp-wage__amount .form-control {
+  padding-left: 1.45rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  border-color: color-mix(in srgb, var(--nomina-emp-accent) 22%, var(--nomina-emp-line));
+  background: color-mix(in srgb, var(--nomina-emp-surface) 94%, transparent);
+}
+
+.nomina-emp-wage__amount .form-control:focus {
+  border-color: var(--nomina-emp-accent);
+  box-shadow: 0 0 0 3px var(--nomina-emp-accent-soft);
+}
+
+.nomina-emp-wage__salary {
+  max-width: 16.5rem;
+}
+
+.nomina-emp-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 2.15rem;
+  margin-top: 0.55rem;
+  margin-bottom: 0;
+  /* Override Bootstrap form-switch padding-left so the track stays inside the cell */
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-sm, 0.35rem);
+  background: color-mix(in srgb, var(--nomina-emp-surface) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--nomina-emp-accent) 14%, var(--nomina-emp-line));
+}
+
+.nomina-emp-switch .form-check-input {
+  float: none;
+  margin-left: 0;
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+
+.nomina-emp-switch .form-check-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8125rem;
+  color: var(--nomina-emp-ink);
+  line-height: 1.25;
+}
+
+.nomina-emp-switch__title {
+  font-weight: 600;
+}
+
+.nomina-emp-switch__hint {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--nomina-emp-muted);
+}
+
+[data-bs-theme="dark"] #modal-empleado .nomina-emp-form {
+  --nomina-emp-canvas: color-mix(in srgb, var(--nomina-emp-surface) 88%, #020617);
+  --nomina-emp-wage: color-mix(in srgb, var(--nomina-emp-accent) 14%, var(--nomina-emp-surface));
+  --nomina-emp-wage-line: color-mix(in srgb, var(--nomina-emp-accent) 34%, var(--nomina-emp-line));
+}
+
+[data-bs-theme="dark"] #modal-empleado .nomina-emp-modal__header {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--nomina-emp-accent) 10%, var(--nomina-emp-surface)) 0%, var(--nomina-emp-surface) 100%);
+}
+
+[data-bs-theme="dark"] .nomina-emp-section {
+  background: color-mix(in srgb, var(--nomina-emp-surface) 94%, #0f172a);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--nomina-emp-accent) 55%, transparent);
+}
+
+[data-bs-theme="dark"] .nomina-emp-wage {
+  background:
+    linear-gradient(135deg, var(--nomina-emp-wage) 0%, color-mix(in srgb, var(--nomina-emp-surface) 96%, #020617) 65%);
+}
+
+[data-bs-theme="dark"] .nomina-emp-wage__amount .form-control {
+  background: color-mix(in srgb, var(--nomina-emp-surface) 80%, #020617);
+}
+
+[data-bs-theme="dark"] .nomina-emp-switch {
+  background: color-mix(in srgb, var(--nomina-emp-accent) 8%, var(--nomina-emp-surface));
+  border-color: color-mix(in srgb, var(--nomina-emp-accent) 22%, var(--nomina-emp-line));
+}
+
+@media (max-width: 767.98px) {
+  .nomina-emp-wage__meta {
+    margin-bottom: 0.45rem;
+  }
+
+  .nomina-emp-wage__salary {
+    max-width: none;
+  }
+}
