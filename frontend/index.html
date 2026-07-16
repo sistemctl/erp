@@ -34,9 +34,9 @@
       </div>
     </div>
 
-    <!-- Tabler Core JS -->
-    <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/js/tabler.min.js"></script>
+    <!-- Tabler Core JS (data-cfasync evita que Cloudflare Rocket Loader rompa los scripts) -->
+    <script data-cfasync="false" src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/js/tabler.min.js"></script>
     <!-- App Entry Point: defer garantiza que el DOM está listo antes de ejecutar el módulo -->
-    <script type="module" src="/assets/js/app.js?v=track-r1" defer></script>
+    <script data-cfasync="false" type="module" src="/assets/js/app.js" defer></script>
   </body>
 </html>

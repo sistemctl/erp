@@ -95,7 +95,8 @@ const runSeeder = async () => {
       { nombre: 'Almacenamiento', descripcion: 'Discos SSD, Memorias USB, SD' },
       { nombre: 'Componentes', descripcion: 'Procesadores, Memorias RAM, Placas base' },
       { nombre: 'Software', descripcion: 'Sistemas Operativos, Licencias' },
-      { nombre: 'Gaming', descripcion: 'Sillas, ratones y teclados gamer' }
+      { nombre: 'Gaming', descripcion: 'Sillas, ratones y teclados gamer' },
+      { nombre: 'Servicios', descripcion: 'Mano de obra, instalación y labor técnica (sin stock)' }
     ]);
     console.log('Categorías creadas con éxito.');
 
@@ -120,7 +121,8 @@ const runSeeder = async () => {
       { nombre: 'SSD Externo Samsung T7 1TB', codigoBarras: '0887276412345', descripcion: 'SSD portátil USB 3.2 color azul', precioVenta: 499900.00, precioCosto: 380000.00, tieneIVA: true, stockMinimo: 5, tieneNumeroSerie: true, esReacondicionado: false, categoriaId: categorias[6].id },
       { nombre: 'Control PS5 DualSense Blanco', codigoBarras: '0711719541346', descripcion: 'Control inalámbrico para PS5', precioVenta: 329900.00, precioCosto: 240000.00, tieneIVA: true, stockMinimo: 6, tieneNumeroSerie: false, esReacondicionado: false, categoriaId: categorias[2].id },
       { nombre: 'Parlante JBL Flip 6', codigoBarras: '0050036382123', descripcion: 'Parlante portátil a prueba de agua color negro', precioVenta: 549900.00, precioCosto: 390000.00, tieneIVA: true, stockMinimo: 5, tieneNumeroSerie: false, esReacondicionado: false, categoriaId: categorias[5].id },
-      { nombre: 'Procesador Intel Core i5-12400F', codigoBarras: '0735858503043', descripcion: 'CPU LGA1700 sin gráficos integrados', precioVenta: 699900.00, precioCosto: 510000.00, tieneIVA: true, stockMinimo: 5, tieneNumeroSerie: true, esReacondicionado: false, categoriaId: categorias[7].id }
+      { nombre: 'Procesador Intel Core i5-12400F', codigoBarras: '0735858503043', descripcion: 'CPU LGA1700 sin gráficos integrados', precioVenta: 699900.00, precioCosto: 510000.00, tieneIVA: true, stockMinimo: 5, tieneNumeroSerie: true, esReacondicionado: false, categoriaId: categorias[7].id },
+      { nombre: 'Servicio de instalación', codigoBarras: '2900000000001', descripcion: 'Mano de obra de instalación en sitio (no descuenta inventario)', precioVenta: 500000.00, precioCosto: 0.00, tieneIVA: true, stockMinimo: 0, tieneNumeroSerie: false, esServicio: true, esReacondicionado: false, categoriaId: categorias[10].id }
     ]);
     console.log('Productos creados con éxito.');
 
@@ -130,7 +132,7 @@ const runSeeder = async () => {
         await StockSede.create({
           productoId: p.id,
           sedeId: s.id,
-          cantidad: Math.floor(Math.random() * 20) + 5 // stock aleatorio entre 5 y 25 unidades
+          cantidad: p.esServicio ? 0 : Math.floor(Math.random() * 20) + 5
         });
       }
     }

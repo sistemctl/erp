@@ -42,6 +42,11 @@ const Producto = sequelize.define('Producto', {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
+  /** Servicio (mano de obra / instalación): no descuenta StockSede */
+  esServicio: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
   esReacondicionado: {
     type: DataTypes.BOOLEAN,
     defaultValue: false

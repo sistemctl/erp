@@ -108,6 +108,8 @@ exports.createOrden = async (req, res, next) => {
       diasGarantia,
       fechaEstimadaEntrega,
       observaciones,
+      modalidad,
+      direccionServicio,
       sedeId: bodySedeId
     } = req.body;
 
@@ -118,6 +120,12 @@ exports.createOrden = async (req, res, next) => {
 
     if (!clienteId || !tipoEquipo || !marca || !modelo || !problemaReportado) {
       return res.status(400).json({ error: 'Faltan campos obligatorios para registrar la orden.' });
+    }
+
+    const modalidadFinal = modalidad === 'domicilio' ? 'domicilio' : 'taller';
+    if (modalidadFinal === 'domicilio' && !(direccionServicio || '').trim()) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'La dirección es obligatoria para servicio a domicilio.' });
     }
 
     // Secuencia de ordenes
@@ -131,6 +139,8 @@ exports.createOrden = async (req, res, next) => {
       clienteId,
       tecnicoId: tecnicoId || null,
       sedeId,
+      modalidad: modalidadFinal,
+      direccionServicio: modalidadFinal === 'domicilio' ? (direccionServicio || '').trim() : null,
       tipoEquipo,
       marca,
       modelo,
@@ -196,7 +206,9 @@ exports.updateOrden = async (req, res, next) => {
       diasGarantia,
       fechaEstimadaEntrega,
       observaciones,
-      totalCobrado
+      totalCobrado,
+      modalidad,
+      direccionServicio
     } = req.body;
 
     const valorAnterior = orden.toJSON();
@@ -206,6 +218,22 @@ exports.updateOrden = async (req, res, next) => {
     // Si no se pasa totalCobrado, recalculamos sumando manoObra y costoRepuestos
     const finalTotalCobrado = totalCobrado !== undefined ? parseFloat(totalCobrado) : (manoObraNum + repuestosNum);
 
+    let modalidadFinal = orden.modalidad || 'taller';
+    let direccionFinal = orden.direccionServicio;
+    if (modalidad !== undefined) {
+      modalidadFinal = modalidad === 'domicilio' ? 'domicilio' : 'taller';
+    }
+    if (direccionServicio !== undefined) {
+      direccionFinal = direccionServicio || null;
+    }
+    if (modalidadFinal === 'domicilio' && !(direccionFinal || '').trim()) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'La dirección es obligatoria para servicio a domicilio.' });
+    }
+    if (modalidadFinal === 'taller') {
+      direccionFinal = null;
+    }
+
     await orden.update({
       tecnicoId: tecnicoId !== undefined ? (tecnicoId || null) : orden.tecnicoId,
       diagnostico: diagnostico !== undefined ? diagnostico : orden.diagnostico,
@@ -213,7 +241,9 @@ exports.updateOrden = async (req, res, next) => {
       totalCobrado: finalTotalCobrado,
       diasGarantia: diasGarantia !== undefined ? parseInt(diasGarantia) : orden.diasGarantia,
       fechaEstimadaEntrega: fechaEstimadaEntrega !== undefined ? fechaEstimadaEntrega : orden.fechaEstimadaEntrega,
-      observaciones: observaciones !== undefined ? observaciones : orden.observaciones
+      observaciones: observaciones !== undefined ? observaciones : orden.observaciones,
+      modalidad: modalidadFinal,
+      direccionServicio: direccionFinal
     }, { transaction });
 
     // Actualizar rentabilidad

@@ -45,6 +45,7 @@ exports.createProducto = async (req, res, next) => {
       stockMinimo,
       tieneNumeroSerie,
       esReacondicionado,
+      esServicio,
       categoriaId,
       imagenUrl
     } = req.body;
@@ -68,8 +69,9 @@ exports.createProducto = async (req, res, next) => {
           precioCosto,
           tieneIVA,
           stockMinimo,
-          tieneNumeroSerie,
+          tieneNumeroSerie: esServicio ? false : !!tieneNumeroSerie,
           esReacondicionado,
+          esServicio: !!esServicio,
           categoriaId,
           imagenUrl,
           activo: true
@@ -111,8 +113,9 @@ exports.createProducto = async (req, res, next) => {
       precioCosto,
       tieneIVA,
       stockMinimo,
-      tieneNumeroSerie,
+      tieneNumeroSerie: esServicio ? false : !!tieneNumeroSerie,
       esReacondicionado,
+      esServicio: !!esServicio,
       categoriaId,
       imagenUrl
     }, { transaction });
@@ -163,6 +166,13 @@ exports.updateProducto = async (req, res, next) => {
     }
 
     const { ajusteStock, sedeId, ...productData } = req.body;
+
+    if (productData.esServicio) {
+      productData.esServicio = true;
+      productData.tieneNumeroSerie = false;
+    } else if (productData.esServicio === false || productData.esServicio === 'false') {
+      productData.esServicio = false;
+    }
 
     const rolesAjusteStock = ['admin', 'superadmin'];
     if (rolesAjusteStock.includes(req.usuario.rol) && sedeId && ajusteStock !== undefined && ajusteStock !== null) {

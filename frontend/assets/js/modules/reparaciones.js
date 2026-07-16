@@ -130,6 +130,19 @@ export async function initReparaciones(container) {
                     </select>
                   </div>
                   ` : ''}
+                  <div class="mb-3">
+                    <label class="form-label">Modalidad</label>
+                    <div class="btn-group w-100" role="group">
+                      <input type="radio" class="btn-check" name="eq-modalidad" id="eq-mod-taller" value="taller" checked>
+                      <label class="btn" for="eq-mod-taller">En taller</label>
+                      <input type="radio" class="btn-check" name="eq-modalidad" id="eq-mod-domicilio" value="domicilio">
+                      <label class="btn" for="eq-mod-domicilio">A domicilio</label>
+                    </div>
+                  </div>
+                  <div class="mb-3 d-none" id="eq-direccion-wrap">
+                    <label class="form-label required">Dirección del servicio</label>
+                    <input type="text" id="eq-direccion" class="form-control" placeholder="Dirección donde se reparará">
+                  </div>
                   <div class="row">
                     <div class="col-6 mb-3">
                       <label class="form-label required">Tipo de Equipo</label>
@@ -503,6 +516,21 @@ export async function initReparaciones(container) {
     }
   });
 
+  const syncModalidadUi = () => {
+    const isDomicilio = document.getElementById('eq-mod-domicilio')?.checked;
+    const wrap = document.getElementById('eq-direccion-wrap');
+    const input = document.getElementById('eq-direccion');
+    if (!wrap || !input) return;
+    wrap.classList.toggle('d-none', !isDomicilio);
+    if (isDomicilio) input.setAttribute('required', 'true');
+    else {
+      input.removeAttribute('required');
+      input.value = '';
+    }
+  };
+  document.getElementById('eq-mod-taller')?.addEventListener('change', syncModalidadUi);
+  document.getElementById('eq-mod-domicilio')?.addEventListener('change', syncModalidadUi);
+
   // Open Nueva Orden Modal
   const btnNueva = document.getElementById('btn-nueva-orden');
   if (btnNueva) {
@@ -510,6 +538,7 @@ export async function initReparaciones(container) {
       document.getElementById('form-nueva-orden').reset();
       quickClientCard.style.display = 'block';
       cliNombre.setAttribute('required', 'true');
+      syncModalidadUi();
       modalOrden.show();
     });
   }
@@ -547,6 +576,12 @@ export async function initReparaciones(container) {
       }
 
       // 2. Crear orden
+      const modalidad = document.querySelector('input[name="eq-modalidad"]:checked')?.value || 'taller';
+      const direccionServicio = document.getElementById('eq-direccion')?.value?.trim() || '';
+      if (modalidad === 'domicilio' && !direccionServicio) {
+        throw new Error('La dirección es obligatoria para servicio a domicilio.');
+      }
+
       const payload = {
         clienteId,
         tipoEquipo: document.getElementById('eq-tipo').value,
@@ -558,7 +593,9 @@ export async function initReparaciones(container) {
         diasGarantia: document.getElementById('eq-garantia').value || 30,
         fechaEstimadaEntrega: document.getElementById('eq-fecha-entrega').value || null,
         tecnicoId: document.getElementById('eq-tecnico').value || null,
-        observaciones: document.getElementById('eq-observaciones').value || ''
+        observaciones: document.getElementById('eq-observaciones').value || '',
+        modalidad,
+        direccionServicio: modalidad === 'domicilio' ? direccionServicio : null
       };
 
       if (needsSedePicker) {
@@ -632,6 +669,7 @@ export async function initReparaciones(container) {
                   <tr><th>Equipo</th><td>${orden.tipoEquipo} ${orden.marca} ${orden.modelo}</td></tr>
                   <tr><th>IMEI/Serie</th><td><strong>${orden.imei || 'N/A'}</strong></td></tr>
                   <tr><th>Sede de Ingreso</th><td>${orden.sede ? orden.sede.nombre : 'Sede Centro'}</td></tr>
+                  <tr><th>Modalidad</th><td>${orden.modalidad === 'domicilio' ? `A domicilio${orden.direccionServicio ? ` — ${orden.direccionServicio}` : ''}` : 'En taller'}</td></tr>
                   <tr><th>Fecha Ingreso</th><td>${new Date(orden.createdAt).toLocaleString()}</td></tr>
                 </tbody>
               </table>

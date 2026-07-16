@@ -17,6 +17,8 @@ const {
   FotoReparacion,
   RepuestoOrden,
   RentabilidadReparacion,
+  OrdenInstalacion,
+  MaterialInstalacion,
   TradeIn,
   Caja,
   EgresoCaja,
@@ -149,6 +151,13 @@ async function forceDeleteSede(sede, transaction) {
     await RepuestoOrden.destroy({ where: { ordenId: ordenIds }, transaction });
     await RentabilidadReparacion.destroy({ where: { ordenId: ordenIds }, transaction });
     await OrdenReparacion.destroy({ where: { sedeId }, transaction });
+  }
+
+  const instalaciones = await OrdenInstalacion.findAll({ where: { sedeId }, attributes: ['id'], transaction });
+  const instIds = instalaciones.map((o) => o.id);
+  if (instIds.length) {
+    await MaterialInstalacion.destroy({ where: { ordenId: instIds }, transaction });
+    await OrdenInstalacion.destroy({ where: { sedeId }, transaction });
   }
 
   await sede.destroy({ transaction });
@@ -612,7 +621,8 @@ exports.exportarBackup = async (req, res, next) => {
       'Sede', 'Usuario', 'Empleado', 'Categoria', 'Producto', 'StockSede', 
       'Cliente', 'NumeroSerie', 'Venta', 'ItemVenta', 'PagoVenta', 'Factura', 
       'CuentaPorCobrar', 'Abono', 'Cotizacion', 'ItemCotizacion', 'OrdenReparacion', 
-      'FotoReparacion', 'RepuestoOrden', 'RentabilidadReparacion', 'TradeIn', 
+      'FotoReparacion', 'RepuestoOrden', 'RentabilidadReparacion', 'OrdenInstalacion',
+      'MaterialInstalacion', 'TradeIn', 
       'CategoriaEgreso', 'Caja', 'EgresoCaja', 'Nomina', 'Proveedor', 
       'OrdenCompra', 'ItemOrdenCompra', 'PagoCompra', 'MovimientoInventario', 'Notificacion', 
       'AuditLog', 'ConfiguracionSistema'
@@ -642,7 +652,8 @@ exports.importarBackup = async (req, res, next) => {
       'Sede', 'Usuario', 'Empleado', 'Categoria', 'Producto', 'StockSede', 
       'Cliente', 'NumeroSerie', 'Venta', 'ItemVenta', 'PagoVenta', 'Factura', 
       'CuentaPorCobrar', 'Abono', 'Cotizacion', 'ItemCotizacion', 'OrdenReparacion', 
-      'FotoReparacion', 'RepuestoOrden', 'RentabilidadReparacion', 'TradeIn', 
+      'FotoReparacion', 'RepuestoOrden', 'RentabilidadReparacion', 'OrdenInstalacion',
+      'MaterialInstalacion', 'TradeIn', 
       'CategoriaEgreso', 'Caja', 'EgresoCaja', 'Nomina', 'Proveedor', 
       'OrdenCompra', 'ItemOrdenCompra', 'PagoCompra', 'MovimientoInventario', 'Notificacion', 
       'AuditLog', 'ConfiguracionSistema'

@@ -20,7 +20,7 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false
 }));
 
-app.use(cors({
+const corsOptions = {
   origin(origin, callback) {
     if (isAllowedCorsOrigin(origin)) {
       return callback(null, true);
@@ -28,7 +28,10 @@ app.use(cors({
     return callback(new Error(`Origen no permitido por CORS: ${origin}`));
   },
   credentials: true
-}));
+};
+
+// CORS solo en /api — los módulos ES envían Origin y fallaban con 500 en assets estáticos
+app.use('/api', cors(corsOptions));
 
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) {
@@ -60,6 +63,7 @@ app.use('/api/series', require('./routes/series.routes'));
 app.use('/api/caja', require('./routes/caja.routes'));
 app.use('/api/ventas', require('./routes/ventas.routes'));
 app.use('/api/reparaciones', require('./routes/reparaciones.routes'));
+app.use('/api/instalaciones', require('./routes/instalaciones.routes'));
 app.use('/api/clientes', require('./routes/clientes.routes'));
 app.use('/api/facturas', require('./routes/facturas.routes'));
 app.use('/api/empleados', require('./routes/empleados.routes'));

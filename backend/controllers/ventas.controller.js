@@ -230,49 +230,49 @@ exports.procesarVenta = async (req, res, next) => {
         }
       }
 
-      // Descontar Stock de Sede
-      const stock = await StockSede.findOne({
-        where: { productoId: item.productoId, sedeId },
-        transaction
-      });
-
-      if (!stock || stock.cantidad < item.cantidad) {
-        throw new Error(`Stock insuficiente para el producto: ${producto.nombre}`);
-      }
-
-      await stock.update({ cantidad: stock.cantidad - item.cantidad }, { transaction });
-
-      // Registrar Movimiento Inventario
-      await MovimientoInventario.create({
-        productoId: item.productoId,
-        sedeId,
-        tipo: 'salida',
-        cantidad: -item.cantidad,
-        motivo: `Venta POS #${numeroVenta}`,
-        referenciaId: venta.id,
-        usuarioId
-      }, { transaction });
-
-      // Registrar Serie/IMEI si el producto lo requiere
-      if (producto.tieneNumeroSerie) {
-        if (!item.imei) {
-          throw new Error(`El producto ${producto.nombre} requiere número de serie/IMEI.`);
-        }
-
-        const serieReg = await NumeroSerie.findOne({
-          where: { serie: item.imei, productoId: item.productoId, sedeId, estado: 'en_stock' },
+      // Servicios (mano de obra / instalación): no descuentan inventario ni series
+      if (!producto.esServicio) {
+        const stock = await StockSede.findOne({
+          where: { productoId: item.productoId, sedeId },
           transaction
         });
 
-        if (!serieReg) {
-          throw new Error(`Número de serie/IMEI ${item.imei} no está en stock o ya fue vendido.`);
+        if (!stock || stock.cantidad < item.cantidad) {
+          throw new Error(`Stock insuficiente para el producto: ${producto.nombre}`);
         }
 
-        await serieReg.update({
-          estado: 'vendido',
-          clienteId: resolvedClienteId,
-          fechaVenta: new Date()
+        await stock.update({ cantidad: stock.cantidad - item.cantidad }, { transaction });
+
+        await MovimientoInventario.create({
+          productoId: item.productoId,
+          sedeId,
+          tipo: 'salida',
+          cantidad: -item.cantidad,
+          motivo: `Venta POS #${numeroVenta}`,
+          referenciaId: venta.id,
+          usuarioId
         }, { transaction });
+
+        if (producto.tieneNumeroSerie) {
+          if (!item.imei) {
+            throw new Error(`El producto ${producto.nombre} requiere número de serie/IMEI.`);
+          }
+
+          const serieReg = await NumeroSerie.findOne({
+            where: { serie: item.imei, productoId: item.productoId, sedeId, estado: 'en_stock' },
+            transaction
+          });
+
+          if (!serieReg) {
+            throw new Error(`Número de serie/IMEI ${item.imei} no está en stock o ya fue vendido.`);
+          }
+
+          await serieReg.update({
+            estado: 'vendido',
+            clienteId: resolvedClienteId,
+            fechaVenta: new Date()
+          }, { transaction });
+        }
       }
     }
 
@@ -500,7 +500,7 @@ exports.getVentas = async (req, res, next) => {
         { model: Usuario, as: 'usuario', attributes: ['nombre'] },
         { model: Sede, as: 'sede', attributes: ['nombre'] },
         { model: PagoVenta, as: 'pagos' },
-        { model: ItemVenta, as: 'items', include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'precioCosto', 'tieneNumeroSerie'] }] },
+        { model: ItemVenta, as: 'items', include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'precioCosto', 'tieneNumeroSerie', 'esServicio'] }] },
         { model: Factura, as: 'factura', attributes: ['id', 'numeroFactura', 'estado'] }
       ],
       order: [['createdAt', 'DESC']]
@@ -682,49 +682,52 @@ exports.crearDevolucionVenta = async (req, res, next) => {
       const nuevaDevuelta = (parseInt(item.cantidadDevuelta, 10) || 0) + cantidad;
       await item.update({ cantidadDevuelta: nuevaDevuelta }, { transaction });
 
-      const stock = await StockSede.findOne({
-        where: { productoId: item.productoId, sedeId: venta.sedeId },
-        transaction
-      });
-      if (stock) {
-        await stock.update({ cantidad: stock.cantidad + cantidad }, { transaction });
-      } else {
-        await StockSede.create({
-          productoId: item.productoId,
-          sedeId: venta.sedeId,
-          cantidad
-        }, { transaction });
-      }
-
-      await MovimientoInventario.create({
-        productoId: item.productoId,
-        sedeId: venta.sedeId,
-        tipo: 'entrada',
-        cantidad,
-        motivo: `Devolución cliente ${numero} (venta ${venta.numeroVenta})`,
-        referenciaId: devolucion.id,
-        usuarioId: req.usuario.userId
-      }, { transaction });
-
-      if (item.producto?.tieneNumeroSerie) {
-        const series = await NumeroSerie.findAll({
-          where: {
-            productoId: item.productoId,
-            sedeId: venta.sedeId,
-            estado: 'vendido',
-            ...(venta.clienteId ? { clienteId: venta.clienteId } : {})
-          },
-          order: [['updatedAt', 'DESC']],
-          limit: cantidad,
+      // Servicios no tocaron inventario al vender: no devolver stock
+      if (!item.producto?.esServicio) {
+        const stock = await StockSede.findOne({
+          where: { productoId: item.productoId, sedeId: venta.sedeId },
           transaction
         });
-
-        for (const s of series) {
-          await s.update({
-            estado: 'en_stock',
-            clienteId: null,
-            fechaVenta: null
+        if (stock) {
+          await stock.update({ cantidad: stock.cantidad + cantidad }, { transaction });
+        } else {
+          await StockSede.create({
+            productoId: item.productoId,
+            sedeId: venta.sedeId,
+            cantidad
           }, { transaction });
+        }
+
+        await MovimientoInventario.create({
+          productoId: item.productoId,
+          sedeId: venta.sedeId,
+          tipo: 'entrada',
+          cantidad,
+          motivo: `Devolución cliente ${numero} (venta ${venta.numeroVenta})`,
+          referenciaId: devolucion.id,
+          usuarioId: req.usuario.userId
+        }, { transaction });
+
+        if (item.producto?.tieneNumeroSerie) {
+          const series = await NumeroSerie.findAll({
+            where: {
+              productoId: item.productoId,
+              sedeId: venta.sedeId,
+              estado: 'vendido',
+              ...(venta.clienteId ? { clienteId: venta.clienteId } : {})
+            },
+            order: [['updatedAt', 'DESC']],
+            limit: cantidad,
+            transaction
+          });
+
+          for (const s of series) {
+            await s.update({
+              estado: 'en_stock',
+              clienteId: null,
+              fechaVenta: null
+            }, { transaction });
+          }
         }
       }
     }

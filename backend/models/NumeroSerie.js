@@ -21,7 +21,7 @@ const NumeroSerie = sequelize.define('NumeroSerie', {
     allowNull: false
   },
   estado: {
-    type: DataTypes.ENUM('en_stock', 'vendido', 'en_reparacion', 'reacondicionado'),
+    type: DataTypes.ENUM('en_stock', 'vendido', 'en_reparacion', 'reacondicionado', 'instalado'),
     defaultValue: 'en_stock',
     allowNull: false
   },

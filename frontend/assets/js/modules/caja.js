@@ -491,9 +491,9 @@ export async function initCaja(container) {
 
     try {
       const hoyStr = getLocalDateStr();
-      const data = await apiFetch(`/caja/reporte?fecha=${hoyStr}&sede=${currentSedeId}`).catch(() => null);
+      const data = await apiFetch(`/caja/reporte?fecha=${hoyStr}&sede=${currentSedeId}`, { silent: true }).catch(() => null);
 
-      if (!data || data.estado === 'cerrada') {
+      if (!data?.id || data.estado === 'cerrada' || data.estado === 'sin_registro') {
         activeCaja = null;
         body.innerHTML = `
           <div class="card p-5 text-center">

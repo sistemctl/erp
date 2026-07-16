@@ -25,7 +25,7 @@ const SIDEBAR_SECTIONS = [
   {
     id: 'operacion',
     label: 'Operación',
-    hashes: ['#/dashboard', '#/pos', '#/ventas', '#/clientes', '#/reparaciones', '#/cotizaciones', '#/tradein']
+    hashes: ['#/dashboard', '#/pos', '#/ventas', '#/clientes', '#/reparaciones', '#/instalaciones', '#/cotizaciones', '#/tradein']
   },
   {
     id: 'inventario',
@@ -51,6 +51,7 @@ const modulosPorRol = {
     { name: 'Historial Ventas', hash: '#/ventas', icon: 'ti-receipt' },
     { name: 'Clientes CRM', hash: '#/clientes', icon: 'ti-users-group' },
     { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
+    { name: 'Instalaciones', hash: '#/instalaciones', icon: 'ti-home-bolt' },
     { name: 'Rentabilidad', hash: '#/rentabilidad', icon: 'ti-chart-bar' },
     { name: 'Reportes', hash: '#/reportes', icon: 'ti-report-analytics' },
     { name: 'Inventario', hash: '#/inventario', icon: 'ti-package' },
@@ -70,6 +71,7 @@ const modulosPorRol = {
     { name: 'Historial Ventas', hash: '#/ventas', icon: 'ti-receipt' },
     { name: 'Clientes CRM', hash: '#/clientes', icon: 'ti-users-group' },
     { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
+    { name: 'Instalaciones', hash: '#/instalaciones', icon: 'ti-home-bolt' },
     { name: 'Rentabilidad', hash: '#/rentabilidad', icon: 'ti-chart-bar' },
     { name: 'Reportes', hash: '#/reportes', icon: 'ti-report-analytics' },
     { name: 'Inventario', hash: '#/inventario', icon: 'ti-package' },
@@ -88,6 +90,7 @@ const modulosPorRol = {
     { name: 'Historial Ventas', hash: '#/ventas', icon: 'ti-receipt' },
     { name: 'Clientes CRM', hash: '#/clientes', icon: 'ti-users-group' },
     { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
+    { name: 'Instalaciones', hash: '#/instalaciones', icon: 'ti-home-bolt' },
     { name: 'Rentabilidad', hash: '#/rentabilidad', icon: 'ti-chart-bar' },
     { name: 'Reportes', hash: '#/reportes', icon: 'ti-report-analytics' },
     { name: 'Inventario', hash: '#/inventario', icon: 'ti-package' },
@@ -108,7 +111,8 @@ const modulosPorRol = {
     { name: 'Inventario (Ver)', hash: '#/inventario', icon: 'ti-package' }
   ],
   tecnico: [
-    { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' }
+    { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
+    { name: 'Instalaciones', hash: '#/instalaciones', icon: 'ti-home-bolt' }
   ],
   contador: [
     { name: 'Dashboard', hash: '#/dashboard', icon: 'ti-dashboard' },
@@ -308,6 +312,10 @@ async function router() {
       case '#/reparaciones':
         const { initReparaciones } = await import('./modules/reparaciones.js');
         await initReparaciones(contentContainer);
+        break;
+      case '#/instalaciones':
+        const { initInstalaciones } = await import('./modules/instalaciones.js');
+        await initInstalaciones(contentContainer);
         break;
       case '#/rentabilidad':
         const { initRentabilidad } = await import('./modules/rentabilidad.js');
@@ -764,7 +772,9 @@ applyDocumentBranding(getCachedBrand());
     try {
       const { apiFetch } = await import('./api.js');
       await initThemeFromServer(apiFetch);
-    } catch (_) { /* use cache */ }
+    } catch (err) {
+      /* tema por defecto si falla la API */
+    }
   }
-  router();
+  await router();
 })();

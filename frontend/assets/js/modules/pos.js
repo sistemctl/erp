@@ -100,7 +100,7 @@ export async function initPos(container) {
     let cajaCompartida = true;
     try {
       const hoyStr = getLocalDateStr();
-      cajaAbierta = await apiFetch(`/caja/reporte?fecha=${hoyStr}&sede=${currentSedeId}`).catch(() => null);
+      cajaAbierta = await apiFetch(`/caja/reporte?fecha=${hoyStr}&sede=${currentSedeId}`, { silent: true }).catch(() => null);
     
     // Obtener configuración del sistema para el descuento máximo e IVA
     const config = await apiFetch('/config/sistema').catch(() => null);
@@ -137,7 +137,7 @@ export async function initPos(container) {
   }
 
 
-    if (!cajaAbierta || cajaAbierta.estado === 'cerrada') {
+    if (!cajaAbierta?.id || cajaAbierta.estado === 'cerrada' || cajaAbierta.estado === 'sin_registro') {
       const gateText = cajaCompartida
         ? 'La caja es por sede: si otro cajero ya la abrió en esta misma sede, deberías poder vender aquí. Revisa el selector de sede arriba o ve a Caja para abrirla.'
         : 'Con “Caja compartida” desactivada, cada usuario debe abrir su propia caja. Ve a Caja, haz la apertura con tu usuario y vuelve al POS.';
@@ -537,7 +537,9 @@ export async function initPos(container) {
                   <div class="pos-product-card-title" title="${item.producto.nombre}">${item.producto.nombre}</div>
                   <div class="pos-product-card-footer">
                     <span class="pos-product-card-price">$ ${new Intl.NumberFormat('es-CO').format(item.producto.precioVenta)}</span>
-                    <span class="pos-product-card-stock">Stock <strong class="${item.cantidad <= item.producto.stockMinimo ? 'text-danger' : 'text-success'}">${item.cantidad}</strong></span>
+                    <span class="pos-product-card-stock">${item.producto.esServicio
+                      ? '<strong class="text-azure">Servicio</strong>'
+                      : `Stock <strong class="${item.cantidad <= item.producto.stockMinimo ? 'text-danger' : 'text-success'}">${item.cantidad}</strong>`}</span>
                   </div>
                 </div>
               </button>
@@ -552,10 +554,10 @@ export async function initPos(container) {
           const id = btn.getAttribute('data-id');
           const item = filtered.find(s => s.productoId === id);
           if (item) {
-            // Verificar stock
+            // Verificar stock (los servicios no consumen inventario)
             const cartItem = cart.find(c => c.productoId === id);
             const qty = cartItem ? cartItem.cantidad + 1 : 1;
-            if (qty > item.cantidad) {
+            if (!item.producto.esServicio && qty > item.cantidad) {
               showToast('Stock Insuficiente', 'No puedes agregar más unidades que las disponibles en stock.', 'error');
               return;
             }
@@ -641,7 +643,8 @@ export async function initPos(container) {
         precioCosto: parseFloat(producto.precioCosto),
         descuentoPct: 0,
         cantidad: 1,
-        tieneNumeroSerie: producto.tieneNumeroSerie,
+        tieneNumeroSerie: producto.esServicio ? false : producto.tieneNumeroSerie,
+        esServicio: !!producto.esServicio,
         imei: producto.autoDetectedImei || '',
         imagenUrl: producto.imagenUrl,
         subtotal: parseFloat(producto.precioVenta)

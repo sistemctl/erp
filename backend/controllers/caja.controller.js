@@ -283,7 +283,11 @@ exports.getReporteCaja = async (req, res, next) => {
     }
 
     if (!caja) {
-      return res.status(404).json({ error: 'No se encontró registro de caja para la fecha e institución especificada.' });
+      return res.json({
+        estado: 'sin_registro',
+        sedeId: querySedeId,
+        fecha: queryFecha
+      });
     }
 
     return res.json(caja);

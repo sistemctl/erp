@@ -301,6 +301,16 @@ export async function initInventario(container) {
                           </span>
                         </span>
                       </label>
+                      <label class="prod-form-prop">
+                        <input class="prod-form-prop__input" type="checkbox" id="prod-servicio">
+                        <span class="prod-form-prop__box">
+                          <i class="ti ti-tool" aria-hidden="true"></i>
+                          <span class="prod-form-prop__text">
+                            <strong>Es servicio</strong>
+                            <small>No descuenta inventario (mano de obra)</small>
+                          </span>
+                        </span>
+                      </label>
                     </div>
                   </article>
 
@@ -833,6 +843,7 @@ export async function initInventario(container) {
       document.getElementById('prod-serie').checked = item.producto.tieneNumeroSerie;
       document.getElementById('prod-iva').checked = item.producto.tieneIVA;
       document.getElementById('prod-reacondicionado').checked = item.producto.esReacondicionado;
+      document.getElementById('prod-servicio').checked = !!item.producto.esServicio;
       document.getElementById('prod-imagen-url').value = item.producto.imagenUrl || '';
 
       const stockInput = document.getElementById('prod-stock-actual');
@@ -1072,6 +1083,7 @@ export async function initInventario(container) {
         tieneNumeroSerie: document.getElementById('prod-serie').checked,
         tieneIVA: document.getElementById('prod-iva').checked,
         esReacondicionado: document.getElementById('prod-reacondicionado').checked,
+        esServicio: document.getElementById('prod-servicio').checked,
         imagenUrl: document.getElementById('prod-imagen-url').value.trim() || null,
         ajusteStock: ['admin', 'superadmin'].includes(usuario.rol) ? parseStockInput(document.getElementById('prod-stock-actual').value) : null,
         sedeId: (document.getElementById('select-sede-inventario') ? document.getElementById('select-sede-inventario').value : null) || usuario.sedeId

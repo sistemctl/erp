@@ -4,7 +4,9 @@ export async function login(email, password) {
   try {
     const data = await apiFetch('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ email, password }),
+      skipAuth: true,
+      silent: true
     });
 
     if (data && data.token) {

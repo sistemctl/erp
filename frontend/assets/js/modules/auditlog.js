@@ -37,6 +37,7 @@ export function renderAuditLogTabHtml() {
                 <option value="Autenticación">Autenticación</option>
                 <option value="Productos">Productos</option>
                 <option value="Reparaciones">Reparaciones</option>
+                <option value="Instalaciones">Instalaciones</option>
                 <option value="Sedes">Sedes</option>
                 <option value="Usuarios">Usuarios</option>
                 <option value="Ventas">Ventas</option>

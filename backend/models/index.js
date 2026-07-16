@@ -17,6 +17,8 @@ const ItemCotizacion = require('./ItemCotizacion');
 const OrdenReparacion = require('./OrdenReparacion');
 const FotoReparacion = require('./FotoReparacion');
 const RepuestoOrden = require('./RepuestoOrden');
+const OrdenInstalacion = require('./OrdenInstalacion');
+const MaterialInstalacion = require('./MaterialInstalacion');
 const RentabilidadReparacion = require('./RentabilidadReparacion');
 const TradeIn = require('./TradeIn');
 const CategoriaEgreso = require('./CategoriaEgreso');
@@ -136,6 +138,20 @@ RepuestoOrden.belongsTo(Producto, { foreignKey: 'productoId', as: 'producto' });
 OrdenReparacion.hasMany(RepuestoOrden, { foreignKey: 'ordenId', as: 'repuestos' });
 Producto.hasMany(RepuestoOrden, { foreignKey: 'productoId', as: 'repuestosEnOrdenes' });
 
+// OrdenInstalacion <-> Cliente, Usuario (Tecnico), Sede
+OrdenInstalacion.belongsTo(Cliente, { foreignKey: 'clienteId', as: 'cliente' });
+OrdenInstalacion.belongsTo(Usuario, { foreignKey: 'tecnicoId', as: 'tecnico' });
+OrdenInstalacion.belongsTo(Sede, { foreignKey: 'sedeId', as: 'sede' });
+Cliente.hasMany(OrdenInstalacion, { foreignKey: 'clienteId', as: 'ordenesInstalacion' });
+Usuario.hasMany(OrdenInstalacion, { foreignKey: 'tecnicoId', as: 'instalacionesAsignadas' });
+Sede.hasMany(OrdenInstalacion, { foreignKey: 'sedeId', as: 'ordenesInstalacion' });
+
+// MaterialInstalacion <-> OrdenInstalacion, Producto
+MaterialInstalacion.belongsTo(OrdenInstalacion, { foreignKey: 'ordenId', as: 'orden' });
+MaterialInstalacion.belongsTo(Producto, { foreignKey: 'productoId', as: 'producto' });
+OrdenInstalacion.hasMany(MaterialInstalacion, { foreignKey: 'ordenId', as: 'materiales' });
+Producto.hasMany(MaterialInstalacion, { foreignKey: 'productoId', as: 'materialesEnInstalaciones' });
+
 // RentabilidadReparacion <-> OrdenReparacion
 RentabilidadReparacion.belongsTo(OrdenReparacion, { foreignKey: 'ordenId', as: 'orden' });
 OrdenReparacion.hasOne(RentabilidadReparacion, { foreignKey: 'ordenId', as: 'rentabilidad' });
@@ -253,6 +269,8 @@ module.exports = {
   OrdenReparacion,
   FotoReparacion,
   RepuestoOrden,
+  OrdenInstalacion,
+  MaterialInstalacion,
   RentabilidadReparacion,
   TradeIn,
   CategoriaEgreso,

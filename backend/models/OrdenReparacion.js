@@ -23,6 +23,15 @@ const OrdenReparacion = sequelize.define('OrdenReparacion', {
     type: DataTypes.UUID,
     allowNull: false
   },
+  modalidad: {
+    type: DataTypes.ENUM('taller', 'domicilio'),
+    defaultValue: 'taller',
+    allowNull: false
+  },
+  direccionServicio: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
   tipoEquipo: {
     type: DataTypes.STRING,
     allowNull: false

@@ -5,10 +5,15 @@ const TUNNEL_HOST_PATTERNS = [
 ];
 
 function getExtraOrigins() {
-  return (process.env.CORS_ORIGINS || '')
+  const fromCors = (process.env.CORS_ORIGINS || '')
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+  const fromPublic = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
+  if (fromPublic && !fromCors.includes(fromPublic)) {
+    fromCors.push(fromPublic);
+  }
+  return fromCors;
 }
 
 function isLocalOrigin(origin) {
