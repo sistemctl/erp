@@ -1,15 +1,17 @@
 # ERP TechStore (Servitec Gamers)
 
-Sistema ERP monolítico para tiendas de tecnología: ventas, inventario, reparaciones, facturación, cartera, nómina, trade-in, notificaciones y reportes.
+Sistema ERP monolítico para tiendas de tecnología: ventas, inventario, reparaciones, instalaciones, facturación, cartera, nómina, trade-in, notificaciones y reportes.
 
 | Capa | Tecnología |
 |------|------------|
 | Backend | Node.js 20+, Express 5, Sequelize |
 | Base de datos | PostgreSQL 16 |
 | Frontend | JavaScript vanilla (ES modules), Tabler UI, Bootstrap 5 |
-| Infra opcional | Docker Compose, Nginx, systemd |
+| Infra opcional | Docker Compose, Dokploy, Cloudflare Tunnel, Nginx, systemd |
 
 El backend sirve la API REST (`/api/*`), archivos subidos (`/uploads`) y el frontend estático desde un solo proceso.
+
+**Producción actual:** `https://erp.semejal.com` (rama `3.0`).
 
 ---
 
@@ -93,8 +95,8 @@ Copia la plantilla según el método de instalación:
 |----------|-------------|
 | `NODE_ENV` | `production` en servidores reales |
 | `PORT` | Puerto HTTP interno (por defecto `3000`) |
-| `PUBLIC_BASE_URL` | URL pública con HTTPS, ej. `https://erp.tudominio.com` |
-| `CORS_ORIGINS` | Orígenes permitidos separados por coma (dominio e IP) |
+| `PUBLIC_BASE_URL` | URL pública con HTTPS, ej. `https://erp.semejal.com` |
+| `CORS_ORIGINS` | Orígenes permitidos separados por coma (dominio e IP). `PUBLIC_BASE_URL` se acepta automáticamente si falta en la lista. |
 
 ### Variables opcionales
 
@@ -106,7 +108,7 @@ Copia la plantilla según el método de instalación:
 | `SMTP_*` | Correo saliente (también configurable en la UI) |
 | `TWILIO_*` | SMS/WhatsApp (también configurable en la UI) |
 
-> **Nota:** Con `NODE_ENV=production`, las IPs públicas **no** se aceptan automáticamente por CORS. Incluye dominio e IP en `CORS_ORIGINS` (ej. dominio HTTPS + `http://IP:8080`).
+> **Nota CORS:** En producción, CORS aplica **solo** a rutas `/api/*`. Los assets estáticos (`/assets/js/*.js`) no pasan por CORS. Con `NODE_ENV=production`, las IPs públicas **no** se aceptan automáticamente: incluye dominio e IP en `CORS_ORIGINS` (ej. `https://erp.semejal.com,http://IP:8080`).
 
 ---
 
@@ -137,20 +139,22 @@ En la pestaña **Environment**, pega el contenido de [`.env.docker.example`](.en
 ```env
 DB_PASS=tu_contraseña_segura
 JWT_SECRET=genera_una_clave_aleatoria_de_32_caracteres_o_mas
-PUBLIC_BASE_URL=https://erp.tudominio.com
-CORS_ORIGINS=https://erp.tudominio.com,http://IP_DEL_VPS:8080
+PUBLIC_BASE_URL=https://erp.semejal.com
+CORS_ORIGINS=https://erp.semejal.com,http://IP_DEL_VPS:8080
 ```
 
-Usa el dominio de Dokploy en `PUBLIC_BASE_URL` y añade la IP `:8080` en `CORS_ORIGINS` si también entras por IP. Si cambia la IP del VPS, actualiza el segundo origen.
+Usa tu dominio en `PUBLIC_BASE_URL` y añade la IP `:8080` en `CORS_ORIGINS` si también entras por IP. Si cambia la IP del VPS, actualiza el segundo origen.
 
 ### 3. Dominio
 
 1. Pestaña **Domains** → Add Domain
 2. Servicio: **erp**
 3. Puerto: **3000**
-4. Host: `erp.tudominio.com`
+4. Host: `erp.semejal.com` (o tu dominio)
 5. Activa HTTPS / certificado Let's Encrypt
 6. Apunta el DNS (A/CNAME) al servidor de Dokploy
+
+**Alternativa con Cloudflare Tunnel** (sin Dokploy Domains): apunta el túnel a `http://127.0.0.1:8080` en el host (mapeo Docker) o a `http://host.docker.internal:8080` si `cloudflared` corre en Docker en Windows. Usa **HTTP**, no HTTPS, hacia el origen local.
 
 ### 4. Desplegar
 
@@ -159,7 +163,13 @@ Pulsa **Deploy** y espera a que construya la imagen y arranque `postgres` + `erp
 Comprueba salud:
 
 ```
-https://erp.tudominio.com/api/health
+https://erp.semejal.com/api/health
+```
+
+Debe responder algo como:
+
+```json
+{"ok":true,"puerto":3000,"urlPublica":"https://erp.semejal.com"}
 ```
 
 Acceso directo por IP (mapeo host `8080` → contenedor `3000`):
@@ -265,8 +275,8 @@ DB_USER=erp_user
 DB_PASS=tu_contraseña_segura
 JWT_SECRET=genera_una_clave_aleatoria_de_32_caracteres_o_mas
 JWT_EXPIRES_IN=8h
-PUBLIC_BASE_URL=https://erp.tudominio.com
-CORS_ORIGINS=https://erp.tudominio.com,http://IP_DEL_VPS:8080
+PUBLIC_BASE_URL=https://erp.semejal.com
+CORS_ORIGINS=https://erp.semejal.com,http://IP_DEL_VPS:8080
 ```
 
 ### 7. Instalar dependencias y probar el arranque
@@ -323,13 +333,13 @@ sudo systemctl status erp
 
 ### 9. Configurar Nginx como proxy inverso
 
-Reemplaza `erp.tudominio.com` si usas otro dominio:
+Reemplaza `erp.semejal.com` si usas otro dominio:
 
 ```bash
 sudo tee /etc/nginx/sites-available/erp > /dev/null <<'EOF'
 server {
     listen 80;
-    server_name erp.tudominio.com;
+    server_name erp.semejal.com;
 
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -352,7 +362,7 @@ sudo systemctl reload nginx
 ### 10. Habilitar HTTPS con Let's Encrypt
 
 ```bash
-sudo certbot --nginx -d erp.tudominio.com
+sudo certbot --nginx -d erp.semejal.com
 ```
 
 Certbot renovará el certificado automáticamente.
@@ -485,7 +495,24 @@ docker compose exec erp node scripts/migrate-odoo.js --execute
 ### Error CORS en el navegador
 
 - En producción define `CORS_ORIGINS` con cada origen exacto (protocolo + host + puerto si aplica).
-- Ejemplo: `CORS_ORIGINS=https://erp.tudominio.com,http://IP_DEL_VPS:8080`
+- Ejemplo: `CORS_ORIGINS=https://erp.semejal.com,http://IP_DEL_VPS:8080`
+- Tras cambiar `.env`, **reinicia el backend** (`docker compose restart erp` o reiniciar Node).
+- CORS solo aplica a `/api/*`; si `app.js` devuelve 500 con mensaje CORS, el servidor sigue con variables viejas o CORS global mal configurado.
+
+### La página se queda en «Cargando sistema…»
+
+- Abre DevTools → Network y revisa `/assets/js/app.js`.
+- Si responde **500** con error CORS, reinicia el ERP con `PUBLIC_BASE_URL` y `CORS_ORIGINS` correctos.
+- En Cloudflare, desactiva **Rocket Loader** o usa `data-cfasync="false"` en scripts (ya incluido en `index.html`).
+
+### 404 en `/api/caja/reporte`
+
+- **Normal** si no hay apertura de caja hoy: el backend responde `200` con `{ "estado": "sin_registro" }` (versiones recientes).
+- Ve a **Caja** → **Hacer Apertura de Caja** antes de usar el POS.
+
+### Login muestra «Sesión expirada» con credenciales incorrectas
+
+- El frontend distingue 401 de login (credenciales inválidas) de 401 de sesión expirada. Si ves el mensaje antiguo, recarga con `Ctrl+Shift+R` para obtener el JS actualizado.
 
 ### `502 Bad Gateway` detrás de Nginx
 
@@ -508,7 +535,6 @@ docker compose exec erp node scripts/migrate-odoo.js --execute
 
 | Documento | Contenido |
 |-----------|-----------|
-| [`INSTRUCCIONES_IA_DESARROLLADOR.md`](INSTRUCCIONES_IA_DESARROLLADOR.md) | Guía técnica detallada para desarrollo |
 | [`Plan_ERP_TechStore.md`](Plan_ERP_TechStore.md) | Plan funcional y arquitectura |
 
 ---

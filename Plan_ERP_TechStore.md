@@ -1,7 +1,7 @@
 # ERP TechStore Colombia — Plan Full-Stack
 > Documento generado como guía de implementación para el equipo de desarrollo.
 > Contiene todos los módulos, funcionalidades, fases de desarrollo y detalles técnicos.
-> **Versión:** 2.0 — Incluye Tabler Bootstrap 5 y correcciones del análisis crítico
+> **Versión:** 3.0 — Dokploy, dominio `erp.semejal.com`, módulo Instalaciones, CORS en producción
 
 ---
 
@@ -45,7 +45,7 @@
 |------------|-----|
 | **Tabler (Bootstrap 5)** | Design system base — layout, componentes, dark/light mode nativo |
 | **Tabler Icons** | 6,000+ íconos SVG (reemplaza Lucide Icons) |
-| **Google Fonts (Inter)** | Tipografía premium |
+| **Google Fonts (Plus Jakarta Sans)** | Tipografía principal del ERP |
 | **Chart.js** | Gráficas del dashboard y reportes |
 | **Vanilla JavaScript (ES6+)** | Lógica y llamadas a la API (sin frameworks JS) |
 | **Fetch API** | Comunicación con el backend REST |
@@ -77,6 +77,8 @@ c:\erpnext\
 │   │   ├── Cotizacion.js           # Presupuestos/cotizaciones
 │   │   ├── ItemCotizacion.js
 │   │   ├── OrdenReparacion.js
+│   │   ├── OrdenInstalacion.js       # Órdenes de instalación técnica
+│   │   ├── MaterialInstalacion.js    # Materiales usados por instalación
 │   │   ├── FotoReparacion.js
 │   │   ├── RepuestoOrden.js
 │   │   ├── RentabilidadReparacion.js # Análisis costo vs cobrado
@@ -104,7 +106,8 @@ c:\erpnext\
 │   │   ├── series.routes.js        # /api/series (IMEI, lotes, historial)
 │   │   ├── ventas.routes.js        # CRUD /api/ventas + descuentos + comisiones
 │   │   ├── reparaciones.routes.js  # CRUD /api/reparaciones
-│   │   ├── facturacion.routes.js   # CRUD /api/facturas + notas crédito
+│   │   ├── instalaciones.routes.js # CRUD /api/instalaciones
+│   │   ├── facturas.routes.js      # CRUD /api/facturas + notas crédito
 │   │   ├── clientes.routes.js      # CRUD /api/clientes
 │   │   ├── nomina.routes.js        # CRUD /api/nomina
 │   │   ├── empleados.routes.js     # CRUD /api/empleados
@@ -116,6 +119,8 @@ c:\erpnext\
 │   │   ├── tradein.routes.js       # /api/trade-in
 │   │   ├── cartera.routes.js       # /api/cartera (cuentas por cobrar)
 │   │   ├── notificaciones.routes.js# /api/notificaciones (SMS/WhatsApp)
+│   │   ├── gemini.routes.js        # /api/gemini (IA)
+│   │   ├── public.routes.js        # /api/public (seguimiento QR sin login)
 │   │   ├── analytics.routes.js     # /api/analytics (18 endpoints)
 │   │   └── auditlog.routes.js      # /api/audit-log
 │   ├── controllers/                # Lógica de negocio (uno por módulo)
@@ -140,12 +145,14 @@ c:\erpnext\
     │   ├── js/
     │   │   ├── tabler.min.js       # JS de Tabler (Bootstrap 5)
     │   │   ├── app.js              # Router SPA + inicialización
-    │   │   ├── api.js              # Cliente HTTP (Fetch + JWT)
+    │   │   ├── api.js              # Cliente HTTP (Fetch + JWT, silent, skipAuth)
     │   │   ├── auth.js             # Login / sesión
     │   │   ├── modules/
     │   │   │   ├── dashboard.js
     │   │   │   ├── pos.js
     │   │   │   ├── reparaciones.js
+    │   │   │   ├── instalaciones.js
+    │   │   │   ├── seguimiento-reparacion.js  # Vista pública QR
     │   │   │   ├── rentabilidad.js     # Análisis rentabilidad reparaciones
     │   │   │   ├── inventario.js
     │   │   │   ├── series.js           # Gestión series/IMEI/lotes
@@ -192,9 +199,14 @@ c:\erpnext\
 
 > **El backend sirve el frontend.** En `server.js`:
 > ```javascript
+> app.use('/api', cors(corsOptions));  // CORS solo en API
 > app.use(express.static(path.join(__dirname, '..', 'frontend')));
 > ```
-> Todo el sistema se accede desde `http://localhost:3000/`. No se necesita Live Server ni hay problemas de CORS.
+>
+> - **Desarrollo local:** acceso en `http://localhost:3000/` (o el puerto configurado en `PORT`).
+> - **Producción con dominio:** define `PUBLIC_BASE_URL` y `CORS_ORIGINS` en el entorno. `PUBLIC_BASE_URL` se incluye automáticamente como origen permitido.
+> - Los módulos ES (`type="module"`) envían cabecera `Origin`; CORS **no** debe aplicarse a assets estáticos, solo a `/api/*`.
+> - Tras cambiar variables de entorno, reinicia el proceso Node/Docker.
 
 ---
 
@@ -646,9 +658,14 @@ GET    /api/nomina/:empleadoId/desprendible-pdf
 # CAJA
 POST   /api/caja/apertura
 POST   /api/caja/cierre
-GET    /api/caja/reporte?fecha=&sede=
+GET    /api/caja/reporte?fecha=&sede=   # 200 con caja | { estado: "sin_registro" } si no hay registro
 POST   /api/caja/egreso
 GET    /api/caja/egresos?sede=&fecha=
+
+# INSTALACIONES
+GET    /api/instalaciones?estado=&sede=
+POST   /api/instalaciones
+PUT    /api/instalaciones/:id/estado
 
 # ANALÍTICA Y REPORTES (18 endpoints)
 GET    /api/analytics/kpis?sede=&periodo=
@@ -866,6 +883,19 @@ cd c:\erpnext\backend
 npm install
 npm run dev             # http://localhost:3000 (sirve backend + frontend)
 ```
+
+### Producción (Dokploy / Docker)
+
+Ver [`README.md`](README.md) — sección **Instalación con Dokploy**.
+
+| Variable | Ejemplo producción |
+|----------|-------------------|
+| `PUBLIC_BASE_URL` | `https://erp.semejal.com` |
+| `CORS_ORIGINS` | `https://erp.semejal.com,http://IP:8080` |
+| Puerto contenedor | `3000` |
+| Puerto host (acceso IP) | `8080` |
+
+Rama de despliegue: **`3.0`**. Repositorio: `https://github.com/sistemctl/erp`.
 
 ---
 
