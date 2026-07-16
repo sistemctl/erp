@@ -7,7 +7,7 @@
 #   4. Environment: pega las variables de .env.docker.example
 #      (PUBLIC_BASE_URL + CORS_ORIGINS con dominio e IP)
 #   5. Domains: servicio "erp", puerto 3000, HTTPS
-#      Dominio: erp.semejal.com
+#      Dominio: erp.tudominio.com (configurar en Environment / Domains)
 #   6. Deploy
 #
 # Puertos:

@@ -1,7 +1,7 @@
 # ERP TechStore Colombia — Plan Full-Stack
 > Documento generado como guía de implementación para el equipo de desarrollo.
 > Contiene todos los módulos, funcionalidades, fases de desarrollo y detalles técnicos.
-> **Versión:** 3.0 — Dokploy, dominio `erp.semejal.com`, módulo Instalaciones, CORS en producción
+> **Versión:** 3.0 — Dokploy, CORS en producción, módulo Instalaciones
 
 ---
 
@@ -890,8 +890,8 @@ Ver [`README.md`](README.md) — sección **Instalación con Dokploy**.
 
 | Variable | Ejemplo producción |
 |----------|-------------------|
-| `PUBLIC_BASE_URL` | `https://erp.semejal.com` |
-| `CORS_ORIGINS` | `https://erp.semejal.com,http://IP:8080` |
+| `PUBLIC_BASE_URL` | `https://erp.tudominio.com` |
+| `CORS_ORIGINS` | `https://erp.tudominio.com,http://IP:8080` |
 | Puerto contenedor | `3000` |
 | Puerto host (acceso IP) | `8080` |
 

@@ -11,7 +11,7 @@ Sistema ERP monolítico para tiendas de tecnología: ventas, inventario, reparac
 
 El backend sirve la API REST (`/api/*`), archivos subidos (`/uploads`) y el frontend estático desde un solo proceso.
 
-**Producción actual:** `https://erp.semejal.com` (rama `3.0`).
+**Producción:** despliegue con Dokploy/Docker en la rama `3.0` (configura tu dominio en Environment).
 
 ---
 
@@ -95,7 +95,7 @@ Copia la plantilla según el método de instalación:
 |----------|-------------|
 | `NODE_ENV` | `production` en servidores reales |
 | `PORT` | Puerto HTTP interno (por defecto `3000`) |
-| `PUBLIC_BASE_URL` | URL pública con HTTPS, ej. `https://erp.semejal.com` |
+| `PUBLIC_BASE_URL` | URL pública con HTTPS, ej. `https://erp.tudominio.com` |
 | `CORS_ORIGINS` | Orígenes permitidos separados por coma (dominio e IP). `PUBLIC_BASE_URL` se acepta automáticamente si falta en la lista. |
 
 ### Variables opcionales
@@ -108,7 +108,7 @@ Copia la plantilla según el método de instalación:
 | `SMTP_*` | Correo saliente (también configurable en la UI) |
 | `TWILIO_*` | SMS/WhatsApp (también configurable en la UI) |
 
-> **Nota CORS:** En producción, CORS aplica **solo** a rutas `/api/*`. Los assets estáticos (`/assets/js/*.js`) no pasan por CORS. Con `NODE_ENV=production`, las IPs públicas **no** se aceptan automáticamente: incluye dominio e IP en `CORS_ORIGINS` (ej. `https://erp.semejal.com,http://IP:8080`).
+> **Nota CORS:** En producción, CORS aplica **solo** a rutas `/api/*`. Los assets estáticos (`/assets/js/*.js`) no pasan por CORS. Con `NODE_ENV=production`, las IPs públicas **no** se aceptan automáticamente: incluye dominio e IP en `CORS_ORIGINS` (ej. `https://erp.tudominio.com,http://IP:8080`).
 
 ---
 
@@ -139,8 +139,8 @@ En la pestaña **Environment**, pega el contenido de [`.env.docker.example`](.en
 ```env
 DB_PASS=tu_contraseña_segura
 JWT_SECRET=genera_una_clave_aleatoria_de_32_caracteres_o_mas
-PUBLIC_BASE_URL=https://erp.semejal.com
-CORS_ORIGINS=https://erp.semejal.com,http://IP_DEL_VPS:8080
+PUBLIC_BASE_URL=https://erp.tudominio.com
+CORS_ORIGINS=https://erp.tudominio.com,http://IP_DEL_VPS:8080
 ```
 
 Usa tu dominio en `PUBLIC_BASE_URL` y añade la IP `:8080` en `CORS_ORIGINS` si también entras por IP. Si cambia la IP del VPS, actualiza el segundo origen.
@@ -150,7 +150,7 @@ Usa tu dominio en `PUBLIC_BASE_URL` y añade la IP `:8080` en `CORS_ORIGINS` si 
 1. Pestaña **Domains** → Add Domain
 2. Servicio: **erp**
 3. Puerto: **3000**
-4. Host: `erp.semejal.com` (o tu dominio)
+4. Host: `erp.tudominio.com` (o tu dominio)
 5. Activa HTTPS / certificado Let's Encrypt
 6. Apunta el DNS (A/CNAME) al servidor de Dokploy
 
@@ -163,13 +163,13 @@ Pulsa **Deploy** y espera a que construya la imagen y arranque `postgres` + `erp
 Comprueba salud:
 
 ```
-https://erp.semejal.com/api/health
+https://erp.tudominio.com/api/health
 ```
 
 Debe responder algo como:
 
 ```json
-{"ok":true,"puerto":3000,"urlPublica":"https://erp.semejal.com"}
+{"ok":true,"puerto":3000,"urlPublica":"https://erp.tudominio.com"}
 ```
 
 Acceso directo por IP (mapeo host `8080` → contenedor `3000`):
@@ -275,8 +275,8 @@ DB_USER=erp_user
 DB_PASS=tu_contraseña_segura
 JWT_SECRET=genera_una_clave_aleatoria_de_32_caracteres_o_mas
 JWT_EXPIRES_IN=8h
-PUBLIC_BASE_URL=https://erp.semejal.com
-CORS_ORIGINS=https://erp.semejal.com,http://IP_DEL_VPS:8080
+PUBLIC_BASE_URL=https://erp.tudominio.com
+CORS_ORIGINS=https://erp.tudominio.com,http://IP_DEL_VPS:8080
 ```
 
 ### 7. Instalar dependencias y probar el arranque
@@ -333,13 +333,13 @@ sudo systemctl status erp
 
 ### 9. Configurar Nginx como proxy inverso
 
-Reemplaza `erp.semejal.com` si usas otro dominio:
+Reemplaza `erp.tudominio.com` si usas otro dominio:
 
 ```bash
 sudo tee /etc/nginx/sites-available/erp > /dev/null <<'EOF'
 server {
     listen 80;
-    server_name erp.semejal.com;
+    server_name erp.tudominio.com;
 
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -362,7 +362,7 @@ sudo systemctl reload nginx
 ### 10. Habilitar HTTPS con Let's Encrypt
 
 ```bash
-sudo certbot --nginx -d erp.semejal.com
+sudo certbot --nginx -d erp.tudominio.com
 ```
 
 Certbot renovará el certificado automáticamente.
@@ -495,7 +495,7 @@ docker compose exec erp node scripts/migrate-odoo.js --execute
 ### Error CORS en el navegador
 
 - En producción define `CORS_ORIGINS` con cada origen exacto (protocolo + host + puerto si aplica).
-- Ejemplo: `CORS_ORIGINS=https://erp.semejal.com,http://IP_DEL_VPS:8080`
+- Ejemplo: `CORS_ORIGINS=https://erp.tudominio.com,http://IP_DEL_VPS:8080`
 - Tras cambiar `.env`, **reinicia el backend** (`docker compose restart erp` o reiniciar Node).
 - CORS solo aplica a `/api/*`; si `app.js` devuelve 500 con mensaje CORS, el servidor sigue con variables viejas o CORS global mal configurado.
 
