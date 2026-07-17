@@ -65,42 +65,48 @@ export async function initClientes(container) {
       </div>
     </div>
 
-    <!-- Modal Formulario Cliente -->
-    <div class="modal modal-blur fade" id="modal-form-cliente" tabindex="-1" role="dialog" aria-hidden="true">
+    <!-- Modal Formulario Cliente (ficha · mismo lenguaje visual que ticket de taller) -->
+    <div class="modal modal-blur fade" id="modal-form-cliente" tabindex="-1" role="dialog" aria-hidden="true" data-cli-ui="3.0.8">
       <div class="modal-dialog modal-dialog-centered" role="document">
         <div class="modal-content">
-          <form id="form-cliente">
+          <form id="form-cliente" class="cli-form">
             <input type="hidden" id="cli-id">
-            <div class="modal-header">
-              <h5 class="modal-title" id="modal-title-cliente">Registrar Cliente</h5>
+            <header class="cli-modal__header">
+              <div class="cli-modal__heading">
+                <p class="cli-modal__eyebrow">Ficha de cliente</p>
+                <h5 class="modal-title cli-modal__title" id="modal-title-cliente">Registrar Cliente</h5>
+                <p class="cli-modal__lede">Crea o actualiza el contacto en menos de un minuto.</p>
+              </div>
               <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </header>
+            <div class="modal-body cli-modal__body">
+              <div class="cli-field">
+                <label class="form-label required" for="form-cli-nombre">Nombre completo</label>
+                <input type="text" id="form-cli-nombre" class="form-control" required placeholder="Ej: Carlos Mario Restrepo" autocomplete="name">
+              </div>
+              <div class="cli-field-grid">
+                <div class="cli-field">
+                  <label class="form-label" for="form-cli-documento">Cédula / NIT</label>
+                  <input type="text" id="form-cli-documento" class="form-control" placeholder="Ej: 1017123456" autocomplete="off">
+                </div>
+                <div class="cli-field">
+                  <label class="form-label" for="form-cli-telefono">Teléfono</label>
+                  <input type="text" id="form-cli-telefono" class="form-control" placeholder="Ej: 3001234567" autocomplete="tel">
+                </div>
+              </div>
+              <div class="cli-field">
+                <label class="form-label" for="form-cli-email">Correo electrónico</label>
+                <input type="email" id="form-cli-email" class="form-control" placeholder="Ej: carlos@gmail.com" spellcheck="false" autocomplete="email">
+              </div>
+              <div class="cli-field">
+                <label class="form-label" for="form-cli-direccion">Dirección</label>
+                <input type="text" id="form-cli-direccion" class="form-control" placeholder="Ej: Calle 45 #12-34" autocomplete="street-address">
+              </div>
             </div>
-            <div class="modal-body">
-              <div class="mb-3">
-                <label class="form-label required">Nombre Completo</label>
-                <input type="text" id="form-cli-nombre" class="form-control" required placeholder="Ej: Carlos Mario Restrepo">
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Cédula o NIT</label>
-                <input type="text" id="form-cli-documento" class="form-control" placeholder="Ej: 1017123456">
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Teléfono</label>
-                <input type="text" id="form-cli-telefono" class="form-control" placeholder="Ej: 3001234567">
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Correo Electrónico</label>
-                 <input type="email" id="form-cli-email" class="form-control" placeholder="Ej: carlos@gmail.com" spellcheck="false">
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Dirección</label>
-                <input type="text" id="form-cli-direccion" class="form-control" placeholder="Ej: Calle 45 #12-34">
-              </div>
-            </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancelar</button>
-              <button type="submit" class="btn btn-primary ms-auto">Guardar Cliente</button>
-            </div>
+            <footer class="cli-modal__footer">
+              <button type="button" class="btn btn-ghost-secondary" data-bs-dismiss="modal">Cancelar</button>
+              <button type="submit" class="btn btn-primary">Guardar Cliente</button>
+            </footer>
           </form>
         </div>
       </div>

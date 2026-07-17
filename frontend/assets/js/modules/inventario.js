@@ -6,6 +6,7 @@ import { erpAction, erpActions } from '../utils/action-buttons.js';
 import { printBarcodeLabels, renderBarcodePreview, isInternalBarcode } from '../utils/barcode-label.js';
 
 let dataSedes = [];
+let inventarioKeydownHandler = null;
 
 export async function initInventario(container) {
   const usuario = getUsuario();
@@ -199,7 +200,7 @@ export async function initInventario(container) {
                   <article class="prod-form-card d-none" id="sec-gestion-seriales" aria-labelledby="prod-section-seriales">
                     <header class="prod-form-card__head">
                       <h6 class="prod-form-card__title" id="prod-section-seriales">Seriales en esta sede</h6>
-                      <p class="prod-form-card__desc">Cada unidad con IMEI o serial propio se registra aparte del código de catálogo.</p>
+                      <p class="prod-form-card__desc">Cada unidad con IMEI o serial propio se registra aparte del código de catálogo. En productos nuevos, los seriales quedan en cola hasta Guardar.</p>
                     </header>
                     <div class="row g-3">
                       <div class="col-12">
@@ -282,7 +283,7 @@ export async function initInventario(container) {
                         </span>
                       </label>
                       <label class="prod-form-prop">
-                        <input class="prod-form-prop__input" type="checkbox" id="prod-iva" checked>
+                        <input class="prod-form-prop__input" type="checkbox" id="prod-iva">
                         <span class="prod-form-prop__box">
                           <i class="ti ti-receipt-tax" aria-hidden="true"></i>
                           <span class="prod-form-prop__text">
@@ -587,6 +588,79 @@ export async function initInventario(container) {
   });
 
   // --- GESTIÓN DE SERIALES DESDE EL MODAL ---
+  /** Seriales encolados al crear producto (aún sin id); se envían con /series/bulk al Guardar. */
+  let pendingSerials = [];
+
+  const parseSerialText = (text) =>
+    String(text || '')
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+  const renderPendingSerials = () => {
+    const listBody = document.getElementById('modal-seriales-list-body');
+    if (!listBody) return;
+
+    if (pendingSerials.length === 0) {
+      listBody.innerHTML = `<tr><td colspan="2" class="text-center text-secondary py-2">Agrega seriales arriba; se registrarán al guardar el producto.</td></tr>`;
+      return;
+    }
+
+    listBody.innerHTML = pendingSerials.map((serie, idx) => `
+      <tr>
+        <td>
+          <code class="fw-bold text-dark">${serie}</code>
+          <span class="badge bg-azure-lt ms-2">Pendiente</span>
+        </td>
+        <td class="text-end px-3">
+          <button type="button" class="btn btn-icon btn-ghost-danger btn-sm btn-remove-pending-serial" data-idx="${idx}" title="Quitar" aria-label="Quitar serial pendiente">
+            <i class="ti ti-trash"></i>
+          </button>
+        </td>
+      </tr>
+    `).join('');
+
+    listBody.querySelectorAll('.btn-remove-pending-serial').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-idx'), 10);
+        if (!Number.isNaN(idx)) {
+          pendingSerials.splice(idx, 1);
+          renderPendingSerials();
+        }
+      });
+    });
+  };
+
+  const clearPendingSerials = () => {
+    pendingSerials = [];
+    const modalTextarea = document.getElementById('modal-reg-imei');
+    const modalCounter = document.getElementById('modal-seriales-counter');
+    if (modalTextarea) modalTextarea.value = '';
+    if (modalCounter) modalCounter.textContent = '0 detectados';
+  };
+
+  const syncSerialSectionVisibility = () => {
+    const switchSerie = document.getElementById('prod-serie');
+    const secSeriales = document.getElementById('sec-gestion-seriales');
+    if (!switchSerie || !secSeriales) return;
+
+    const prodId = document.getElementById('producto-id')?.value;
+    if (switchSerie.checked) {
+      secSeriales.classList.remove('d-none');
+      if (prodId) {
+        loadModalSerials(prodId);
+      } else {
+        renderPendingSerials();
+      }
+    } else {
+      secSeriales.classList.add('d-none');
+      if (!prodId) {
+        clearPendingSerials();
+        renderPendingSerials();
+      }
+    }
+  };
+
   const loadModalSerials = async (productoId) => {
     const listBody = document.getElementById('modal-seriales-list-body');
     if (!listBody) return;
@@ -648,19 +722,40 @@ export async function initInventario(container) {
 
     if (modalTextarea && modalCounter && btnAddSerials && switchSerie) {
       modalTextarea.addEventListener('input', (e) => {
-        const text = e.target.value;
-        const count = text.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0).length;
+        const count = parseSerialText(e.target.value).length;
         modalCounter.textContent = `${count} detectados`;
       });
 
       btnAddSerials.addEventListener('click', async () => {
         const prodId = document.getElementById('producto-id').value;
         const currentSedeId = selectSede.value || usuario.sedeId;
-        const textVal = modalTextarea.value.trim();
-        
-        const series = textVal.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
+        const series = parseSerialText(modalTextarea.value);
         if (series.length === 0) {
           showToast('Error', 'Por favor, ingrese al menos un número de serie válido.', 'error');
+          return;
+        }
+
+        // Crear producto: encolar hasta Guardar (aún no hay productoId)
+        if (!prodId) {
+          const existing = new Set(pendingSerials.map((s) => s.toLowerCase()));
+          let added = 0;
+          for (const s of series) {
+            if (!existing.has(s.toLowerCase())) {
+              pendingSerials.push(s);
+              existing.add(s.toLowerCase());
+              added += 1;
+            }
+          }
+          modalTextarea.value = '';
+          modalCounter.textContent = '0 detectados';
+          renderPendingSerials();
+          showToast(
+            'Seriales listos',
+            added
+              ? `${added} serial${added === 1 ? '' : 'es'} en cola. Se registrarán al guardar el producto.`
+              : 'Esos seriales ya estaban en la lista pendiente.',
+            added ? 'success' : 'info'
+          );
           return;
         }
 
@@ -685,15 +780,8 @@ export async function initInventario(container) {
         }
       });
 
-      switchSerie.addEventListener('change', (e) => {
-        const prodId = document.getElementById('producto-id').value;
-        const secSeriales = document.getElementById('sec-gestion-seriales');
-        if (e.target.checked && prodId) {
-          secSeriales.classList.remove('d-none');
-          loadModalSerials(prodId);
-        } else {
-          secSeriales.classList.add('d-none');
-        }
+      switchSerie.addEventListener('change', () => {
+        syncSerialSectionVisibility();
       });
     }
   }, 100);
@@ -860,6 +948,7 @@ export async function initInventario(container) {
       }
 
       const secSeriales = document.getElementById('sec-gestion-seriales');
+      clearPendingSerials();
       if (item.producto.tieneNumeroSerie) {
         secSeriales.classList.remove('d-none');
         loadModalSerials(item.productoId);
@@ -941,6 +1030,21 @@ export async function initInventario(container) {
   });
   searchInput.addEventListener('input', () => applyInventarioFilters());
   selectCategoria?.addEventListener('change', () => applyInventarioFilters());
+
+  // F2 → enfocar buscar/escanear (mismo atajo que POS; no actúa si hay modal abierto)
+  if (inventarioKeydownHandler) {
+    document.removeEventListener('keydown', inventarioKeydownHandler);
+  }
+  inventarioKeydownHandler = (e) => {
+    if (e.key !== 'F2') return;
+    const input = document.getElementById('search-inventario');
+    if (!input) return;
+    if (document.querySelector('.modal.show')) return;
+    e.preventDefault();
+    input.focus();
+    input.select();
+  };
+  document.addEventListener('keydown', inventarioKeydownHandler);
 
   document.querySelectorAll('.inv-chip[data-stock]').forEach((chip) => {
     chip.addEventListener('click', () => {
@@ -1062,6 +1166,7 @@ export async function initInventario(container) {
       document.getElementById('form-producto').reset();
       document.getElementById('producto-id').value = '';
       document.getElementById('prod-stock-wrapper').classList.add('d-none');
+      clearPendingSerials();
       document.getElementById('sec-gestion-seriales').classList.add('d-none');
       document.getElementById('modal-producto-title').textContent = 'Crear producto';
       syncProdFormMeta();
@@ -1073,6 +1178,7 @@ export async function initInventario(container) {
       e.preventDefault();
       const id = document.getElementById('producto-id').value;
       const codigoRaw = document.getElementById('prod-codigo').value.trim();
+      const sedeId = (document.getElementById('select-sede-inventario') ? document.getElementById('select-sede-inventario').value : null) || usuario.sedeId;
       const data = {
         nombre: document.getElementById('prod-nombre').value,
         descripcion: document.getElementById('prod-descripcion').value,
@@ -1086,10 +1192,24 @@ export async function initInventario(container) {
         esServicio: document.getElementById('prod-servicio').checked,
         imagenUrl: document.getElementById('prod-imagen-url').value.trim() || null,
         ajusteStock: ['admin', 'superadmin'].includes(usuario.rol) ? parseStockInput(document.getElementById('prod-stock-actual').value) : null,
-        sedeId: (document.getElementById('select-sede-inventario') ? document.getElementById('select-sede-inventario').value : null) || usuario.sedeId
+        sedeId
       };
       if (codigoRaw) {
         data.codigoBarras = codigoRaw;
+      }
+
+      // Incluir texto pendiente del textarea al crear (por si no pulsó Agregar)
+      const textareaSerials = parseSerialText(document.getElementById('modal-reg-imei')?.value);
+      const serialsToFlush = [];
+      if (!id && data.tieneNumeroSerie) {
+        const seen = new Set(pendingSerials.map((s) => s.toLowerCase()));
+        serialsToFlush.push(...pendingSerials);
+        for (const s of textareaSerials) {
+          if (!seen.has(s.toLowerCase())) {
+            serialsToFlush.push(s);
+            seen.add(s.toLowerCase());
+          }
+        }
       }
 
       try {
@@ -1098,12 +1218,27 @@ export async function initInventario(container) {
           showToast('Éxito', 'Producto actualizado correctamente.', 'success');
         } else {
           const created = await apiFetch('/productos', { method: 'POST', body: JSON.stringify(data) });
+          const newId = created?.id || created?.producto?.id;
+
+          if (serialsToFlush.length > 0 && newId) {
+            try {
+              const res = await apiFetch('/series/bulk', {
+                method: 'POST',
+                body: JSON.stringify({ series: serialsToFlush, productoId: newId, sedeId })
+              });
+              showToast('Seriales registrados', res.message || `${serialsToFlush.length} serial(es) agregados.`, 'success');
+            } catch (serialErr) {
+              showToast('Producto creado', `El producto se guardó, pero falló el registro de seriales: ${serialErr.message}`, 'warning');
+            }
+          }
+
           if (!codigoRaw && created?.codigoBarras) {
             showToast('Producto creado', `Código interno asignado: ${created.codigoBarras}`, 'success');
-          } else {
+          } else if (serialsToFlush.length === 0) {
             showToast('Éxito', 'Producto creado correctamente.', 'success');
           }
         }
+        clearPendingSerials();
         modalProd.hide();
         stockCacheSedeId = null;
         loadInventario({ force: true });
@@ -1200,4 +1335,11 @@ export async function initInventario(container) {
 
   // Primera carga
   await loadInventario();
+}
+
+export function destroyInventario() {
+  if (inventarioKeydownHandler) {
+    document.removeEventListener('keydown', inventarioKeydownHandler);
+    inventarioKeydownHandler = null;
+  }
 }

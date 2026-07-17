@@ -84,12 +84,28 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
   index: false,
   fallthrough: true
 }));
-app.use(express.static(path.join(__dirname, '..', 'frontend')));
+
+// SPA assets without a bundler: avoid stale JS/CSS (browsers + CDN) after deploy
+app.use(express.static(path.join(__dirname, '..', 'frontend'), {
+  setHeaders(res, filePath) {
+    if (/\.html?$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      return;
+    }
+    if (/\.(js|mjs|css)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+    }
+  }
+}));
 
 app.get('/*all', (req, res, next) => {
   if (req.url.startsWith('/api/')) {
     return res.status(404).json({ error: 'Endpoint no encontrado' });
   }
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.set('Pragma', 'no-cache');
   res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html'));
 });
 

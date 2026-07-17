@@ -4,6 +4,10 @@ import { applyThemeFromCache, initThemeFromServer } from './utils/theme.js';
 import { applyDocumentBranding, getCachedBrand, resolveAssetUrl } from './utils/branding.js';
 import { isPublicSeguimientoLocation } from './modules/seguimiento-reparacion.js';
 
+/** Bump with index.html ?v= so dynamic ES modules are not stuck on CDN/browser cache. */
+const ASSET_V = '3.0.22';
+const importModule = (path) => import(`${path}?v=${ASSET_V}`);
+
 // Anular global alert del navegador con una notificación Toast Premium animada
 window.alert = (message) => {
   let type = 'info';
@@ -232,7 +236,7 @@ async function router() {
       window.activeModuleCleanup();
       window.activeModuleCleanup = null;
     }
-    const { initSeguimientoReparacion } = await import('./modules/seguimiento-reparacion.js');
+    const { initSeguimientoReparacion } = await importModule('./modules/seguimiento-reparacion.js');
     await initSeguimientoReparacion(appContainer, rawHash);
     return;
   }
@@ -298,93 +302,91 @@ async function router() {
   try {
     switch (hash) {
       case '#/dashboard':
-        const { initDashboard } = await import('./modules/dashboard.js');
+        const { initDashboard } = await importModule('./modules/dashboard.js');
         await initDashboard(contentContainer);
         break;
       case '#/pos':
-        const { initPos, destroyPos } = await import('./modules/pos.js');
+        const { initPos, destroyPos } = await importModule('./modules/pos.js');
         await initPos(contentContainer);
         window.activeModuleCleanup = destroyPos;
         break;
       case '#/inventario':
-        const { initInventario } = await import('./modules/inventario.js');
+        const { initInventario, destroyInventario } = await importModule('./modules/inventario.js');
         await initInventario(contentContainer);
+        window.activeModuleCleanup = destroyInventario;
         break;
       case '#/series':
-        const { initSeries } = await import('./modules/series.js');
+        const { initSeries } = await importModule('./modules/series.js');
         await initSeries(contentContainer);
         break;
       case '#/reparaciones':
-        const { initReparaciones } = await import('./modules/reparaciones.js');
+        const { initReparaciones } = await importModule('./modules/reparaciones.js');
         await initReparaciones(contentContainer);
         break;
       case '#/instalaciones':
-        const { initInstalaciones } = await import('./modules/instalaciones.js');
+        const { initInstalaciones, destroyInstalaciones } = await importModule('./modules/instalaciones.js');
         await initInstalaciones(contentContainer);
+        window.activeModuleCleanup = destroyInstalaciones;
         break;
       case '#/rentabilidad':
-        const { initRentabilidad } = await import('./modules/rentabilidad.js');
+        const { initRentabilidad } = await importModule('./modules/rentabilidad.js');
         await initRentabilidad(contentContainer);
         break;
       case '#/reportes':
-        const { initReportes } = await import('./modules/reportes.js');
+        const { initReportes } = await importModule('./modules/reportes.js');
         await initReportes(contentContainer);
         break;
       case '#/facturacion':
-        const { initFacturacion } = await import('./modules/facturacion.js');
+        const { initFacturacion } = await importModule('./modules/facturacion.js');
         await initFacturacion(contentContainer);
         break;
       case '#/ventas':
-        const { initVentas } = await import('./modules/ventas.js');
+        const { initVentas } = await importModule('./modules/ventas.js');
         await initVentas(contentContainer);
         break;
       case '#/clientes':
-        const { initClientes } = await import('./modules/clientes.js');
+        const { initClientes } = await importModule('./modules/clientes.js');
         await initClientes(contentContainer);
         break;
       case '#/nomina':
-        const { initNomina } = await import('./modules/nomina.js');
+        const { initNomina } = await importModule('./modules/nomina.js');
         await initNomina(contentContainer);
         break;
       case '#/compras':
-        const { initCompras, destroyCompras } = await import('./modules/compras.js');
+        const { initCompras, destroyCompras } = await importModule('./modules/compras.js');
         await initCompras(contentContainer);
         window.activeModuleCleanup = destroyCompras;
         break;
       case '#/proveedores':
-        const { initProveedores } = await import('./modules/proveedores.js');
+        const { initProveedores } = await importModule('./modules/proveedores.js');
         await initProveedores(contentContainer);
         break;
       case '#/caja':
-        const { initCaja } = await import('./modules/caja.js');
+        const { initCaja } = await importModule('./modules/caja.js');
         await initCaja(contentContainer);
         break;
       case '#/cotizaciones':
-        const { initCotizaciones } = await import('./modules/cotizaciones.js');
+        const { initCotizaciones } = await importModule('./modules/cotizaciones.js');
         await initCotizaciones(contentContainer);
         break;
       case '#/tradein':
-        const { initTradeIn } = await import('./modules/tradein.js');
+        const { initTradeIn } = await importModule('./modules/tradein.js');
         await initTradeIn(contentContainer);
         break;
       case '#/rma':
-        const { initRma } = await import('./modules/rma.js');
+        const { initRma } = await importModule('./modules/rma.js');
         await initRma(contentContainer);
         break;
       case '#/cartera':
-        const { initCartera } = await import('./modules/cartera.js');
+        const { initCartera } = await importModule('./modules/cartera.js');
         await initCartera(contentContainer);
         break;
       case '#/auditlog':
         window.location.hash = '#/config?tab=auditoria';
         return;
       case '#/config':
-        const { initConfig } = await import('./modules/config.js');
+        const { initConfig } = await importModule('./modules/config.js');
         await initConfig(contentContainer);
-        break;
-      case '#/auditlog':
-        const { initAuditLog } = await import('./modules/auditlog.js');
-        await initAuditLog(contentContainer);
         break;
       default:
         contentContainer.innerHTML = `

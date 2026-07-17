@@ -3,6 +3,7 @@ import { getUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
 import { renderCotizacionDocumento, printCotizacionDocumento } from '../utils/cotizacion-document.js';
+import { showToast } from '../utils/toast.js';
 
 export async function initCotizaciones(container) {
   const usuario = getUsuario();
@@ -15,7 +16,7 @@ export async function initCotizaciones(container) {
 
   try {
     clientes = await apiFetch('/clientes').catch(() => []);
-    productos = await apiFetch('/productos').catch(() => []);
+    productos = await apiFetch('/productos').then((list) => list.filter((p) => p.activo !== false)).catch(() => []);
     if (['admin', 'superadmin'].includes(usuario.rol)) {
       sedes = await apiFetch('/config/sedes').catch(() => []);
     }
@@ -146,24 +147,36 @@ export async function initCotizaciones(container) {
 
                 <div class="card p-3 mb-3 bg-light">
                   <h4 class="card-title mb-3">Agregar Ítems</h4>
-                  <div class="row g-2">
+                  <div class="row g-2 align-items-end">
                     <div class="col-md-5">
-                      <label class="form-label small text-secondary">Producto del Catálogo</label>
-                      <select id="cot-add-producto" class="form-select">
-                        <option value="">-- Seleccionar Producto (Opcional) --</option>
-                        ${productos.map(p => `<option value="${p.id}" data-precio="${p.precioVenta}" data-nombre="${p.nombre}" data-tiene-iva="${p.tieneIVA ? '1' : '0'}">${p.nombre} ($ ${new Intl.NumberFormat('es-CO').format(p.precioVenta)})</option>`).join('')}
-                      </select>
+                      <label class="form-label small text-secondary" for="btn-cot-buscar-producto">Producto del Catálogo</label>
+                      <div class="input-group">
+                        <input type="hidden" id="cot-add-producto" value="">
+                        <input type="hidden" id="cot-add-tiene-iva" value="1">
+                        <span class="input-group-text"><i class="ti ti-package" aria-hidden="true"></i></span>
+                        <input
+                          type="text"
+                          id="cot-add-producto-display"
+                          class="form-control"
+                          placeholder="Buscar en catálogo…"
+                          readonly
+                          tabindex="-1"
+                        >
+                        <button type="button" class="btn btn-outline-primary" id="btn-cot-buscar-producto" title="Buscar producto">
+                          <i class="ti ti-search me-1" aria-hidden="true"></i>Buscar
+                        </button>
+                      </div>
                     </div>
                     <div class="col-md-4">
-                      <label class="form-label small text-secondary">Descripción Manual / Servicio</label>
+                      <label class="form-label small text-secondary" for="cot-add-desc">Descripción Manual / Servicio</label>
                       <input type="text" id="cot-add-desc" class="form-control" placeholder="Ej: Servicio de mantenimiento">
                     </div>
                     <div class="col-md-2">
-                      <label class="form-label small text-secondary">Precio Unitario</label>
+                      <label class="form-label small text-secondary" for="cot-add-precio">Precio Unitario</label>
                       <input type="number" id="cot-add-precio" class="form-control" placeholder="0" min="0">
                     </div>
                     <div class="col-md-1 d-flex align-items-end">
-                      <button type="button" id="btn-add-item-cot" class="btn btn-success w-100" aria-label="Agregar ítem a cotización"><i class="ti ti-plus"></i></button>
+                      <button type="button" id="btn-add-item-cot" class="btn btn-primary w-100" aria-label="Agregar ítem a cotización"><i class="ti ti-plus"></i></button>
                     </div>
                   </div>
                 </div>
@@ -206,6 +219,84 @@ export async function initCotizaciones(container) {
         <div class="modal-content" id="detalle-cot-content"></div>
       </div>
     </div>
+
+    <!-- Modal Buscar producto (Nueva Cotización) -->
+    <div class="modal modal-blur fade" id="modal-cot-producto" tabindex="-1" role="dialog" aria-labelledby="modal-cot-producto-title" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-centered" role="document">
+        <div class="modal-content oc-product-modal">
+          <div class="modal-header oc-product-modal__header">
+            <div>
+              <h5 class="modal-title" id="modal-cot-producto-title">Buscar producto</h5>
+              <p class="oc-product-modal__lede mb-0">Busque → fije precio → agregue. El modal sigue abierto para cargar varios.</p>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+          </div>
+          <div class="modal-body oc-product-modal__body p-0">
+            <aside class="oc-product-modal__cats" aria-label="Categorías">
+              <p class="oc-product-modal__rail-label">Categorías</p>
+              <div id="cot-producto-chips" class="oc-product-modal__cat-list" role="list"></div>
+            </aside>
+            <div class="oc-product-modal__main">
+              <div class="oc-product-modal__search input-group">
+                <span class="input-group-text"><i class="ti ti-search" aria-hidden="true"></i></span>
+                <input
+                  type="search"
+                  id="cot-producto-search"
+                  class="form-control"
+                  placeholder="Nombre o código…"
+                  autocomplete="off"
+                  spellcheck="false"
+                >
+              </div>
+              <div id="cot-producto-list" class="oc-product-modal__list" role="listbox"></div>
+            </div>
+            <aside class="oc-product-modal__added" aria-label="Productos en esta cotización">
+              <div class="oc-product-modal__ticket-head">
+                <p class="oc-product-modal__rail-label mb-0">En esta cotización</p>
+                <span class="oc-product-modal__ticket-hint" id="cot-modal-ticket-hint">Vacía</span>
+              </div>
+              <div class="oc-product-modal__compose" id="cot-modal-compose" hidden>
+                <div class="oc-product-modal__compose-head">
+                  <div class="oc-product-modal__compose-name">
+                    <span class="oc-product-modal__compose-label">Para agregar</span>
+                    <strong id="cot-modal-prod-name">—</strong>
+                  </div>
+                  <button type="button" class="btn btn-ghost-secondary btn-icon btn-sm oc-product-modal__compose-cancel" id="cot-modal-compose-cancel" aria-label="Cancelar selección" title="Cancelar">
+                    <i class="ti ti-x" aria-hidden="true"></i>
+                  </button>
+                </div>
+                <div class="oc-product-modal__compose-fields">
+                  <div class="oc-field oc-field--cost">
+                    <label class="form-label" for="cot-modal-precio">Precio</label>
+                    <div class="input-group">
+                      <span class="input-group-text">$</span>
+                      <input type="number" id="cot-modal-precio" class="form-control" placeholder="0" min="0" step="1" inputmode="numeric">
+                    </div>
+                  </div>
+                  <div class="oc-field oc-field--qty">
+                    <label class="form-label" for="cot-modal-cant">Cant.</label>
+                    <input type="number" id="cot-modal-cant" class="form-control" value="1" min="1" inputmode="numeric">
+                  </div>
+                  <div class="oc-field oc-field--action">
+                    <button type="button" id="cot-modal-add" class="btn btn-primary">
+                      <i class="ti ti-plus" aria-hidden="true"></i>
+                      <span>Agregar</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div id="cot-modal-cart-list" class="oc-product-modal__added-list"></div>
+            </aside>
+          </div>
+          <div class="modal-footer oc-product-modal__footer">
+            <div class="oc-product-modal__cart-summary" id="cot-modal-cart-summary" aria-live="polite">
+              0 en la cotización · $ 0
+            </div>
+            <button type="button" class="btn btn-primary" data-bs-dismiss="modal" id="cot-modal-listo">Listo</button>
+          </div>
+        </div>
+      </div>
+    </div>
   `;
 
   const modalDetalle = new bootstrap.Modal(document.getElementById('modal-detalle-cot'));
@@ -216,47 +307,470 @@ export async function initCotizaciones(container) {
   today.setDate(today.getDate() + 15);
   document.getElementById('cot-vencimiento').value = today.toISOString().split('T')[0];
 
-  // Listener para autocompletar precio al seleccionar producto
-  document.getElementById('cot-add-producto').addEventListener('change', (e) => {
-    const opt = e.target.options[e.target.selectedIndex];
-    if (opt.value) {
-      document.getElementById('cot-add-desc').value = opt.getAttribute('data-nombre');
-      document.getElementById('cot-add-precio').value = opt.getAttribute('data-precio');
+  const prodIdInput = document.getElementById('cot-add-producto');
+  const prodDisplay = document.getElementById('cot-add-producto-display');
+  const prodIvaInput = document.getElementById('cot-add-tiene-iva');
+  const descInput = document.getElementById('cot-add-desc');
+  const precioInput = document.getElementById('cot-add-precio');
+  const btnBuscarProd = document.getElementById('btn-cot-buscar-producto');
+  const modalProdEl = document.getElementById('modal-cot-producto');
+  const modalProd = modalProdEl ? bootstrap.Modal.getOrCreateInstance(modalProdEl) : null;
+  const searchProd = document.getElementById('cot-producto-search');
+  const listProd = document.getElementById('cot-producto-list');
+  const chipsProd = document.getElementById('cot-producto-chips');
+  const modalCompose = document.getElementById('cot-modal-compose');
+  const modalProdName = document.getElementById('cot-modal-prod-name');
+  const modalPrecio = document.getElementById('cot-modal-precio');
+  const modalCant = document.getElementById('cot-modal-cant');
+  const modalAddBtn = document.getElementById('cot-modal-add');
+  const modalCartSummary = document.getElementById('cot-modal-cart-summary');
+  const modalCartList = document.getElementById('cot-modal-cart-list');
+  const modalTicketHint = document.getElementById('cot-modal-ticket-hint');
+
+  let pickerMatches = [];
+  let pickerActiveIdx = -1;
+  let pickerCategoriaId = '';
+  let modalSelectedProd = null;
+
+  function escapeCotHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function normalizeCotSearch(value) {
+    return String(value ?? '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+  }
+
+  function productoCategoriaNombre(prod) {
+    return prod?.categoria?.nombre || prod?.categoriaNombre || '';
+  }
+
+  function productoCategoriaId(prod) {
+    return String(prod?.categoriaId || prod?.categoria?.id || '');
+  }
+
+  function categoriaChipLabel(nombre) {
+    const raw = String(nombre || '').trim();
+    if (!raw) return '';
+    const parts = raw.split('/').map((p) => p.trim()).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : raw;
+  }
+
+  function productoSearchHaystack(prod) {
+    return normalizeCotSearch(`${prod?.nombre || ''} ${prod?.codigoBarras || ''} ${productoCategoriaNombre(prod)}`);
+  }
+
+  function getPickerCategorias() {
+    const map = new Map();
+    productos.forEach((p) => {
+      const id = productoCategoriaId(p);
+      const nombre = productoCategoriaNombre(p);
+      if (!id || !nombre || map.has(id)) return;
+      map.set(id, nombre);
+    });
+    return Array.from(map.entries())
+      .map(([id, nombre]) => ({ id, nombre }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  }
+
+  function scoreProductoMatch(prod, queryNorm, tokens) {
+    const nombre = normalizeCotSearch(prod?.nombre || '');
+    const codigo = normalizeCotSearch(prod?.codigoBarras || '');
+    const haystack = productoSearchHaystack(prod);
+    if (tokens.some((t) => !haystack.includes(t))) return -1;
+    let score = 0;
+    if (queryNorm && nombre.startsWith(queryNorm)) score += 100;
+    else if (queryNorm && codigo.startsWith(queryNorm)) score += 90;
+    else if (queryNorm && nombre.includes(queryNorm)) score += 50;
+    else if (queryNorm && codigo.includes(queryNorm)) score += 40;
+    if (tokens.length > 1) score += 10;
+    return score;
+  }
+
+  function filterProductosPicker(query = '', categoriaId = '') {
+    const qRaw = String(query || '').trim();
+    const qNorm = normalizeCotSearch(qRaw);
+    const tokens = qNorm.split(/\s+/).filter(Boolean);
+    const catId = String(categoriaId || '');
+    const canListByQuery = qNorm.length >= 2;
+    if (!productos.length) return { mode: 'guide', matches: [], query: qRaw };
+
+    let list = productos;
+    if (catId) list = list.filter((p) => productoCategoriaId(p) === catId);
+
+    if (canListByQuery) {
+      list = list
+        .map((p) => ({ p, score: scoreProductoMatch(p, qNorm, tokens) }))
+        .filter((row) => row.score >= 0)
+        .sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          return String(a.p.nombre || '').localeCompare(String(b.p.nombre || ''), 'es');
+        })
+        .map((row) => row.p);
+    } else {
+      list = [...list].sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es'));
     }
-  });
 
-  // Agregar item al carro
-  document.getElementById('btn-add-item-cot').addEventListener('click', () => {
-    const prodSelect = document.getElementById('cot-add-producto');
-    const descInput = document.getElementById('cot-add-desc');
-    const precioInput = document.getElementById('cot-add-precio');
+    const limit = canListByQuery || catId ? 40 : 80;
+    return { mode: 'results', matches: list.slice(0, limit), query: qRaw, total: list.length, limit };
+  }
 
-    const desc = descInput.value.trim();
-    const precio = parseFloat(precioInput.value || 0);
+  function highlightCotMatch(text, query) {
+    const raw = String(text ?? '');
+    const q = String(query || '').trim();
+    if (!raw || !q || q.length < 2) return escapeCotHtml(raw);
+    const normText = normalizeCotSearch(raw);
+    const tokens = normalizeCotSearch(q).split(/\s+/).filter((t) => t.length >= 2);
+    if (!tokens.length) return escapeCotHtml(raw);
+    let best = null;
+    tokens.forEach((token) => {
+      const idx = normText.indexOf(token);
+      if (idx < 0) return;
+      if (!best || idx < best.idx) best = { idx, len: token.length };
+    });
+    if (!best) return escapeCotHtml(raw);
+    let normPos = 0;
+    let start = -1;
+    let end = -1;
+    for (let i = 0; i < raw.length; i++) {
+      const ch = normalizeCotSearch(raw[i]);
+      if (!ch) continue;
+      if (normPos === best.idx) start = i;
+      normPos += ch.length;
+      if (start >= 0 && normPos >= best.idx + best.len) {
+        end = i + 1;
+        break;
+      }
+    }
+    if (start < 0 || end < 0) return escapeCotHtml(raw);
+    return (
+      escapeCotHtml(raw.slice(0, start)) +
+      `<mark class="oc-product-picker__mark">${escapeCotHtml(raw.slice(start, end))}</mark>` +
+      escapeCotHtml(raw.slice(end))
+    );
+  }
 
-    if (!desc || precio <= 0) {
-      alert('Debe ingresar una descripción y precio unitario válido.');
+  function highlightPickerItem(idx) {
+    if (!listProd) return;
+    const items = Array.from(listProd.querySelectorAll('[role="option"]'));
+    items.forEach((el, i) => {
+      const on = i === idx;
+      el.setAttribute('aria-selected', on ? 'true' : 'false');
+      el.classList.toggle('is-active', on);
+      if (on) el.scrollIntoView({ block: 'nearest' });
+    });
+    pickerActiveIdx = idx;
+  }
+
+  function renderProductoPickerRows(matches, query) {
+    return matches.map((p, idx) => {
+      const codigo = p.codigoBarras || 's/c';
+      const cat = productoCategoriaNombre(p);
+      const catShort = categoriaChipLabel(cat);
+      const precio = Math.round(Number(p.precioVenta) || 0);
+      return `
+        <button type="button" class="oc-product-picker__item" role="option" id="cot-prod-opt-${idx}" data-id="${escapeCotHtml(p.id)}" aria-selected="false">
+          <span class="oc-product-picker__main">
+            <span class="oc-product-picker__name">${highlightCotMatch(p.nombre || 'Producto', query)}</span>
+            <span class="oc-product-picker__meta">
+              <span class="oc-product-picker__sku">${highlightCotMatch(codigo, query)}</span>
+              ${cat ? `<span class="oc-product-picker__dot" aria-hidden="true">·</span><span class="oc-product-picker__cat" title="${escapeCotHtml(cat)}">${escapeCotHtml(catShort)}</span>` : ''}
+            </span>
+          </span>
+          <span class="oc-product-picker__cost">${formatter.format(precio)}</span>
+        </button>
+      `;
+    }).join('');
+  }
+
+  function renderProductoPickerChips() {
+    if (!chipsProd) return;
+    const cats = getPickerCategorias();
+    chipsProd.innerHTML = `
+      <button type="button" class="oc-product-modal__cat${!pickerCategoriaId ? ' is-active' : ''}" data-categoria="" role="listitem">Todas</button>
+      ${cats.map((c) => {
+        const short = categoriaChipLabel(c.nombre);
+        return `
+          <button type="button" class="oc-product-modal__cat${pickerCategoriaId === c.id ? ' is-active' : ''}" data-categoria="${escapeCotHtml(c.id)}" title="${escapeCotHtml(c.nombre)}" role="listitem">
+            ${escapeCotHtml(short)}
+          </button>
+        `;
+      }).join('')}
+    `;
+  }
+
+  function renderProductoPicker(query = '') {
+    if (!listProd) return;
+    const result = filterProductosPicker(query, pickerCategoriaId);
+    pickerMatches = result.matches;
+    pickerActiveIdx = -1;
+    renderProductoPickerChips();
+
+    if (result.mode === 'guide') {
+      listProd.innerHTML = `
+        <div class="oc-product-picker__guide">
+          <p class="oc-product-picker__guide-title">No hay productos en el catálogo</p>
+          <p class="oc-product-picker__guide-hint">Cree productos en Inventario para usarlos aquí.</p>
+        </div>
+      `;
       return;
     }
 
-    const prodId = prodSelect.value || null;
-    const opt = prodSelect.options[prodSelect.selectedIndex];
-    const tieneIVA = prodId ? opt.getAttribute('data-tiene-iva') === '1' : true;
+    if (!pickerMatches.length) {
+      listProd.innerHTML = `<div class="oc-product-picker__empty">Sin coincidencias. Pruebe otro término o categoría.</div>`;
+      return;
+    }
 
-    cotizacionCart.push({
+    const shown = pickerMatches.length;
+    const total = Number(result.total || shown);
+    const more = total > shown;
+    listProd.innerHTML = `
+      <div class="oc-product-picker__count">${shown}${more ? ` / ${total}` : ''} producto${shown === 1 ? '' : 's'}${more ? ' · filtre para acotar' : ''}</div>
+      ${renderProductoPickerRows(pickerMatches, result.query || query)}
+    `;
+  }
+
+  function clearModalCompose({ clearForm = false } = {}) {
+    modalSelectedProd = null;
+    if (modalCompose) modalCompose.hidden = true;
+    if (modalProdName) modalProdName.textContent = '—';
+    if (modalPrecio) modalPrecio.value = '';
+    if (modalCant) modalCant.value = 1;
+    if (clearForm) {
+      if (prodIdInput) prodIdInput.value = '';
+      if (prodDisplay) prodDisplay.value = '';
+      if (prodIvaInput) prodIvaInput.value = '1';
+      highlightPickerItem(-1);
+      searchProd?.focus();
+    }
+  }
+
+  function updateCotModalCartSummary() {
+    const n = cotizacionCart.length;
+    const tot = cotizacionCart.reduce((sum, item) => sum + (item.cantidad * item.precioUnitario), 0);
+    if (modalCartSummary) modalCartSummary.textContent = `${n} en la cotización · ${formatter.format(tot)}`;
+    if (modalTicketHint) {
+      modalTicketHint.textContent = n === 0 ? 'Vacía' : `${n}`;
+      modalTicketHint.classList.toggle('is-filled', n > 0);
+    }
+    if (!modalCartList) return;
+    if (!n) {
+      modalCartList.innerHTML = `
+        <div class="oc-product-modal__added-empty">
+          <span class="oc-product-modal__added-empty-title">Sin ítems aún</span>
+          <span class="oc-product-modal__added-empty-hint">Elija un producto de la lista, fije precio y pulse Agregar.</span>
+        </div>`;
+      return;
+    }
+    modalCartList.innerHTML = cotizacionCart.map((item, idx) => {
+      const sub = item.cantidad * item.precioUnitario;
+      return `
+        <div class="oc-product-modal__added-item" data-idx="${idx}">
+          <div class="oc-product-modal__added-top">
+            <strong class="oc-product-modal__added-name" title="${escapeCotHtml(item.descripcion)}">${escapeCotHtml(item.descripcion)}</strong>
+            <button type="button" class="btn btn-ghost-danger btn-icon btn-sm cot-modal-remove-item" data-idx="${idx}" aria-label="Quitar de la cotización">
+              <i class="ti ti-trash" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="oc-product-modal__added-meta">
+            <span>× ${item.cantidad}</span>
+            <span>${formatter.format(item.precioUnitario)}</span>
+            <span class="oc-product-modal__added-sub">${formatter.format(sub)}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function openProductoPickerModal() {
+    if (!modalProd) return;
+    pickerCategoriaId = '';
+    if (searchProd) searchProd.value = '';
+    clearModalCompose();
+    renderProductoPicker('');
+    updateCotModalCartSummary();
+    modalProd.show();
+  }
+
+  function chooseProductoFromPicker(prod) {
+    if (!prod) return;
+    modalSelectedProd = prod;
+    if (prodIdInput) prodIdInput.value = prod.id;
+    if (prodDisplay) prodDisplay.value = prod.nombre || '';
+    if (prodIvaInput) prodIvaInput.value = prod.tieneIVA === false ? '0' : '1';
+    if (descInput) descInput.value = prod.nombre || '';
+    if (precioInput) precioInput.value = Math.round(Number(prod.precioVenta) || 0);
+    if (modalCompose) modalCompose.hidden = false;
+    if (modalProdName) modalProdName.textContent = prod.nombre || 'Producto';
+    const precio = Math.round(Number(prod.precioVenta) || 0);
+    if (modalPrecio) modalPrecio.value = precio > 0 ? precio : '';
+    if (modalCant) modalCant.value = 1;
+    modalCompose?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (precio <= 0) {
+      modalPrecio?.focus();
+      modalPrecio?.select?.();
+    } else {
+      modalCant?.focus();
+      modalCant?.select?.();
+    }
+  }
+
+  function addProductoAlCarrito({ productoId, descripcion, cantidad, precioUnitario, tieneIVA }) {
+    const exist = cotizacionCart.find((item) => item.productoId && productoId && item.productoId === productoId);
+    if (exist) {
+      exist.cantidad += cantidad;
+      exist.precioUnitario = precioUnitario;
+    } else {
+      cotizacionCart.push({
+        productoId,
+        descripcion,
+        cantidad,
+        precioUnitario,
+        tieneIVA
+      });
+    }
+    renderCotCart();
+  }
+
+  function addFromModalCompose() {
+    const prod = modalSelectedProd || productos.find((p) => p.id === prodIdInput?.value);
+    if (!prod) {
+      showToast('Sin producto', 'Elija un producto de la lista.', 'warning');
+      return;
+    }
+    const precio = parseFloat(modalPrecio?.value || 0);
+    const cant = parseInt(modalCant?.value || 0, 10);
+    if (precio <= 0 || cant <= 0) {
+      showToast('Datos incompletos', 'Indique precio y cantidad válidos.', 'warning');
+      modalPrecio?.focus();
+      return;
+    }
+    addProductoAlCarrito({
+      productoId: prod.id,
+      descripcion: prod.nombre,
+      cantidad: cant,
+      precioUnitario: precio,
+      tieneIVA: prod.tieneIVA !== false
+    });
+    showToast('Producto agregado', `${prod.nombre} × ${cant}`, 'success');
+    clearModalCompose({ clearForm: true });
+    if (searchProd) {
+      searchProd.value = '';
+      renderProductoPicker('');
+      searchProd.focus();
+    }
+  }
+
+  function clearFormProducto() {
+    if (prodIdInput) prodIdInput.value = '';
+    if (prodDisplay) prodDisplay.value = '';
+    if (prodIvaInput) prodIvaInput.value = '1';
+    if (descInput) descInput.value = '';
+    if (precioInput) precioInput.value = '';
+  }
+
+  btnBuscarProd?.addEventListener('click', () => openProductoPickerModal());
+  prodDisplay?.addEventListener('click', () => openProductoPickerModal());
+
+  if (modalProdEl && searchProd && listProd) {
+    modalProdEl.addEventListener('shown.bs.modal', () => {
+      searchProd.focus();
+      searchProd.select?.();
+    });
+
+    searchProd.addEventListener('input', () => {
+      renderProductoPicker(searchProd.value);
+      if (pickerMatches.length) highlightPickerItem(0);
+    });
+
+    searchProd.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const next = Math.min((pickerActiveIdx < 0 ? -1 : pickerActiveIdx) + 1, pickerMatches.length - 1);
+        if (next >= 0) highlightPickerItem(next);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!pickerMatches.length) return;
+        highlightPickerItem(Math.max(pickerActiveIdx - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter') {
+        if (pickerActiveIdx < 0 || !pickerMatches[pickerActiveIdx]) return;
+        e.preventDefault();
+        chooseProductoFromPicker(pickerMatches[pickerActiveIdx]);
+      }
+    });
+
+    chipsProd?.addEventListener('click', (e) => {
+      const chip = e.target.closest('[data-categoria]');
+      if (!chip) return;
+      pickerCategoriaId = chip.getAttribute('data-categoria') || '';
+      renderProductoPicker(searchProd.value);
+      if (pickerMatches.length) highlightPickerItem(0);
+      searchProd.focus();
+    });
+
+    listProd.addEventListener('click', (e) => {
+      const item = e.target.closest('[data-id]');
+      if (!item) return;
+      const prod = productos.find((p) => p.id === item.dataset.id);
+      if (prod) chooseProductoFromPicker(prod);
+    });
+
+    modalAddBtn?.addEventListener('click', () => addFromModalCompose());
+    document.getElementById('cot-modal-compose-cancel')?.addEventListener('click', () => {
+      clearModalCompose({ clearForm: true });
+    });
+    modalCompose?.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      clearModalCompose({ clearForm: true });
+    });
+    [modalPrecio, modalCant].forEach((el) => {
+      el?.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        addFromModalCompose();
+      });
+    });
+    modalCartList?.addEventListener('click', (e) => {
+      const btn = e.target.closest('.cot-modal-remove-item');
+      if (!btn) return;
+      const idx = parseInt(btn.dataset.idx, 10);
+      if (!Number.isFinite(idx) || idx < 0 || idx >= cotizacionCart.length) return;
+      cotizacionCart.splice(idx, 1);
+      renderCotCart();
+    });
+  }
+
+  document.getElementById('btn-add-item-cot').addEventListener('click', () => {
+    const desc = descInput?.value.trim() || '';
+    const precio = parseFloat(precioInput?.value || 0);
+    if (!desc || precio <= 0) {
+      showToast('Datos incompletos', 'Indique descripción y precio unitario válido.', 'warning');
+      return;
+    }
+    const prodId = prodIdInput?.value || null;
+    const tieneIVA = prodId ? prodIvaInput?.value === '1' : true;
+    addProductoAlCarrito({
       productoId: prodId,
       descripcion: desc,
       cantidad: 1,
       precioUnitario: precio,
       tieneIVA
     });
-
-    // Limpiar inputs
-    prodSelect.value = '';
-    descInput.value = '';
-    precioInput.value = '';
-
-    renderCotCart();
+    clearFormProducto();
+    showToast('Ítem agregado', desc, 'success');
   });
 
   function renderCotCart() {
@@ -266,6 +780,7 @@ export async function initCotizaciones(container) {
     if (cotizacionCart.length === 0) {
       tbody.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-secondary">Ningún ítem agregado.</td></tr>`;
       totalEl.innerText = '$ 0';
+      updateCotModalCartSummary();
       return;
     }
 
@@ -276,7 +791,7 @@ export async function initCotizaciones(container) {
       return `
         <tr>
           <td>
-            <strong>${item.descripcion}</strong>
+            <strong>${escapeCotHtml(item.descripcion)}</strong>
             ${item.productoId ? `<br><span class="badge bg-blue-lt">Catálogo</span>${item.tieneIVA === false ? ' <span class="badge bg-secondary-lt">Sin IVA</span>' : ''}` : '<br><span class="badge bg-yellow-lt">Manual/Servicio</span>'}
           </td>
           <td>
@@ -292,21 +807,20 @@ export async function initCotizaciones(container) {
     }).join('');
 
     totalEl.innerText = formatter.format(total);
+    updateCotModalCartSummary();
 
-    // Listeners qty
-    document.querySelectorAll('.input-cot-qty').forEach(input => {
+    document.querySelectorAll('.input-cot-qty').forEach((input) => {
       input.addEventListener('change', (e) => {
-        const idx = parseInt(e.target.dataset.idx);
-        const qty = parseInt(e.target.value || 1);
+        const idx = parseInt(e.target.dataset.idx, 10);
+        const qty = parseInt(e.target.value || 1, 10);
         cotizacionCart[idx].cantidad = qty > 0 ? qty : 1;
         renderCotCart();
       });
     });
 
-    // Listeners remove
-    document.querySelectorAll('.btn-remove-item-cot').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const idx = parseInt(btn.dataset.idx);
+    document.querySelectorAll('.btn-remove-item-cot').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx, 10);
         cotizacionCart.splice(idx, 1);
         renderCotCart();
       });
@@ -342,6 +856,8 @@ export async function initCotizaciones(container) {
       alert('Cotización creada exitosamente.');
       cotizacionCart = [];
       document.getElementById('form-nueva-cotizacion').reset();
+      clearFormProducto();
+      updateCotModalCartSummary();
       renderCotCart();
       
       // Cambiar a pestaña historial y recargar

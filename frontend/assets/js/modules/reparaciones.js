@@ -33,6 +33,15 @@ export async function initReparaciones(container) {
 
   await loadData();
 
+  // Evitar modal/backdrop huérfanos y fixed roto dentro de .erp-module
+  ['modal-orden-reparacion', 'modal-detalle-orden', 'modal-entregar-reparacion'].forEach((id) => {
+    document.getElementById(id)?.remove();
+  });
+  document.querySelectorAll('.modal-backdrop').forEach((el) => el.remove());
+  document.body.classList.remove('modal-open');
+  document.body.style.removeProperty('overflow');
+  document.body.style.removeProperty('padding-right');
+
   const defaultSedeId = usuario.sedeId || (sedes[0]?.id || '');
 
   container.innerHTML = `
@@ -77,133 +86,172 @@ export async function initReparaciones(container) {
       </div>
     </div>
 
-    <!-- Modal Registrar Orden -->
-    <div class="modal modal-blur fade" id="modal-orden-reparacion" tabindex="-1" role="dialog" aria-hidden="true">
-      <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Registrar Nueva Orden de Ingreso</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <form id="form-nueva-orden">
-            <div class="modal-body">
-              <div class="row">
-                <!-- Información del Cliente -->
-                <div class="col-md-6 border-end">
-                  <h4 class="mb-3 text-primary">Información del Cliente</h4>
-                  <div class="mb-3">
-                    <label class="form-label">Cliente Existente</label>
+    <!-- Modal Registrar Orden (ui 3.0.7 — form is the scroll container; sticky header/footer) -->
+    <div class="modal modal-blur fade" id="modal-orden-reparacion" tabindex="-1" role="dialog" aria-hidden="true" data-rep-orden-ui="3.0.7">
+      <!-- No modal-dialog-scrollable: form wraps header/body/footer and breaks Bootstrap's height chain -->
+      <div class="modal-dialog modal-xl" role="document">
+        <div class="modal-content rep-orden-modal">
+          <form id="form-nueva-orden" class="rep-orden-form">
+            <div class="modal-header rep-orden-modal__header">
+              <div class="rep-orden-modal__heading">
+                <p class="rep-orden-modal__eyebrow">Ticket de taller</p>
+                <h5 class="modal-title">Nueva orden de ingreso</h5>
+                <p class="rep-orden-modal__lede">Registra cliente, equipo y condiciones en un solo paso.</p>
+              </div>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body rep-orden-modal__body">
+              <div class="rep-orden-layout">
+                <section class="rep-orden-rail" aria-labelledby="rep-orden-cliente-title">
+                  <header class="rep-orden-section-head">
+                    <span class="rep-orden-section-head__mark" aria-hidden="true">01</span>
+                    <div>
+                      <h4 id="rep-orden-cliente-title" class="rep-orden-section-head__title">Cliente</h4>
+                      <p class="rep-orden-section-head__hint">Elige uno existente o crea el contacto aquí.</p>
+                    </div>
+                  </header>
+                  <div class="rep-orden-field">
+                    <label class="form-label" for="orden-cliente-select">Cliente existente</label>
                     <select id="orden-cliente-select" class="form-select">
-                      <option value="">-- Seleccionar o crear nuevo abajo --</option>
+                      <option value="">Seleccionar o crear nuevo abajo</option>
                       ${clientes.map(c => `<option value="${c.id}">${c.nombre} (${c.documento || 'Sin doc'})</option>`).join('')}
                     </select>
                   </div>
-                  <div class="card bg-light-lt p-3 mb-3" id="quick-client-card">
-                    <h5 class="card-title text-secondary">Registrar Nuevo Cliente</h5>
-                    <div class="mb-2">
-                      <label class="form-label required">Nombre Completo</label>
-                      <input type="text" id="cli-nombre" class="form-control form-control-sm">
+                  <div class="rep-orden-panel" id="quick-client-card">
+                    <div class="rep-orden-panel__bar">
+                      <span class="rep-orden-panel__label">Nuevo cliente</span>
                     </div>
-                    <div class="mb-2">
-                      <label class="form-label">Cédula / NIT</label>
-                      <input type="text" id="cli-documento" class="form-control form-control-sm">
+                    <div class="rep-orden-field">
+                      <label class="form-label required" for="cli-nombre">Nombre completo</label>
+                      <input type="text" id="cli-nombre" class="form-control" autocomplete="name">
                     </div>
-                    <div class="mb-2">
-                      <label class="form-label">Teléfono</label>
-                      <input type="text" id="cli-telefono" class="form-control form-control-sm">
+                    <div class="rep-orden-field-grid">
+                      <div class="rep-orden-field">
+                        <label class="form-label" for="cli-documento">Cédula / NIT</label>
+                        <input type="text" id="cli-documento" class="form-control" autocomplete="off">
+                      </div>
+                      <div class="rep-orden-field">
+                        <label class="form-label" for="cli-telefono">Teléfono</label>
+                        <input type="text" id="cli-telefono" class="form-control" autocomplete="tel">
+                      </div>
                     </div>
-                    <div class="mb-2">
-                      <label class="form-label">Correo Electrónico</label>
-                      <input type="email" id="cli-email" class="form-control form-control-sm" spellcheck="false">
+                    <div class="rep-orden-field">
+                      <label class="form-label" for="cli-email">Correo electrónico</label>
+                      <input type="email" id="cli-email" class="form-control" spellcheck="false" autocomplete="email">
                     </div>
                   </div>
-                </div>
+                </section>
 
-                <!-- Detalles del Dispositivo -->
-                <div class="col-md-6">
-                  <h4 class="mb-3 text-primary">Detalles del Equipo</h4>
-                  ${needsSedePicker ? `
-                  <div class="mb-3">
-                    <label class="form-label required">Sede de ingreso</label>
-                    <select id="eq-sede" class="form-select" required>
-                      ${sedes.length === 0 ? '<option value="">Sin sedes configuradas</option>' : sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
-                    </select>
-                  </div>
-                  ` : ''}
-                  <div class="mb-3">
-                    <label class="form-label">Modalidad</label>
-                    <div class="btn-group w-100" role="group">
-                      <input type="radio" class="btn-check" name="eq-modalidad" id="eq-mod-taller" value="taller" checked>
-                      <label class="btn" for="eq-mod-taller">En taller</label>
-                      <input type="radio" class="btn-check" name="eq-modalidad" id="eq-mod-domicilio" value="domicilio">
-                      <label class="btn" for="eq-mod-domicilio">A domicilio</label>
+                <section class="rep-orden-rail rep-orden-rail--equipo" aria-labelledby="rep-orden-equipo-title">
+                  <header class="rep-orden-section-head">
+                    <span class="rep-orden-section-head__mark" aria-hidden="true">02</span>
+                    <div>
+                      <h4 id="rep-orden-equipo-title" class="rep-orden-section-head__title">Equipo</h4>
+                      <p class="rep-orden-section-head__hint">Qué llega, dónde se atiende y qué falla.</p>
                     </div>
-                  </div>
-                  <div class="mb-3 d-none" id="eq-direccion-wrap">
-                    <label class="form-label required">Dirección del servicio</label>
-                    <input type="text" id="eq-direccion" class="form-control" placeholder="Dirección donde se reparará">
-                  </div>
-                  <div class="row">
-                    <div class="col-6 mb-3">
-                      <label class="form-label required">Tipo de Equipo</label>
-                      <input type="text" id="eq-tipo" class="form-control" placeholder="Ej: Celular, Laptop" required>
-                    </div>
-                    <div class="col-6 mb-3">
-                      <label class="form-label required">Marca</label>
-                      <input type="text" id="eq-marca" class="form-control" placeholder="Ej: Apple, Dell" required>
-                    </div>
-                  </div>
-                  <div class="row">
-                    <div class="col-6 mb-3">
-                      <label class="form-label required">Modelo</label>
-                      <input type="text" id="eq-modelo" class="form-control" placeholder="Ej: iPhone 15, Latitude" required>
-                    </div>
-                    <div class="col-6 mb-3">
-                      <label class="form-label">Serial / IMEI</label>
-                      <input type="text" id="eq-imei" class="form-control" placeholder="Trazabilidad única">
-                    </div>
-                  </div>
-                  <div class="mb-3">
-                    <label class="form-label required">Problema Reportado</label>
-                    <textarea id="eq-problema" class="form-control" rows="2" placeholder="Falla reportada por el cliente…" required spellcheck="false"></textarea>
-                  </div>
-                  <div class="row">
-                    <div class="col-6 mb-3">
-                      <label class="form-label">Mano de Obra ($ COP)</label>
-                      <input type="number" id="eq-mano-obra" class="form-control" placeholder="COP" min="0" value="0">
-                    </div>
-                    <div class="col-6 mb-3">
-                      <label class="form-label">Días Garantía</label>
-                      <input type="number" id="eq-garantia" class="form-control" min="0" value="30">
-                    </div>
-                  </div>
-                  <div class="row">
-                    <div class="col-6 mb-3">
-                      <label class="form-label">Fecha Est. Entrega</label>
-                      <input type="date" id="eq-fecha-entrega" class="form-control">
-                    </div>
-                    <div class="col-6 mb-3">
-                      <label class="form-label">Técnico Asignado</label>
-                      <select id="eq-tecnico" class="form-select">
-                        <option value="">-- Por asignar --</option>
-                        ${tecnicos.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                  </header>
+
+                  <div class="rep-orden-field-grid ${needsSedePicker ? '' : 'rep-orden-field-grid--solo'}">
+                    ${needsSedePicker ? `
+                    <div class="rep-orden-field">
+                      <label class="form-label required" for="eq-sede">Sede de ingreso</label>
+                      <select id="eq-sede" class="form-select" required>
+                        ${sedes.length === 0 ? '<option value="">Sin sedes configuradas</option>' : sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
                       </select>
                     </div>
+                    ` : ''}
+                    <div class="rep-orden-field">
+                      <label class="form-label">Modalidad</label>
+                      <div class="rep-orden-mode" role="group" aria-label="Modalidad de servicio">
+                        <input type="radio" class="btn-check" name="eq-modalidad" id="eq-mod-taller" value="taller" checked>
+                        <label class="rep-orden-mode__btn" for="eq-mod-taller">
+                          <i class="ti ti-building-warehouse" aria-hidden="true"></i>
+                          En taller
+                        </label>
+                        <input type="radio" class="btn-check" name="eq-modalidad" id="eq-mod-domicilio" value="domicilio">
+                        <label class="rep-orden-mode__btn" for="eq-mod-domicilio">
+                          <i class="ti ti-bike" aria-hidden="true"></i>
+                          A domicilio
+                        </label>
+                      </div>
+                    </div>
                   </div>
-                  <div class="mb-3">
-                    <label class="form-label">Observaciones Físicas</label>
-                    <input type="text" id="eq-observaciones" class="form-control" placeholder="Ej: Rayones leves en pantalla">
+
+                  <div class="rep-orden-field d-none" id="eq-direccion-wrap">
+                    <label class="form-label required" for="eq-direccion">Dirección del servicio</label>
+                    <input type="text" id="eq-direccion" class="form-control" placeholder="Calle, barrio, referencias">
                   </div>
-                  <div class="mb-3">
-                    <label class="form-label">Fotos de Recepción</label>
-                    <input type="file" id="eq-fotos" class="form-control" multiple accept="image/*">
+
+                  <div class="rep-orden-field-grid">
+                    <div class="rep-orden-field">
+                      <label class="form-label required" for="eq-tipo">Tipo de equipo</label>
+                      <input type="text" id="eq-tipo" class="form-control" placeholder="Celular, laptop, consola…" required>
+                    </div>
+                    <div class="rep-orden-field">
+                      <label class="form-label required" for="eq-marca">Marca</label>
+                      <input type="text" id="eq-marca" class="form-control" placeholder="Apple, Dell, Sony…" required>
+                    </div>
+                    <div class="rep-orden-field">
+                      <label class="form-label required" for="eq-modelo">Modelo</label>
+                      <input type="text" id="eq-modelo" class="form-control" placeholder="iPhone 15, Latitude…" required>
+                    </div>
+                    <div class="rep-orden-field">
+                      <label class="form-label" for="eq-imei">Serial / IMEI</label>
+                      <input type="text" id="eq-imei" class="form-control" placeholder="Trazabilidad del equipo">
+                    </div>
                   </div>
-                </div>
+
+                  <div class="rep-orden-field">
+                    <label class="form-label required" for="eq-problema">Problema reportado</label>
+                    <textarea id="eq-problema" class="form-control" rows="2" placeholder="Describe la falla en palabras del cliente…" required spellcheck="false"></textarea>
+                  </div>
+
+                  <div class="rep-orden-band">
+                    <header class="rep-orden-section-head rep-orden-section-head--compact">
+                      <span class="rep-orden-section-head__mark" aria-hidden="true">03</span>
+                      <div>
+                        <h4 class="rep-orden-section-head__title">Condiciones</h4>
+                        <p class="rep-orden-section-head__hint">Estimación, garantía y recepción.</p>
+                      </div>
+                    </header>
+                    <div class="rep-orden-field-grid">
+                      <div class="rep-orden-field">
+                        <label class="form-label" for="eq-mano-obra">Mano de obra (COP)</label>
+                        <input type="number" id="eq-mano-obra" class="form-control" placeholder="0" min="0" value="0">
+                      </div>
+                      <div class="rep-orden-field">
+                        <label class="form-label" for="eq-garantia">Días de garantía</label>
+                        <input type="number" id="eq-garantia" class="form-control" min="0" value="30">
+                      </div>
+                      <div class="rep-orden-field">
+                        <label class="form-label" for="eq-fecha-entrega">Entrega estimada</label>
+                        <input type="date" id="eq-fecha-entrega" class="form-control">
+                      </div>
+                      <div class="rep-orden-field">
+                        <label class="form-label" for="eq-tecnico">Técnico</label>
+                        <select id="eq-tecnico" class="form-select">
+                          <option value="">Por asignar</option>
+                          ${tecnicos.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                        </select>
+                      </div>
+                    </div>
+                    <div class="rep-orden-field">
+                      <label class="form-label" for="eq-observaciones">Estado físico al recibir</label>
+                      <input type="text" id="eq-observaciones" class="form-control" placeholder="Rayones, golpes, accesorios incluidos…">
+                    </div>
+                    <div class="rep-orden-field">
+                      <label class="form-label" for="eq-fotos">Fotos de recepción</label>
+                      <input type="file" id="eq-fotos" class="form-control" multiple accept="image/*">
+                    </div>
+                  </div>
+                </section>
               </div>
             </div>
-            <div class="modal-footer">
-              <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancelar</button>
-              <button type="submit" class="btn btn-primary ms-auto">Registrar Orden de Ingreso</button>
+            <div class="modal-footer rep-orden-modal__footer">
+              <button type="button" class="btn btn-ghost-secondary" data-bs-dismiss="modal">Cancelar</button>
+              <button type="submit" class="btn btn-primary rep-orden-modal__submit">
+                <i class="ti ti-clipboard-check me-1" aria-hidden="true"></i>Registrar ingreso
+              </button>
             </div>
           </form>
         </div>
@@ -212,7 +260,7 @@ export async function initReparaciones(container) {
 
     <!-- Modal Detalle/Editar Orden -->
     <div class="modal modal-blur fade" id="modal-detalle-orden" tabindex="-1" role="dialog" aria-hidden="true">
-      <div class="modal-dialog modal-xl modal-dialog-centered" role="document">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
         <div class="modal-content" id="detalle-orden-content">
           <!-- Se carga dinámicamente -->
         </div>
@@ -221,7 +269,7 @@ export async function initReparaciones(container) {
 
     <!-- Modal Entregar/Cobrar Reparación -->
     <div class="modal modal-blur fade" id="modal-entregar-reparacion" tabindex="-1" role="dialog" aria-hidden="true">
-      <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" role="document">
         <form id="form-entregar-reparacion" class="modal-content shadow-lg">
           <input type="hidden" id="entregar-id">
           <div class="modal-header">
@@ -294,7 +342,14 @@ export async function initReparaciones(container) {
     </div>
   `;
 
-  // Modales
+  // Montar modales en body para que el footer no quede cortado por overflow del módulo
+  ['modal-orden-reparacion', 'modal-detalle-orden', 'modal-entregar-reparacion'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && el.parentElement !== document.body) {
+      document.body.appendChild(el);
+    }
+  });
+
   const modalOrden = new bootstrap.Modal(document.getElementById('modal-orden-reparacion'));
   const modalDetalle = new bootstrap.Modal(document.getElementById('modal-detalle-orden'));
   const modalEntregar = new bootstrap.Modal(document.getElementById('modal-entregar-reparacion'));
@@ -511,7 +566,7 @@ export async function initReparaciones(container) {
       quickClientCard.style.display = 'none';
       cliNombre.removeAttribute('required');
     } else {
-      quickClientCard.style.display = 'block';
+      quickClientCard.style.display = '';
       cliNombre.setAttribute('required', 'true');
     }
   });
@@ -536,7 +591,7 @@ export async function initReparaciones(container) {
   if (btnNueva) {
     btnNueva.addEventListener('click', () => {
       document.getElementById('form-nueva-orden').reset();
-      quickClientCard.style.display = 'block';
+      quickClientCard.style.display = '';
       cliNombre.setAttribute('required', 'true');
       syncModalidadUi();
       modalOrden.show();
@@ -630,7 +685,7 @@ export async function initReparaciones(container) {
       alert('Error al registrar orden: ' + err.message);
     } finally {
       btnSubmit.disabled = false;
-      btnSubmit.textContent = 'Registrar Orden de Ingreso';
+      btnSubmit.innerHTML = `<i class="ti ti-clipboard-check me-1" aria-hidden="true"></i>Registrar ingreso`;
     }
   });
 

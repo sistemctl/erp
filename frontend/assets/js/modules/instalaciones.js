@@ -19,6 +19,8 @@ const ESTADO_BADGE = {
   cancelada: 'bg-danger-lt'
 };
 
+let instalacionesKeydownHandler = null;
+
 export async function initInstalaciones(container) {
   const usuario = getUsuario();
   const canWrite = ['admin', 'superadmin', 'gerente_sede', 'tecnico'].includes(usuario.rol);
@@ -102,67 +104,111 @@ export async function initInstalaciones(container) {
       </div>
     </div>
 
-    <div class="modal modal-blur fade" id="modal-nueva-instalacion" tabindex="-1" aria-hidden="true">
+    <div class="modal modal-blur fade" id="modal-nueva-instalacion" tabindex="-1" aria-hidden="true" data-inst-ui="3.0.11">
       <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
-        <form id="form-nueva-instalacion" class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Nueva orden de instalación</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <div class="row g-3">
-              <div class="col-md-6">
-                <label class="form-label required">Cliente</label>
-                <select id="inst-cliente" class="form-select" required>
-                  <option value="">— Seleccionar —</option>
-                  ${clientes.map((c) => `<option value="${c.id}">${c.nombre}${c.documento ? ` (${c.documento})` : ''}</option>`).join('')}
-                </select>
+        <div class="modal-content">
+          <form id="form-nueva-instalacion" class="inst-form">
+            <header class="inst-modal__header">
+              <div class="inst-modal__heading">
+                <p class="inst-modal__eyebrow">Orden de campo</p>
+                <h5 class="modal-title inst-modal__title">Nueva instalación</h5>
+                <p class="inst-modal__lede">Cliente, sitio y alcance del trabajo en un solo paso.</p>
               </div>
-              ${needsSedePicker ? `
-              <div class="col-md-6">
-                <label class="form-label required">Sede</label>
-                <select id="inst-sede" class="form-select" required>
-                  ${sedes.map((s) => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
-                </select>
-              </div>` : ''}
-              <div class="col-md-6">
-                <label class="form-label">Técnico</label>
-                <select id="inst-tecnico" class="form-select">
-                  <option value="">— Por asignar —</option>
-                  ${tecnicos.map((t) => `<option value="${t.id}">${t.nombre}</option>`).join('')}
-                </select>
-              </div>
-              <div class="col-md-6">
-                <label class="form-label">Fecha programada</label>
-                <input type="date" id="inst-fecha" class="form-control">
-              </div>
-              <div class="col-md-6">
-                <label class="form-label">Sitio / proyecto</label>
-                <input type="text" id="inst-sitio" class="form-control" placeholder="Ej: Casa cliente, local X">
-              </div>
-              <div class="col-md-6">
-                <label class="form-label">Valor servicio ($)</label>
-                <input type="number" id="inst-valor-servicio" class="form-control" min="0" step="1000" value="0" placeholder="Mano de obra">
-              </div>
-              <div class="col-12">
-                <label class="form-label">Dirección</label>
-                <input type="text" id="inst-direccion" class="form-control" placeholder="Dirección del sitio">
-              </div>
-              <div class="col-12">
-                <label class="form-label">Descripción del trabajo</label>
-                <textarea id="inst-descripcion" class="form-control" rows="2" placeholder="Ej: Instalación 5 cámaras + NVR"></textarea>
-              </div>
-              <div class="col-12">
-                <label class="form-label">Observaciones</label>
-                <input type="text" id="inst-obs" class="form-control">
-              </div>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </header>
+            <div class="modal-body inst-modal__body">
+              <section class="inst-section" aria-labelledby="inst-sec-quien">
+                <header class="inst-section__head">
+                  <span class="inst-section__mark" aria-hidden="true">01</span>
+                  <div>
+                    <h4 id="inst-sec-quien" class="inst-section__title">Quién y cuándo</h4>
+                    <p class="inst-section__hint">Cliente, sede, técnico y fecha de visita.</p>
+                  </div>
+                </header>
+                <div class="inst-field-grid">
+                  <div class="inst-field">
+                    <label class="form-label required" for="inst-cliente">Cliente</label>
+                    <select id="inst-cliente" class="form-select" required>
+                      <option value="">Seleccionar cliente</option>
+                      ${clientes.map((c) => `<option value="${c.id}">${c.nombre}${c.documento ? ` (${c.documento})` : ''}</option>`).join('')}
+                    </select>
+                  </div>
+                  ${needsSedePicker ? `
+                  <div class="inst-field">
+                    <label class="form-label required" for="inst-sede">Sede</label>
+                    <select id="inst-sede" class="form-select" required>
+                      ${sedes.map((s) => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                    </select>
+                  </div>` : ''}
+                  <div class="inst-field">
+                    <label class="form-label" for="inst-tecnico">Técnico</label>
+                    <select id="inst-tecnico" class="form-select">
+                      <option value="">Por asignar</option>
+                      ${tecnicos.map((t) => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div class="inst-field">
+                    <label class="form-label" for="inst-fecha">Fecha programada</label>
+                    <input type="date" id="inst-fecha" class="form-control">
+                  </div>
+                </div>
+              </section>
+
+              <section class="inst-section" aria-labelledby="inst-sec-sitio">
+                <header class="inst-section__head">
+                  <span class="inst-section__mark" aria-hidden="true">02</span>
+                  <div>
+                    <h4 id="inst-sec-sitio" class="inst-section__title">Sitio</h4>
+                    <p class="inst-section__hint">Dónde se hace la instalación.</p>
+                  </div>
+                </header>
+                <div class="inst-field-grid">
+                  <div class="inst-field">
+                    <label class="form-label" for="inst-sitio">Sitio / proyecto</label>
+                    <input type="text" id="inst-sitio" class="form-control" placeholder="Casa del cliente, local, oficina…" autocomplete="off">
+                  </div>
+                  <div class="inst-field inst-field--full">
+                    <label class="form-label" for="inst-direccion">Dirección</label>
+                    <input type="text" id="inst-direccion" class="form-control" placeholder="Calle, barrio, referencias" autocomplete="street-address">
+                  </div>
+                </div>
+              </section>
+
+              <section class="inst-section" aria-labelledby="inst-sec-trabajo">
+                <header class="inst-section__head">
+                  <span class="inst-section__mark" aria-hidden="true">03</span>
+                  <div>
+                    <h4 id="inst-sec-trabajo" class="inst-section__title">Trabajo</h4>
+                    <p class="inst-section__hint">Qué se instala y cuánto cuesta la mano de obra.</p>
+                  </div>
+                </header>
+                <div class="inst-field">
+                  <label class="form-label" for="inst-descripcion">Descripción del trabajo</label>
+                  <textarea id="inst-descripcion" class="form-control" rows="3" placeholder="Ej: Instalación 5 cámaras + NVR, cableado y configuración" spellcheck="false"></textarea>
+                </div>
+                <div class="inst-field-grid">
+                  <div class="inst-field">
+                    <label class="form-label" for="inst-valor-servicio">Valor servicio (COP)</label>
+                    <div class="input-group">
+                      <span class="input-group-text">$</span>
+                      <input type="number" id="inst-valor-servicio" class="form-control" min="0" step="1000" value="0" placeholder="0">
+                    </div>
+                  </div>
+                  <div class="inst-field">
+                    <label class="form-label" for="inst-obs">Observaciones</label>
+                    <input type="text" id="inst-obs" class="form-control" placeholder="Acceso, horarios, contactos en sitio…">
+                  </div>
+                </div>
+              </section>
             </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancelar</button>
-            <button type="submit" class="btn btn-primary ms-auto">Crear orden</button>
-          </div>
-        </form>
+            <footer class="inst-modal__footer">
+              <button type="button" class="btn btn-ghost-secondary" data-bs-dismiss="modal">Cancelar</button>
+              <button type="submit" class="btn btn-primary">
+                <i class="ti ti-clipboard-check me-1" aria-hidden="true"></i>Crear orden
+              </button>
+            </footer>
+          </form>
+        </div>
       </div>
     </div>
 
@@ -217,15 +263,20 @@ export async function initInstalaciones(container) {
     });
   }
 
-  async function abrirDetalle(id) {
+  async function abrirDetalle(id, { silent = false } = {}) {
     const content = document.getElementById('detalle-instalacion-content');
-    content.innerHTML = `<div class="p-5 text-center"><div class="spinner-border text-primary"></div></div>`;
-    modalDetalle.show();
+    if (!silent) {
+      content.innerHTML = `<div class="p-5 text-center"><div class="spinner-border text-primary"></div></div>`;
+      modalDetalle.show();
+    }
 
     try {
       const orden = await apiFetch(`/instalaciones/${id}`);
       const locked = ['entregada', 'cancelada'].includes(orden.estado);
       const materiales = orden.materiales || [];
+
+      const scrollEl = content.querySelector('.modal-body');
+      const scrollTop = silent && scrollEl ? scrollEl.scrollTop : 0;
 
       content.innerHTML = `
         <div class="modal-header">
@@ -326,27 +377,37 @@ export async function initInstalaciones(container) {
           <div class="card bg-light-lt">
             <div class="card-body">
               <h4 class="mb-3">Agregar material</h4>
+              <div class="mb-3">
+                <label class="form-label d-flex align-items-center gap-2" for="mat-scan">
+                  <span>Escanear código / IMEI</span>
+                  <kbd class="small px-1 py-0" title="Atajo de teclado">F2</kbd>
+                </label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="ti ti-barcode" aria-hidden="true"></i></span>
+                  <input type="text" id="mat-scan" class="form-control" placeholder="Apunte el lector y escanee…" autocomplete="off" spellcheck="false" inputmode="none">
+                </div>
+              </div>
               <div class="row g-2 align-items-end">
                 <div class="col-md-5">
-                  <label class="form-label">Producto</label>
+                  <label class="form-label" for="mat-producto">Producto</label>
                   <select id="mat-producto" class="form-select">
                     <option value="">— Seleccionar —</option>
-                    ${productos.map((p) => `<option value="${p.id}" data-serie="${p.tieneNumeroSerie ? '1' : '0'}">${p.nombre}</option>`).join('')}
+                    ${productos.map((p) => `<option value="${p.id}" data-serie="${p.tieneNumeroSerie ? '1' : '0'}" data-codigo="${(p.codigoBarras || '').replace(/"/g, '&quot;')}">${p.nombre}</option>`).join('')}
                   </select>
                 </div>
                 <div class="col-md-2">
-                  <label class="form-label">Cantidad</label>
+                  <label class="form-label" for="mat-cantidad">Cantidad</label>
                   <input type="number" id="mat-cantidad" class="form-control" min="1" value="1">
                 </div>
                 <div class="col-md-3" id="mat-series-wrap" style="display:none">
-                  <label class="form-label">Series / IMEI</label>
+                  <label class="form-label" for="mat-series">Series / IMEI</label>
                   <input type="text" id="mat-series" class="form-control" placeholder="Separadas por coma">
                 </div>
                 <div class="col-md-2">
                   <button type="button" class="btn btn-primary w-100" id="btn-add-mat">Agregar</button>
                 </div>
               </div>
-              <p class="form-hint mb-0 mt-2">Si el producto lleva serie, indique exactamente la misma cantidad de series.</p>
+              <p class="form-hint mb-0 mt-2">F2 enfoca el escáner. Si el producto lleva serie, indique exactamente la misma cantidad de series.</p>
             </div>
           </div>
           ` : ''}
@@ -367,13 +428,98 @@ export async function initInstalaciones(container) {
         </div>
       `;
 
+      if (silent && scrollTop) {
+        const newScroll = content.querySelector('.modal-body');
+        if (newScroll) newScroll.scrollTop = scrollTop;
+      }
+
       const matSelect = document.getElementById('mat-producto');
       const seriesWrap = document.getElementById('mat-series-wrap');
+      const matScan = document.getElementById('mat-scan');
+      const matSeries = document.getElementById('mat-series');
+      const matCantidad = document.getElementById('mat-cantidad');
+
+      const syncSerieVisibility = () => {
+        if (!matSelect || !seriesWrap) return;
+        const opt = matSelect.selectedOptions[0];
+        seriesWrap.style.display = opt?.dataset.serie === '1' ? '' : 'none';
+      };
+
       if (matSelect) {
-        matSelect.addEventListener('change', () => {
-          const opt = matSelect.selectedOptions[0];
-          seriesWrap.style.display = opt?.dataset.serie === '1' ? '' : 'none';
+        matSelect.addEventListener('change', syncSerieVisibility);
+      }
+
+      async function aplicarProductoEscaneado(codigoRaw) {
+        const codigo = String(codigoRaw || '').trim();
+        if (!codigo || !matSelect) return;
+
+        const sedeId = orden.sedeId || usuario.sedeId || '';
+        let prod = productos.find((p) => String(p.codigoBarras || '') === codigo);
+        let autoImei = null;
+
+        if (!prod) {
+          try {
+            const q = sedeId ? `?sedeId=${encodeURIComponent(sedeId)}` : '';
+            const found = await apiFetch(`/productos/barcode/${encodeURIComponent(codigo)}${q}`);
+            prod = found;
+            autoImei = found.autoDetectedImei || null;
+            if (prod?.id && !productos.some((p) => p.id === prod.id) && !prod.esServicio) {
+              productos.push(prod);
+            }
+          } catch (err) {
+            showToast('No encontrado', err.message || `Código ${codigo} no existe.`, 'error');
+            return;
+          }
+        }
+
+        if (!prod?.id) {
+          showToast('No encontrado', `Código ${codigo} no existe.`, 'error');
+          return;
+        }
+
+        let opt = matSelect.querySelector(`option[value="${prod.id}"]`);
+        if (!opt) {
+          opt = document.createElement('option');
+          opt.value = prod.id;
+          opt.dataset.serie = prod.tieneNumeroSerie ? '1' : '0';
+          opt.dataset.codigo = prod.codigoBarras || '';
+          opt.textContent = prod.nombre;
+          matSelect.appendChild(opt);
+        }
+
+        matSelect.value = prod.id;
+        syncSerieVisibility();
+
+        if (autoImei && matSeries) {
+          matSeries.value = autoImei;
+          if (matCantidad) matCantidad.value = '1';
+          seriesWrap.style.display = '';
+        }
+
+        if (matScan) {
+          matScan.value = '';
+        }
+
+        showToast('Producto', prod.nombre, 'success');
+        document.getElementById('btn-add-mat')?.focus();
+      }
+
+      if (matScan) {
+        matScan.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          aplicarProductoEscaneado(matScan.value);
         });
+        if (!silent) {
+          // Al abrir detalle editable, dejar listo el escáner
+          setTimeout(() => matScan.focus(), 50);
+        }
+      }
+
+      async function refreshAfterChange() {
+        await loadData();
+        renderTabla();
+        await abrirDetalle(id, { silent: true });
       }
 
       document.getElementById('btn-guardar-inst')?.addEventListener('click', async () => {
@@ -387,15 +533,14 @@ export async function initInstalaciones(container) {
             })
           });
           showToast('Éxito', 'Orden actualizada.', 'success');
-          await loadData();
-          renderTabla();
-          abrirDetalle(id);
+          await refreshAfterChange();
         } catch (err) {
           showToast('Error', err.message, 'error');
         }
       });
 
       document.getElementById('btn-add-mat')?.addEventListener('click', async () => {
+        const btn = document.getElementById('btn-add-mat');
         const productoId = document.getElementById('mat-producto').value;
         const cantidad = parseInt(document.getElementById('mat-cantidad').value, 10);
         const seriesRaw = document.getElementById('mat-series')?.value || '';
@@ -404,6 +549,7 @@ export async function initInstalaciones(container) {
           showToast('Aviso', 'Seleccione producto y cantidad.', 'warning');
           return;
         }
+        btn.disabled = true;
         try {
           const payload = { productoId, cantidad };
           if (series.length) payload.series = series;
@@ -412,11 +558,10 @@ export async function initInstalaciones(container) {
             body: JSON.stringify(payload)
           });
           showToast('Éxito', 'Material descontado del inventario.', 'success');
-          await loadData();
-          renderTabla();
-          abrirDetalle(id);
+          await refreshAfterChange();
         } catch (err) {
           showToast('Error', err.message, 'error');
+          btn.disabled = false;
         }
       });
 
@@ -426,9 +571,7 @@ export async function initInstalaciones(container) {
           try {
             await apiFetch(`/instalaciones/${id}/materiales/${btn.dataset.mid}`, { method: 'DELETE' });
             showToast('Éxito', 'Material revertido.', 'success');
-            await loadData();
-            renderTabla();
-            abrirDetalle(id);
+            await refreshAfterChange();
           } catch (err) {
             showToast('Error', err.message, 'error');
           }
@@ -440,9 +583,7 @@ export async function initInstalaciones(container) {
         try {
           await apiFetch(`/instalaciones/${id}/cerrar`, { method: 'POST', body: '{}' });
           showToast('Éxito', 'Instalación entregada.', 'success');
-          await loadData();
-          renderTabla();
-          abrirDetalle(id);
+          await refreshAfterChange();
         } catch (err) {
           showToast('Error', err.message, 'error');
         }
@@ -504,5 +645,26 @@ export async function initInstalaciones(container) {
     }
   });
 
+  if (instalacionesKeydownHandler) {
+    document.removeEventListener('keydown', instalacionesKeydownHandler);
+  }
+  instalacionesKeydownHandler = (e) => {
+    if (e.key !== 'F2') return;
+    const modal = document.getElementById('modal-detalle-instalacion');
+    const scan = document.getElementById('mat-scan');
+    if (!modal?.classList.contains('show') || !scan) return;
+    e.preventDefault();
+    scan.focus();
+    scan.select();
+  };
+  document.addEventListener('keydown', instalacionesKeydownHandler);
+
   renderTabla();
+}
+
+export function destroyInstalaciones() {
+  if (instalacionesKeydownHandler) {
+    document.removeEventListener('keydown', instalacionesKeydownHandler);
+    instalacionesKeydownHandler = null;
+  }
 }
