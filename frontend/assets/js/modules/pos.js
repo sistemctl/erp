@@ -83,7 +83,12 @@ export async function initPos(container) {
 
   try {
     if (isAdmin) {
-      sedes = await apiFetch('/config/sedes').catch(() => []);
+      try {
+        sedes = await apiFetch('/config/sedes');
+      } catch (err) {
+        showToast('Error', err.message || 'No se pudieron cargar las sedes.', 'error');
+        sedes = [];
+      }
       if (!currentSedeId && sedes.length > 0) {
         currentSedeId = sedes[0].id;
       }
@@ -103,7 +108,12 @@ export async function initPos(container) {
       cajaAbierta = await apiFetch(`/caja/reporte?fecha=${hoyStr}&sede=${currentSedeId}`, { silent: true }).catch(() => null);
     
     // Obtener configuración del sistema para el descuento máximo e IVA
-    const config = await apiFetch('/config/sistema').catch(() => null);
+    let config = null;
+    try {
+      config = await apiFetch('/config/sistema');
+    } catch (err) {
+      showToast('Aviso', err.message || 'No se pudo cargar la configuración; se usan valores por defecto.', 'warning');
+    }
     maxDescuentoPermitido = config ? parseFloat(config.descuentoMaximoPct) : 15;
     cobrarIva = config && config.cobrarIvaPos !== undefined ? !!config.cobrarIvaPos : true;
     ivaPct = config && config.ivaDefecto !== undefined ? parseFloat(config.ivaDefecto) / 100 : 0.19;
@@ -119,21 +129,25 @@ export async function initPos(container) {
     }
 
     // Cargar clientes para ventas a crédito
-    clientes = await apiFetch('/clientes').catch(() => [
-      { id: '1', nombre: 'Consumidor Final', documento: '22222222' },
-      { id: '2', nombre: 'Juan Pérez', documento: '1019087654' },
-      { id: '3', nombre: 'María López', documento: '52876345' }
-    ]);
+    try {
+      clientes = await apiFetch('/clientes');
+    } catch (err) {
+      showToast('Error', err.message || 'No se pudieron cargar los clientes.', 'error');
+      clientes = [];
+    }
   } catch (e) {
     console.error('Error al inicializar POS:', e);
+    showToast('Error', e.message || 'Error al inicializar el punto de venta.', 'error');
   }
 
   // Cargar categorías del catálogo directamente de la base de datos
   let categories = [];
   try {
-    categories = await apiFetch('/productos/categorias').catch(() => []);
+    categories = await apiFetch('/productos/categorias');
   } catch (e) {
     console.error('Error al obtener categorías:', e);
+    showToast('Error', e.message || 'No se pudieron cargar las categorías.', 'error');
+    categories = [];
   }
 
 
@@ -1168,7 +1182,10 @@ export async function initPos(container) {
         imei: item.imei
       })),
       pagos,
-      pinAdmin
+      pinAdmin,
+      idempotencyKey: (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `pos-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
     };
 
     submitBtn.disabled = true;

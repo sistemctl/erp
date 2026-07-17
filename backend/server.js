@@ -63,6 +63,7 @@ app.use('/api/series', require('./routes/series.routes'));
 app.use('/api/caja', require('./routes/caja.routes'));
 app.use('/api/ventas', require('./routes/ventas.routes'));
 app.use('/api/reparaciones', require('./routes/reparaciones.routes'));
+app.use('/api/rma', require('./routes/rma.routes'));
 app.use('/api/instalaciones', require('./routes/instalaciones.routes'));
 app.use('/api/clientes', require('./routes/clientes.routes'));
 app.use('/api/facturas', require('./routes/facturas.routes'));
@@ -78,7 +79,11 @@ app.use('/api/audit-log', require('./routes/auditlog.routes'));
 app.use('/api/gemini', require('./routes/gemini.routes'));
 app.use('/api/analytics', require('./routes/analytics.routes'));
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Uploads estáticos: nombres de archivo opacos (UUID/random); sin listado de directorio
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+  index: false,
+  fallthrough: true
+}));
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
 app.get('/*all', (req, res, next) => {
@@ -93,8 +98,43 @@ app.use(errorHandler);
 const startServer = async () => {
   try {
     console.log('Conectando y sincronizando base de datos PostgreSQL...');
-    await sequelize.sync({ alter: true });
-    console.log('Base de datos sincronizada correctamente.');
+    const isProd = process.env.NODE_ENV === 'production';
+    // Producción: sync sin alter salvo DB_SYNC_ALTER=true (una vez al desplegar modelos nuevos).
+    const allowAlter = !isProd || process.env.DB_SYNC_ALTER === 'true';
+    await sequelize.sync(allowAlter ? { alter: true } : {});
+    console.log(allowAlter
+      ? 'Base de datos sincronizada (con alter).'
+      : 'Base de datos sincronizada (producción, sin alter).');
+
+    try {
+      await sequelize.query(`
+        ALTER TABLE "OrdenesReparacion"
+        ADD COLUMN IF NOT EXISTS "tokenPublico" UUID;
+      `);
+      await sequelize.query(`
+        UPDATE "OrdenesReparacion"
+        SET "tokenPublico" = gen_random_uuid()
+        WHERE "tokenPublico" IS NULL;
+      `).catch(async () => {
+        const { OrdenReparacion } = require('./models');
+        const crypto = require('crypto');
+        const rows = await OrdenReparacion.findAll({ attributes: ['id', 'tokenPublico'] });
+        for (const row of rows) {
+          if (!row.tokenPublico) {
+            await OrdenReparacion.update(
+              { tokenPublico: crypto.randomUUID() },
+              { where: { id: row.id } }
+            );
+          }
+        }
+      });
+      await sequelize.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS ordenes_reparacion_token_publico_idx
+        ON "OrdenesReparacion" ("tokenPublico");
+      `).catch(() => {});
+    } catch (tokenErr) {
+      console.warn('No se pudo asegurar tokenPublico:', tokenErr.message);
+    }
 
     try {
       await bootstrapConsumidorFinal();

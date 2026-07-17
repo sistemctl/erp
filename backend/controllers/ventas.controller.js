@@ -21,7 +21,7 @@ const {
   sequelize
 } = require('../models');
 const { Op } = require('sequelize');
-const { resolveQuerySede } = require('../utils/sede');
+const { resolveQuerySede, resolveActionSede } = require('../utils/sede');
 const { calcularFechaVencimientoCredito, getDiasPlazoCredito } = require('../utils/credito');
 const { findCajaAbierta } = require('../utils/caja-abierta');
 const { ensureConsumidorFinal } = require('../utils/consumidor-final');
@@ -70,11 +70,21 @@ exports.procesarVenta = async (req, res, next) => {
       observaciones,
       items, // array of { productoId, cantidad, precioBase, precioModificado, descuentoPct, imei }
       pagos, // array of { metodo, monto }
-      pinAdmin // opcional para price overrides
+      pinAdmin, // opcional para price overrides
+      idempotencyKey: rawIdemKey
     } = req.body;
 
+    const idempotencyKey = rawIdemKey ? String(rawIdemKey).slice(0, 64) : null;
+    if (idempotencyKey) {
+      const existing = await Venta.findOne({ where: { idempotencyKey }, transaction });
+      if (existing) {
+        await transaction.commit();
+        return res.status(200).json(existing);
+      }
+    }
+
     const { sedeId: bodySedeId } = req.body;
-    const sedeId = bodySedeId || req.usuario.sedeId;
+    const sedeId = await resolveActionSede(bodySedeId, req.usuario, Sede, transaction);
 
     if (!sedeId) {
       await transaction.rollback();
@@ -197,7 +207,8 @@ exports.procesarVenta = async (req, res, next) => {
       esCredito: !!esCredito,
       saldoPendiente: !!esCredito ? saldoPendiente : 0,
       estado: !!esCredito ? 'credito' : 'completada',
-      observaciones
+      observaciones,
+      idempotencyKey: idempotencyKey || null
     }, { transaction });
 
     // 4. Crear Items de Venta e impactar Inventario
@@ -234,7 +245,8 @@ exports.procesarVenta = async (req, res, next) => {
       if (!producto.esServicio) {
         const stock = await StockSede.findOne({
           where: { productoId: item.productoId, sedeId },
-          transaction
+          transaction,
+          lock: transaction.LOCK.UPDATE
         });
 
         if (!stock || stock.cantidad < item.cantidad) {
@@ -686,7 +698,8 @@ exports.crearDevolucionVenta = async (req, res, next) => {
       if (!item.producto?.esServicio) {
         const stock = await StockSede.findOne({
           where: { productoId: item.productoId, sedeId: venta.sedeId },
-          transaction
+          transaction,
+          lock: transaction.LOCK.UPDATE
         });
         if (stock) {
           await stock.update({ cantidad: stock.cantidad + cantidad }, { transaction });

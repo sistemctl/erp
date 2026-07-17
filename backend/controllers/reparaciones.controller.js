@@ -136,6 +136,7 @@ exports.createOrden = async (req, res, next) => {
 
     const orden = await OrdenReparacion.create({
       numeroOrden,
+      tokenPublico: require('crypto').randomUUID(),
       clienteId,
       tecnicoId: tecnicoId || null,
       sedeId,
@@ -429,7 +430,8 @@ exports.addRepuestos = async (req, res, next) => {
     // 1. Validar y descontar stock en la sede actual
     const stock = await StockSede.findOne({
       where: { productoId, sedeId },
-      transaction
+      transaction,
+      lock: transaction.LOCK.UPDATE
     });
 
     if (!stock || stock.cantidad < parseInt(cantidad)) {
@@ -635,8 +637,9 @@ exports.getEtiquetaQr = async (req, res, next) => {
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
     }
 
-    // Ruta pública sin hash: muchos lectores QR pierden el fragmento #/...
-    const scanUrl = `${buildPublicAppUrl(req)}/r/${encodeURIComponent(orden.numeroOrden)}`;
+    // Token opaco: no enumerable (OR-000001 ya no va en el QR público)
+    const publicToken = orden.tokenPublico || orden.id;
+    const scanUrl = `${buildPublicAppUrl(req)}/r/${encodeURIComponent(publicToken)}`;
     
     // Generar imagen de código QR y hacer stream como PNG
     res.setHeader('Content-Type', 'image/png');

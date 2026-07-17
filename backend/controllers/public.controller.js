@@ -1,4 +1,3 @@
-const { Op } = require('sequelize');
 const {
   OrdenReparacion,
   Cliente,
@@ -16,6 +15,8 @@ const ESTADO_LABELS = {
   cancelado: 'Cancelado'
 };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function maskImei(imei) {
   const value = String(imei || '').trim();
   if (!value) return null;
@@ -26,13 +27,18 @@ function maskImei(imei) {
 /** Seguimiento público de orden de reparación (sin autenticación). */
 exports.getReparacionPublica = async (req, res, next) => {
   try {
-    const numeroOrden = String(req.params.numeroOrden || '').trim();
-    if (!numeroOrden) {
-      return res.status(400).json({ error: 'Número de orden requerido.' });
+    const token = String(req.params.token || req.params.numeroOrden || '').trim();
+    if (!token) {
+      return res.status(400).json({ error: 'Código de seguimiento requerido.' });
+    }
+
+    // Solo token UUID exacto (sin iLike / wildcards). Compatibilidad: OR-xxxxxx ya no es público.
+    if (!UUID_RE.test(token)) {
+      return res.status(404).json({ error: 'No encontramos una reparación con ese código.' });
     }
 
     const orden = await OrdenReparacion.findOne({
-      where: { numeroOrden: { [Op.iLike]: numeroOrden } },
+      where: { tokenPublico: token },
       attributes: [
         'numeroOrden',
         'tipoEquipo',
@@ -57,7 +63,7 @@ exports.getReparacionPublica = async (req, res, next) => {
     });
 
     if (!orden) {
-      return res.status(404).json({ error: 'No encontramos una reparación con ese número.' });
+      return res.status(404).json({ error: 'No encontramos una reparación con ese código.' });
     }
 
     const config = await ConfiguracionSistema.findOne({

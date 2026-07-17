@@ -201,7 +201,8 @@ exports.recibirCompra = async (req, res, next) => {
       // Actualizar Stock en la Sede
       const stock = await StockSede.findOne({
         where: { productoId: recItem.productoId, sedeId: orden.sedeId },
-        transaction
+        transaction,
+        lock: transaction.LOCK.UPDATE
       });
 
       if (stock) {

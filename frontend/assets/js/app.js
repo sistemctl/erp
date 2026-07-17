@@ -25,7 +25,7 @@ const SIDEBAR_SECTIONS = [
   {
     id: 'operacion',
     label: 'Operación',
-    hashes: ['#/dashboard', '#/pos', '#/ventas', '#/clientes', '#/reparaciones', '#/instalaciones', '#/cotizaciones', '#/tradein']
+    hashes: ['#/dashboard', '#/pos', '#/ventas', '#/clientes', '#/reparaciones', '#/rma', '#/instalaciones', '#/cotizaciones', '#/tradein']
   },
   {
     id: 'inventario',
@@ -51,6 +51,7 @@ const modulosPorRol = {
     { name: 'Historial Ventas', hash: '#/ventas', icon: 'ti-receipt' },
     { name: 'Clientes CRM', hash: '#/clientes', icon: 'ti-users-group' },
     { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
+    { name: 'Garantía / RMA', hash: '#/rma', icon: 'ti-shield-check' },
     { name: 'Instalaciones', hash: '#/instalaciones', icon: 'ti-home-bolt' },
     { name: 'Rentabilidad', hash: '#/rentabilidad', icon: 'ti-chart-bar' },
     { name: 'Reportes', hash: '#/reportes', icon: 'ti-report-analytics' },
@@ -71,6 +72,7 @@ const modulosPorRol = {
     { name: 'Historial Ventas', hash: '#/ventas', icon: 'ti-receipt' },
     { name: 'Clientes CRM', hash: '#/clientes', icon: 'ti-users-group' },
     { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
+    { name: 'Garantía / RMA', hash: '#/rma', icon: 'ti-shield-check' },
     { name: 'Instalaciones', hash: '#/instalaciones', icon: 'ti-home-bolt' },
     { name: 'Rentabilidad', hash: '#/rentabilidad', icon: 'ti-chart-bar' },
     { name: 'Reportes', hash: '#/reportes', icon: 'ti-report-analytics' },
@@ -90,6 +92,7 @@ const modulosPorRol = {
     { name: 'Historial Ventas', hash: '#/ventas', icon: 'ti-receipt' },
     { name: 'Clientes CRM', hash: '#/clientes', icon: 'ti-users-group' },
     { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
+    { name: 'Garantía / RMA', hash: '#/rma', icon: 'ti-shield-check' },
     { name: 'Instalaciones', hash: '#/instalaciones', icon: 'ti-home-bolt' },
     { name: 'Rentabilidad', hash: '#/rentabilidad', icon: 'ti-chart-bar' },
     { name: 'Reportes', hash: '#/reportes', icon: 'ti-report-analytics' },
@@ -108,10 +111,12 @@ const modulosPorRol = {
     { name: 'Clientes CRM', hash: '#/clientes', icon: 'ti-users-group' },
     { name: 'Facturación', hash: '#/facturacion', icon: 'ti-file-text' },
     { name: 'Caja', hash: '#/caja', icon: 'ti-building-store' },
+    { name: 'Garantía / RMA', hash: '#/rma', icon: 'ti-shield-check' },
     { name: 'Inventario (Ver)', hash: '#/inventario', icon: 'ti-package' }
   ],
   tecnico: [
     { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
+    { name: 'Garantía / RMA', hash: '#/rma', icon: 'ti-shield-check' },
     { name: 'Instalaciones', hash: '#/instalaciones', icon: 'ti-home-bolt' }
   ],
   contador: [
@@ -361,6 +366,10 @@ async function router() {
       case '#/tradein':
         const { initTradeIn } = await import('./modules/tradein.js');
         await initTradeIn(contentContainer);
+        break;
+      case '#/rma':
+        const { initRma } = await import('./modules/rma.js');
+        await initRma(contentContainer);
         break;
       case '#/cartera':
         const { initCartera } = await import('./modules/cartera.js');

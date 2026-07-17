@@ -263,7 +263,8 @@ exports.addMaterial = async (req, res, next) => {
 
     const stock = await StockSede.findOne({
       where: { productoId, sedeId: orden.sedeId },
-      transaction
+      transaction,
+      lock: transaction.LOCK.UPDATE
     });
     if (!stock || stock.cantidad < qty) {
       await transaction.rollback();

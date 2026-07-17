@@ -65,6 +65,12 @@ const Venta = sequelize.define('Venta', {
   observaciones: {
     type: DataTypes.TEXT,
     allowNull: true
+  },
+  /** Clave de idempotencia del cliente (evita doble venta en reintentos de red) */
+  idempotencyKey: {
+    type: DataTypes.STRING(64),
+    allowNull: true,
+    unique: true
   }
 }, {
   tableName: 'Ventas'

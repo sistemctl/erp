@@ -169,6 +169,35 @@ function maskSecretFields(data) {
   return data;
 }
 
+const OPS_CONFIG_KEYS = [
+  'id', 'empresa', 'nit', 'direccion', 'telefono', 'logoUrl',
+  'descuentoMaximoPct', 'egresoMaximoSinPin', 'ivaDefecto', 'cobrarIvaPos',
+  'cajaCompartidaSede', 'temaInterfaz', 'notificacionesActivas'
+];
+
+/** Respuesta mínima para roles operativos (sin SMTP/Twilio/servidor). */
+function toOpsConfig(configJson) {
+  const data = configJson?.toJSON ? configJson.toJSON() : { ...configJson };
+  const out = {};
+  for (const key of OPS_CONFIG_KEYS) {
+    if (data[key] !== undefined) out[key] = data[key];
+  }
+  if (out.logoUrl) out.logoUrl = normalizeLogoUrl(out.logoUrl);
+  return out;
+}
+
+function sanitizeBackupRow(modelName, row) {
+  const copy = { ...row };
+  if (modelName === 'Usuario') {
+    delete copy.password;
+  }
+  if (modelName === 'ConfiguracionSistema') {
+    delete copy.smtpPass;
+    delete copy.twilioAuthToken;
+  }
+  return copy;
+}
+
 function attachServidorMeta(configJson, req) {
   const data = configJson?.toJSON ? configJson.toJSON() : { ...configJson };
   if (data.logoUrl) data.logoUrl = normalizeLogoUrl(data.logoUrl);
@@ -517,6 +546,12 @@ exports.getSistemaConfig = async (req, res, next) => {
         await config.update({ logoUrl: normalized });
       }
     }
+
+    const rol = req.usuario?.rol;
+    const isAdmin = ['admin', 'superadmin'].includes(rol);
+    if (!isAdmin) {
+      return res.json(toOpsConfig(config));
+    }
     return res.json(maskSecretFields(attachServidorMeta(config, req)));
   } catch (error) {
     next(error);
@@ -622,7 +657,7 @@ exports.exportarBackup = async (req, res, next) => {
       'Cliente', 'NumeroSerie', 'Venta', 'ItemVenta', 'PagoVenta', 'Factura', 
       'CuentaPorCobrar', 'Abono', 'Cotizacion', 'ItemCotizacion', 'OrdenReparacion', 
       'FotoReparacion', 'RepuestoOrden', 'RentabilidadReparacion', 'OrdenInstalacion',
-      'MaterialInstalacion', 'TradeIn', 
+      'MaterialInstalacion', 'TradeIn', 'ReclamoGarantia',
       'CategoriaEgreso', 'Caja', 'EgresoCaja', 'Nomina', 'Proveedor', 
       'OrdenCompra', 'ItemOrdenCompra', 'PagoCompra', 'MovimientoInventario', 'Notificacion', 
       'AuditLog', 'ConfiguracionSistema'
@@ -630,7 +665,8 @@ exports.exportarBackup = async (req, res, next) => {
 
     for (const modelName of orderedModels) {
       if (models[modelName]) {
-        backupData[modelName] = await models[modelName].findAll({ raw: true });
+        const rows = await models[modelName].findAll({ raw: true });
+        backupData[modelName] = rows.map((row) => sanitizeBackupRow(modelName, row));
       }
     }
 

@@ -129,7 +129,7 @@ export async function initSeguimientoReparacion(container, rawHash = window.loca
         <div class="track-card track-card--error">
           <i class="ti ti-qrcode-off" aria-hidden="true"></i>
           <h1>Código incompleto</h1>
-          <p>Escanea de nuevo la etiqueta QR de tu orden de reparación.</p>
+          <p>Escanea de nuevo la etiqueta QR de tu orden (el enlace público usa un código seguro, no el número OR-).</p>
         </div>
       </div>
     `;

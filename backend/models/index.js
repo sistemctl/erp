@@ -39,6 +39,7 @@ const AuditLog = require('./AuditLog');
 const ConfiguracionSistema = require('./ConfiguracionSistema');
 const DevolucionVenta = require('./DevolucionVenta');
 const ItemDevolucion = require('./ItemDevolucion');
+const ReclamoGarantia = require('./ReclamoGarantia');
 
 // --- Relaciones ---
 
@@ -251,6 +252,15 @@ Factura.hasMany(Notificacion, { foreignKey: 'facturaId', as: 'notificaciones' })
 AuditLog.belongsTo(Usuario, { foreignKey: 'usuarioId', as: 'usuario' });
 AuditLog.belongsTo(Sede, { foreignKey: 'sedeId', as: 'sede' });
 
+// ReclamoGarantia (RMA)
+ReclamoGarantia.belongsTo(Sede, { foreignKey: 'sedeId', as: 'sede' });
+ReclamoGarantia.belongsTo(Cliente, { foreignKey: 'clienteId', as: 'cliente' });
+ReclamoGarantia.belongsTo(Producto, { foreignKey: 'productoId', as: 'producto' });
+ReclamoGarantia.belongsTo(Usuario, { foreignKey: 'usuarioId', as: 'usuario' });
+ReclamoGarantia.belongsTo(Venta, { foreignKey: 'ventaId', as: 'venta' });
+ReclamoGarantia.belongsTo(NumeroSerie, { foreignKey: 'numeroSerieId', as: 'numeroSerie' });
+ReclamoGarantia.belongsTo(OrdenReparacion, { foreignKey: 'ordenReparacionId', as: 'ordenReparacion' });
+
 module.exports = {
   sequelize,
   Sequelize,
@@ -290,5 +300,6 @@ module.exports = {
   AuditLog,
   ConfiguracionSistema,
   DevolucionVenta,
-  ItemDevolucion
+  ItemDevolucion,
+  ReclamoGarantia
 };

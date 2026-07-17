@@ -11,6 +11,13 @@ const OrdenReparacion = sequelize.define('OrdenReparacion', {
     type: DataTypes.STRING,
     allowNull: false
   },
+  /** Token opaco para seguimiento público (QR); no adivinable */
+  tokenPublico: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    allowNull: false,
+    unique: true
+  },
   clienteId: {
     type: DataTypes.UUID,
     allowNull: false

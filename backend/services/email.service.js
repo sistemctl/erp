@@ -175,6 +175,15 @@ exports.enviarCorreoPrueba = async (config, emailDestino) => {
   });
 };
 
+exports.enviarCorreoTexto = async (config, emailDestino, subject, text) => {
+  await sendEmail(config, {
+    to: emailDestino,
+    subject,
+    text,
+    html: `<pre style="font-family:inherit;white-space:pre-wrap">${String(text || '').replace(/</g, '&lt;')}</pre>`
+  });
+};
+
 exports.enviarFacturaPorEmail = async (facturaId) => {
   const config = await ConfiguracionSistema.findOne();
   if (!config?.emailActivo) {

@@ -59,6 +59,16 @@ exports.login = async (req, res, next) => {
 
 exports.logout = async (req, res, next) => {
   try {
+    const { denyToken } = require('../utils/token-denylist');
+    const token = req.token;
+    if (token) {
+      let expiresAt = Date.now() + 8 * 60 * 60 * 1000;
+      try {
+        const decoded = require('jsonwebtoken').decode(token);
+        if (decoded?.exp) expiresAt = decoded.exp * 1000;
+      } catch (_) { /* ignore */ }
+      denyToken(token, expiresAt);
+    }
     return res.json({ message: 'Sesión cerrada exitosamente.' });
   } catch (error) {
     next(error);
