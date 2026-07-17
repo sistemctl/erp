@@ -1,6 +1,6 @@
 const { Caja, EgresoCaja, CategoriaEgreso, Usuario, ConfiguracionSistema, Sede, sequelize } = require('../models');
 const { Op } = require('sequelize');
-const { resolveQuerySede } = require('../utils/sede');
+const { resolveQuerySede, resolveActionSede } = require('../utils/sede');
 const { findCajaAbierta, isCajaCompartidaSede } = require('../utils/caja-abierta');
 
 function getLocalDateStr(date = new Date()) {
@@ -16,7 +16,7 @@ function getLocalDateStr(date = new Date()) {
 exports.aperturaCaja = async (req, res, next) => {
   try {
     const { montoApertura, sedeId: bodySedeId } = req.body;
-    const sedeId = bodySedeId || req.usuario.sedeId;
+    const sedeId = await resolveActionSede(bodySedeId, req.usuario, Sede);
 
     if (!sedeId) {
       return res.status(400).json({ error: 'Debe seleccionar la sede para abrir caja.' });
@@ -78,7 +78,7 @@ exports.egresoCaja = async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
     const { monto, categoriaId, motivo, pinAdmin, sedeId: bodySedeId } = req.body;
-    const sedeId = bodySedeId || req.usuario.sedeId;
+    const sedeId = await resolveActionSede(bodySedeId, req.usuario, Sede, transaction);
 
     if (!monto || parseFloat(monto) <= 0 || !categoriaId || !motivo) {
       return res.status(400).json({ error: 'Parámetros de egreso incompletos o monto inválido.' });
@@ -187,7 +187,7 @@ exports.cierreCaja = async (req, res, next) => {
       observaciones,
       sedeId: bodySedeId
     } = req.body;
-    const sedeId = bodySedeId || req.usuario.sedeId;
+    const sedeId = await resolveActionSede(bodySedeId, req.usuario, Sede, transaction);
 
     const { caja, compartida } = await findCajaAbierta({
       sedeId,
@@ -254,9 +254,7 @@ const cajaReporteInclude = [
 exports.getReporteCaja = async (req, res, next) => {
   try {
     const { fecha, sede } = req.query;
-    const querySedeId = (sede && sede !== 'undefined' && sede !== 'null')
-      ? sede
-      : req.usuario.sedeId;
+    const querySedeId = resolveQuerySede(sede, req.usuario) || req.usuario.sedeId;
     const queryFecha = fecha || getLocalDateStr();
 
     if (!querySedeId) {
@@ -299,8 +297,12 @@ exports.getReporteCaja = async (req, res, next) => {
 exports.getEgresos = async (req, res, next) => {
   try {
     const { sede, fecha } = req.query;
-    const querySedeId = sede || req.usuario.sedeId;
+    const querySedeId = resolveQuerySede(sede, req.usuario) || req.usuario.sedeId;
     const queryFecha = fecha || getLocalDateStr();
+
+    if (!querySedeId) {
+      return res.status(400).json({ error: 'Debe indicar la sede para consultar egresos.' });
+    }
 
     const egresos = await EgresoCaja.findAll({
       include: [
@@ -367,7 +369,7 @@ exports.liberarCaja = async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
     const { sedeId: bodySedeId } = req.body;
-    const sedeId = bodySedeId || req.usuario.sedeId;
+    const sedeId = await resolveActionSede(bodySedeId, req.usuario, Sede, transaction);
 
     if (!sedeId) {
       return res.status(400).json({ error: 'El usuario debe pertenecer a una sede para liberar caja.' });

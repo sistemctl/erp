@@ -15,10 +15,21 @@ const resolveQuerySede = (sedeParam, usuario) => {
   return isValidSedeParam(sedeParam) ? sedeParam : null;
 };
 
-/** Sede para crear registros: body → usuario → primera sede (roles globales) */
+/**
+ * Sede para crear/actualizar registros.
+ * Roles no globales: siempre la sede del usuario (se ignora bodySedeId).
+ * Admin/superadmin: body → usuario → primera sede.
+ */
 const resolveActionSede = async (bodySedeId, usuario, Sede, transaction = null) => {
-  let sedeId = bodySedeId || usuario.sedeId || null;
-  if (!sedeId && isGlobalRole(usuario.rol) && Sede) {
+  if (!isGlobalRole(usuario.rol)) {
+    return usuario.sedeId || null;
+  }
+
+  let sedeId = (isValidSedeParam(bodySedeId) ? bodySedeId : null)
+    || usuario.sedeId
+    || null;
+
+  if (!sedeId && Sede) {
     const firstSede = await Sede.findOne({ transaction: transaction || undefined });
     if (firstSede) sedeId = firstSede.id;
   }
