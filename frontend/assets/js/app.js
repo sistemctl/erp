@@ -5,7 +5,7 @@ import { applyDocumentBranding, getCachedBrand, resolveAssetUrl } from './utils/
 import { isPublicSeguimientoLocation } from './modules/seguimiento-reparacion.js';
 
 /** Bump with index.html ?v= so dynamic ES modules are not stuck on CDN/browser cache. */
-const ASSET_V = '3.0.59';
+const ASSET_V = '3.0.71';
 const importModule = (path) => import(`${path}?v=${ASSET_V}`);
 
 // Anular global alert del navegador con una notificación Toast Premium animada

@@ -16,6 +16,7 @@ router.get('/barcode/:codigo', authMiddleware, productosController.getProductoBy
 
 // Rutas de administración de catálogo
 router.post('/categorias', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede']), productosController.createCategoria);
+router.put('/categorias/:id', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede']), productosController.updateCategoria);
 router.delete('/categorias/:id', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede']), productosController.deleteCategoria);
 router.post('/', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede']), productosController.createProducto);
 router.put('/:id', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede']), productosController.updateProducto);

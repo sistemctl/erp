@@ -35,19 +35,26 @@ export async function initInventario(container) {
         title: 'Catálogo y existencias',
         subtitle: 'Escanea o busca · stock por sede',
         actionsHtml: isAdminOrGerente ? `
-          <div class="btn-list">
+          <div class="btn-list inv-header-actions">
             <button id="btn-nuevo-producto" class="btn btn-primary">
               <i class="ti ti-plus me-1"></i> Nuevo
-            </button>
-            <button id="btn-gestionar-categorias" class="btn btn-outline-primary">
-              <i class="ti ti-tags me-1"></i> Categorías
             </button>
             <button id="btn-traslado" class="btn btn-warning">
               <i class="ti ti-arrows-left-right me-1"></i> Traslado
             </button>
-            <button id="btn-importar-csv" class="btn btn-outline-secondary">
-              <i class="ti ti-file-upload me-1"></i> CSV
-            </button>
+            <div class="dropdown">
+              <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                Más
+              </button>
+              <div class="dropdown-menu dropdown-menu-end">
+                <button type="button" class="dropdown-item" id="btn-gestionar-categorias" data-bs-toggle="modal" data-bs-target="#modal-categorias">
+                  <i class="ti ti-tags me-2"></i> Organizar categorías
+                </button>
+                <button type="button" class="dropdown-item" id="btn-importar-csv">
+                  <i class="ti ti-file-upload me-2"></i> Importar CSV
+                </button>
+              </div>
+            </div>
           </div>
         ` : ''
       })}
@@ -78,10 +85,10 @@ export async function initInventario(container) {
             <div class="col-12 col-md d-flex align-items-end">
               <div class="inv-filter-inline w-100">
                 <div class="inv-chips" role="group" aria-label="Estado de stock">
-                  <button type="button" class="inv-chip is-active" data-stock="todos">Todos</button>
-                  <button type="button" class="inv-chip" data-stock="ok">OK</button>
-                  <button type="button" class="inv-chip" data-stock="bajo">Bajo</button>
-                  <button type="button" class="inv-chip" data-stock="agotado">Agotado</button>
+                  <button type="button" class="inv-chip is-active" data-stock="todos">Todos <span class="inv-chip__n" data-stock-n="todos"></span></button>
+                  <button type="button" class="inv-chip" data-stock="ok">OK <span class="inv-chip__n" data-stock-n="ok"></span></button>
+                  <button type="button" class="inv-chip" data-stock="bajo" title="Con stock, pero en o bajo el mínimo">Bajo <span class="inv-chip__n" data-stock-n="bajo"></span></button>
+                  <button type="button" class="inv-chip" data-stock="agotado" title="Sin unidades en esta sede">Agotado <span class="inv-chip__n" data-stock-n="agotado"></span></button>
                 </div>
                 <div class="inv-chips" role="group" aria-label="Tipo de producto">
                   <button type="button" class="inv-chip" data-serie="imei" aria-pressed="false">IMEI</button>
@@ -152,13 +159,29 @@ export async function initInventario(container) {
                       <p class="prod-form-card__desc">Nombre, categoría y código para escanear en caja.</p>
                     </header>
                     <div class="row g-3">
-                      <div class="col-md-8">
+                      <div class="col-12">
                         <label class="form-label" for="prod-nombre">Nombre del producto</label>
                         <input type="text" id="prod-nombre" class="form-control form-control-lg prod-form-input-title" required placeholder="Ej: Disco duro SSD 1 TB">
                       </div>
-                      <div class="col-md-4">
-                        <label class="form-label" for="prod-categoria">Categoría</label>
-                        <select id="prod-categoria" class="form-select form-select-lg" required></select>
+                      <div class="col-12">
+                        <div class="prod-cat-picker" id="prod-cat-picker">
+                          <div class="prod-cat-picker__label-row">
+                            <label class="form-label mb-0" for="prod-cat-trigger">Categoría</label>
+                            <span class="prod-cat-picker__hint">Clic para abrir el catálogo de estantes</span>
+                          </div>
+                          <input type="hidden" id="prod-categoria" value="" autocomplete="off">
+                          <button type="button" class="prod-cat-picker__trigger" id="prod-cat-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="prod-cat-sheet">
+                            <span class="prod-cat-picker__mark" aria-hidden="true"><i class="ti ti-tags"></i></span>
+                            <span class="prod-cat-picker__text">
+                              <span class="prod-cat-picker__leaf" id="prod-cat-leaf">Elegir categoría…</span>
+                              <span class="prod-cat-picker__path d-none" id="prod-cat-path"></span>
+                            </span>
+                            <span class="prod-cat-picker__open">
+                              <i class="ti ti-layout-sidebar" aria-hidden="true"></i>
+                              <span>Abrir</span>
+                            </span>
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -338,6 +361,32 @@ export async function initInventario(container) {
               </button>
             </div>
           </form>
+
+          <!-- Panel interno (sin 2.º modal Bootstrap → evita pantalla negra) -->
+          <div class="prod-cat-sheet" id="prod-cat-sheet" hidden>
+            <div class="prod-cat-sheet__panel" role="dialog" aria-modal="true" aria-labelledby="modal-prod-categoria-title">
+              <header class="prod-cat-sheet__header">
+                <div>
+                  <p class="prod-cat-modal__eyebrow mb-0">Inventario · estante</p>
+                  <h5 class="modal-title" id="modal-prod-categoria-title">Elegir categoría</h5>
+                  <p class="prod-cat-modal__lede mb-0" id="prod-cat-modal-count">Busca o elige el estante del producto</p>
+                </div>
+                <button type="button" class="btn-close" id="btn-prod-cat-sheet-close" aria-label="Cerrar"></button>
+              </header>
+              <div class="prod-cat-sheet__body">
+                <div class="prod-cat-modal__search">
+                  <i class="ti ti-search" aria-hidden="true"></i>
+                  <input type="search" id="prod-cat-search" class="form-control" placeholder="Buscar… ej. cables, parlantes, tinta" autocomplete="off" spellcheck="false" aria-label="Buscar categoría">
+                </div>
+                <div class="prod-cat-picker__rails" id="prod-cat-rails" aria-label="Categorías frecuentes"></div>
+                <ul class="prod-cat-picker__list" id="prod-cat-list" role="listbox" aria-label="Categorías"></ul>
+                <p class="prod-cat-picker__empty d-none" id="prod-cat-empty">Sin coincidencias. Prueba otra palabra o créala en Organizar categorías.</p>
+              </div>
+              <footer class="prod-cat-sheet__footer">
+                <button type="button" class="btn btn-outline-secondary ms-auto" id="btn-prod-cat-sheet-done">Listo</button>
+              </footer>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -417,45 +466,69 @@ export async function initInventario(container) {
       </div>
     </div>
 
-    <!-- Modal Gestionar Categorías -->
-    <div class="modal modal-blur fade" id="modal-categorias" tabindex="-1" role="dialog" aria-hidden="true">
-      <div class="modal-dialog modal-md modal-dialog-centered" role="document">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Gestionar Categorías</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+    <!-- Modal Organizar Categorías -->
+    <div class="modal modal-blur fade" id="modal-categorias" tabindex="-1" role="dialog" aria-labelledby="modal-categorias-title" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content inv-cat-modal">
+          <div class="modal-header inv-cat-modal__header">
+            <div class="inv-cat-modal__intro">
+              <p class="inv-cat-modal__eyebrow mb-0">Inventario · estantes</p>
+              <h5 class="modal-title" id="modal-categorias-title">Organizar categorías</h5>
+              <p class="inv-cat-modal__lede mb-0">Crea, renombra o limpia vacías del catálogo</p>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
           </div>
-          <div class="modal-body">
-            <!-- Formulario para agregar -->
-            <form id="form-crear-categoria" class="mb-4">
-              <label class="form-label">Nueva Categoría</label>
-              <div class="input-group">
-                 <input type="text" id="cat-nombre-input" class="form-control" placeholder="Nombre de la categoría…" required spellcheck="false">
-                <button type="submit" class="btn btn-primary">
-                  <i class="ti ti-plus me-1"></i> Agregar
+          <div class="modal-body inv-cat-modal__body">
+            <form id="form-crear-categoria" class="inv-cat-create" autocomplete="off">
+              <label class="inv-cat-create__label" for="cat-nombre-input">Nueva categoría</label>
+              <div class="inv-cat-create__row">
+                <input type="text" id="cat-nombre-input" class="form-control inv-cat-create__input" placeholder="Ej. Cables · o Servitec Gamers / Accesorios" required spellcheck="false" autocomplete="off">
+                <button type="submit" class="btn btn-primary inv-cat-create__btn">
+                  <i class="ti ti-plus" aria-hidden="true"></i>
+                  <span>Crear</span>
                 </button>
               </div>
             </form>
 
-            <label class="form-label">Categorías Existentes</label>
-            <div class="border rounded-2" style="max-height: 250px; overflow-y: auto;">
-              <table class="table table-vcenter card-table table-mobile-md mb-0">
-                <thead>
-                  <tr>
-                    <th>Nombre</th>
-                    <th class="w-1">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody id="lista-categorias-body">
-                  <tr>
-                     <td colspan="2" class="text-center py-3 text-secondary">Cargando…</td>
-                  </tr>
-                </tbody>
-              </table>
+            <div class="inv-cat-toolbar">
+              <div class="inv-cat-search">
+                <i class="ti ti-search" aria-hidden="true"></i>
+                <input type="search" id="inv-cat-filter" class="form-control" placeholder="Buscar estante…" autocomplete="off" spellcheck="false" aria-label="Buscar categoría">
+              </div>
+              <button type="button" class="inv-chip" id="inv-cat-solo-vacias" aria-pressed="false" title="Mostrar solo categorías sin productos">
+                Solo vacías
+              </button>
+              <span class="inv-cat-toolbar__meta" id="inv-cat-list-meta"></span>
+            </div>
+
+            <div class="inv-cat-list-wrap" id="lista-categorias-body" role="list" aria-label="Categorías">
+              <div class="inv-cat-list-status text-secondary">Cargando…</div>
             </div>
           </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-link link-secondary ms-auto" data-bs-dismiss="modal">Cerrar</button>
+          <div class="modal-footer inv-cat-modal__footer">
+            <button type="button" class="btn btn-outline-secondary ms-auto" data-bs-dismiss="modal">Listo</button>
+          </div>
+
+          <!-- Sheet interno (sin 2.º modal Bootstrap → evita pantalla negra) -->
+          <div class="inv-cat-sheet" id="inv-cat-reasignar-sheet" hidden>
+            <div class="inv-cat-sheet__panel" role="dialog" aria-modal="true" aria-labelledby="inv-cat-reasignar-title">
+              <header class="inv-cat-sheet__header">
+                <div>
+                  <p class="inv-cat-modal__eyebrow mb-0">Antes de eliminar</p>
+                  <h5 class="modal-title" id="inv-cat-reasignar-title">Reasignar productos</h5>
+                  <p class="inv-cat-modal__lede mb-0" id="cat-reasignar-msg">Esta categoría tiene productos.</p>
+                </div>
+                <button type="button" class="btn-close" id="btn-cat-reasignar-close" aria-label="Cerrar"></button>
+              </header>
+              <div class="inv-cat-sheet__body">
+                <label class="form-label" for="cat-reasignar-destino">Mover productos a</label>
+                <select id="cat-reasignar-destino" class="form-select"></select>
+              </div>
+              <footer class="inv-cat-sheet__footer">
+                <button type="button" class="btn btn-link link-secondary" id="btn-cat-reasignar-cancel">Cancelar</button>
+                <button type="button" class="btn btn-danger" id="btn-cat-reasignar-confirm">Eliminar categoría</button>
+              </footer>
+            </div>
           </div>
         </div>
       </div>
@@ -505,6 +578,24 @@ export async function initInventario(container) {
   let etiquetaProductoActual = null;
   const modalCSV = new bootstrap.Modal(document.getElementById('modal-csv'));
   const modalCategorias = new bootstrap.Modal(document.getElementById('modal-categorias'));
+  let catPendingDelete = null;
+
+  /** Quita backdrops huérfanos de modales anidados rotos (pantalla negra). */
+  const scrubOrphanModalBackdrops = () => {
+    const openModals = document.querySelectorAll('.modal.show').length;
+    const backdrops = [...document.querySelectorAll('.modal-backdrop')];
+    if (openModals === 0) {
+      backdrops.forEach((el) => el.remove());
+      document.body.classList.remove('modal-open');
+      document.body.style.removeProperty('overflow');
+      document.body.style.removeProperty('padding-right');
+      return;
+    }
+    while (backdrops.length > openModals) {
+      backdrops.pop()?.remove();
+    }
+  };
+  scrubOrphanModalBackdrops();
 
   const selectSede = document.getElementById('select-sede-inventario');
   const searchInput = document.getElementById('search-inventario');
@@ -807,21 +898,330 @@ export async function initInventario(container) {
     }
   }, 100);
 
-  // Cargar Categorías en formulario + filtro
+  let categoriasCache = [];
+  const CAT_RECENT_KEY = 'inv-cat-recent';
+
+  const escapeCatHtml = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/"/g, '&quot;');
+
+  const splitCatNombre = (nombre) => {
+    const parts = String(nombre || '').split(/\s*\/\s*/).map((p) => p.trim()).filter(Boolean);
+    if (!parts.length) return { leaf: '—', path: '' };
+    if (parts.length === 1) return { leaf: parts[0], path: '' };
+    return { leaf: parts[parts.length - 1], path: parts.slice(0, -1).join(' · ') };
+  };
+
+  const readRecentCatIds = () => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(CAT_RECENT_KEY) || '[]');
+      return Array.isArray(raw) ? raw.map(String) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const rememberRecentCat = (id) => {
+    if (!id) return;
+    const next = [String(id), ...readRecentCatIds().filter((x) => x !== String(id))].slice(0, 8);
+    localStorage.setItem(CAT_RECENT_KEY, JSON.stringify(next));
+  };
+
+  const closeProdCatPanel = () => {
+    const sheet = document.getElementById('prod-cat-sheet');
+    const trigger = document.getElementById('prod-cat-trigger');
+    const picker = document.getElementById('prod-cat-picker');
+    if (sheet) {
+      sheet.hidden = true;
+      sheet.classList.remove('is-open');
+    }
+    trigger?.setAttribute('aria-expanded', 'false');
+    picker?.classList.remove('is-open');
+    document.getElementById('modal-producto')?.classList.remove('prod-cat-sheet-open');
+  };
+
+  const setProdCategoria = (id, { remember = false } = {}) => {
+    const input = document.getElementById('prod-categoria');
+    const leafEl = document.getElementById('prod-cat-leaf');
+    const pathEl = document.getElementById('prod-cat-path');
+    const trigger = document.getElementById('prod-cat-trigger');
+    if (!input || !leafEl) return;
+
+    input.value = id ? String(id) : '';
+    const cat = id ? categoriasCache.find((c) => String(c.id) === String(id)) : null;
+
+    if (!cat) {
+      leafEl.textContent = 'Elegir categoría…';
+      if (pathEl) {
+        pathEl.textContent = '';
+        pathEl.classList.add('d-none');
+      }
+      trigger?.classList.remove('is-filled');
+      trigger?.setAttribute('aria-label', 'Elegir categoría');
+      return;
+    }
+
+    const { leaf, path } = splitCatNombre(cat.nombre);
+    leafEl.textContent = leaf;
+    if (pathEl) {
+      if (path) {
+        pathEl.textContent = path;
+        pathEl.classList.remove('d-none');
+      } else {
+        pathEl.textContent = '';
+        pathEl.classList.add('d-none');
+      }
+    }
+    trigger?.classList.add('is-filled');
+    trigger?.setAttribute('aria-label', path ? `Categoría: ${leaf}. ${path}` : `Categoría: ${leaf}`);
+    if (remember) rememberRecentCat(cat.id);
+  };
+
+  const pickProdCategoria = (id) => {
+    setProdCategoria(id, { remember: true });
+    closeProdCatPanel();
+  };
+
+  const refreshProdCatModalContent = (query = '') => {
+    const countEl = document.getElementById('prod-cat-modal-count');
+    const n = categoriasCache.length;
+    if (countEl) {
+      countEl.textContent = n
+        ? `${n} estante${n === 1 ? '' : 's'} · busca o elige`
+        : 'Aún no hay categorías. Créalas en Organizar categorías.';
+    }
+    renderProdCatRails();
+    renderProdCatList(query);
+  };
+
+  const renderProdCatRails = () => {
+    const rails = document.getElementById('prod-cat-rails');
+    if (!rails) return;
+
+    const byCount = [...categoriasCache]
+      .filter((c) => (c.productCount ?? 0) > 0)
+      .sort((a, b) => (b.productCount ?? 0) - (a.productCount ?? 0));
+
+    const recentIds = readRecentCatIds();
+    const recent = recentIds
+      .map((id) => categoriasCache.find((c) => String(c.id) === id))
+      .filter(Boolean);
+
+    const seen = new Set();
+    const picks = [];
+    for (const c of [...recent, ...byCount]) {
+      const key = String(c.id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      picks.push(c);
+      if (picks.length >= 6) break;
+    }
+
+    if (!picks.length) {
+      rails.innerHTML = '';
+      rails.classList.add('d-none');
+      return;
+    }
+
+    rails.classList.remove('d-none');
+    rails.innerHTML = picks.map((c) => {
+      const { leaf } = splitCatNombre(c.nombre);
+      const n = c.productCount ?? 0;
+      const active = String(document.getElementById('prod-categoria')?.value || '') === String(c.id);
+      return `
+        <button type="button" class="prod-cat-rail${active ? ' is-active' : ''}" data-cat-id="${c.id}" title="${escapeCatHtml(c.nombre)}">
+          <span class="prod-cat-rail__name">${escapeCatHtml(leaf)}</span>
+          ${n ? `<span class="prod-cat-rail__n">${n}</span>` : ''}
+        </button>
+      `;
+    }).join('');
+
+    rails.querySelectorAll('.prod-cat-rail').forEach((btn) => {
+      btn.addEventListener('click', () => pickProdCategoria(btn.dataset.catId));
+    });
+  };
+
+  const renderProdCatList = (query = '') => {
+    const list = document.getElementById('prod-cat-list');
+    const empty = document.getElementById('prod-cat-empty');
+    if (!list) return;
+
+    const q = query.trim().toLowerCase();
+    const selected = String(document.getElementById('prod-categoria')?.value || '');
+    const filtered = categoriasCache.filter((c) => {
+      if (!q) return true;
+      return String(c.nombre || '').toLowerCase().includes(q);
+    });
+
+    if (!filtered.length) {
+      list.innerHTML = '';
+      empty?.classList.remove('d-none');
+      return;
+    }
+    empty?.classList.add('d-none');
+
+    const ranked = [...filtered].sort((a, b) => {
+      if (q) {
+        const aName = String(a.nombre || '').toLowerCase();
+        const bName = String(b.nombre || '').toLowerCase();
+        const aLeaf = splitCatNombre(a.nombre).leaf.toLowerCase();
+        const bLeaf = splitCatNombre(b.nombre).leaf.toLowerCase();
+        const score = (leaf, full) => (leaf.startsWith(q) ? 0 : full.startsWith(q) ? 1 : leaf.includes(q) ? 2 : 3);
+        const sd = score(aLeaf, aName) - score(bLeaf, bName);
+        if (sd !== 0) return sd;
+      }
+      const an = (a.productCount ?? 0);
+      const bn = (b.productCount ?? 0);
+      if (bn !== an) return bn - an;
+      return String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es');
+    });
+
+    list.innerHTML = ranked.map((c) => {
+      const { leaf, path } = splitCatNombre(c.nombre);
+      const n = c.productCount ?? 0;
+      const active = selected === String(c.id);
+      return `
+        <li role="option" class="prod-cat-option${active ? ' is-active' : ''}" data-cat-id="${c.id}" aria-selected="${active ? 'true' : 'false'}">
+          <span class="prod-cat-option__main">
+            <span class="prod-cat-option__leaf">${escapeCatHtml(leaf)}</span>
+            ${path ? `<span class="prod-cat-option__path">${escapeCatHtml(path)}</span>` : ''}
+          </span>
+          <span class="prod-cat-option__meta">
+            ${n ? `<span class="prod-cat-option__n">${n}</span>` : '<span class="prod-cat-option__n is-zero">0</span>'}
+            ${active ? '<i class="ti ti-check" aria-hidden="true"></i>' : ''}
+          </span>
+        </li>
+      `;
+    }).join('');
+
+    list.querySelectorAll('.prod-cat-option').forEach((row) => {
+      row.addEventListener('click', () => pickProdCategoria(row.dataset.catId));
+    });
+  };
+
+  const openProdCatPanel = () => {
+    const sheet = document.getElementById('prod-cat-sheet');
+    const trigger = document.getElementById('prod-cat-trigger');
+    const picker = document.getElementById('prod-cat-picker');
+    const search = document.getElementById('prod-cat-search');
+    if (!sheet || !trigger) return;
+
+    scrubOrphanModalBackdrops();
+    if (search) search.value = '';
+    sheet.hidden = false;
+    sheet.classList.add('is-open');
+    trigger.setAttribute('aria-expanded', 'true');
+    picker?.classList.add('is-open');
+    document.getElementById('modal-producto')?.classList.add('prod-cat-sheet-open');
+    refreshProdCatModalContent('');
+    requestAnimationFrame(() => {
+      search?.focus();
+      search?.select();
+    });
+  };
+
+  const bindProdCatPicker = () => {
+    const trigger = document.getElementById('prod-cat-trigger');
+    const search = document.getElementById('prod-cat-search');
+    if (!trigger || trigger.dataset.bound === '1') return;
+    trigger.dataset.bound = '1';
+
+    trigger.addEventListener('click', (e) => {
+      e.preventDefault();
+      openProdCatPanel();
+    });
+
+    search?.addEventListener('input', () => {
+      renderProdCatList(search.value);
+    });
+
+    search?.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeProdCatPanel();
+        trigger.focus();
+        return;
+      }
+      if (e.key === 'Enter') {
+        const first = document.querySelector('#prod-cat-list .prod-cat-option');
+        if (first) {
+          e.preventDefault();
+          pickProdCategoria(first.dataset.catId);
+        }
+      }
+    });
+
+    document.getElementById('btn-prod-cat-sheet-close')?.addEventListener('click', () => closeProdCatPanel());
+    document.getElementById('btn-prod-cat-sheet-done')?.addEventListener('click', () => closeProdCatPanel());
+
+    document.getElementById('modal-producto')?.addEventListener('show.bs.modal', () => {
+      scrubOrphanModalBackdrops();
+      closeProdCatPanel();
+    });
+
+    document.getElementById('modal-producto')?.addEventListener('hidden.bs.modal', () => {
+      closeProdCatPanel();
+      scrubOrphanModalBackdrops();
+    });
+  };
+
+  const countByStockStatus = () => {
+    const counts = { todos: 0, ok: 0, bajo: 0, agotado: 0 };
+    for (const item of stockCache) {
+      if (!item.producto) continue;
+      counts.todos += 1;
+      const st = stockStatusOf(item);
+      if (st === 'ok') counts.ok += 1;
+      else if (st === 'bajo') counts.bajo += 1;
+      else if (st === 'agotado') counts.agotado += 1;
+    }
+    return counts;
+  };
+
+  const syncStockChipCounts = () => {
+    const counts = countByStockStatus();
+    document.querySelectorAll('[data-stock-n]').forEach((el) => {
+      const key = el.getAttribute('data-stock-n');
+      const n = counts[key] ?? 0;
+      el.textContent = n ? String(n) : '';
+    });
+  };
+
+  const countProductsInCategoria = (catId) => {
+    if (!catId) return stockCache.filter((i) => i.producto).length;
+    return stockCache.filter((i) => {
+      const prod = i.producto;
+      if (!prod) return false;
+      return String(prod.categoriaId || prod.categoria?.id || '') === String(catId);
+    }).length;
+  };
+
+  // Cargar Categorías en formulario + filtro (con conteo de la sede actual)
   const loadCategoriasList = async (selectedId = null) => {
     try {
       const list = await apiFetch('/productos/categorias').catch(() => []);
-      const selectCat = document.getElementById('prod-categoria');
-      if (selectCat) {
-        selectCat.innerHTML = list.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
-        if (selectedId) {
-          selectCat.value = selectedId;
-        }
+      categoriasCache = Array.isArray(list) ? list : [];
+      bindProdCatPicker();
+      if (selectedId) {
+        setProdCategoria(selectedId);
+      } else {
+        const current = document.getElementById('prod-categoria')?.value;
+        if (current) setProdCategoria(current);
       }
+      renderProdCatRails();
       if (selectCategoria) {
         const current = selectCategoria.value;
-        selectCategoria.innerHTML = `<option value="">Todas</option>${list.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('')}`;
-        if (current && list.some((c) => String(c.id) === String(current))) {
+        const totalSede = countProductsInCategoria('');
+        selectCategoria.innerHTML = [
+          `<option value="">Todas (${totalSede})</option>`,
+          ...categoriasCache.map((c) => {
+            const n = countProductsInCategoria(c.id);
+            return `<option value="${c.id}">${c.nombre} (${n})</option>`;
+          })
+        ].join('');
+        if (current && categoriasCache.some((c) => String(c.id) === String(current))) {
           selectCategoria.value = current;
         }
       }
@@ -844,8 +1244,8 @@ export async function initInventario(container) {
       if (catId && String(prod.categoriaId || prod.categoria?.id || '') !== String(catId)) return false;
       const status = stockStatusOf(item);
       if (filtroStock === 'ok' && status !== 'ok') return false;
-      // "Bajo" = necesita atención (bajo + agotado), como el aviso del dashboard
-      if (filtroStock === 'bajo' && status === 'ok') return false;
+      // Bajo = con stock pero en/bajo mínimo; Agotado = sin unidades (separados para el recorrido de bodega)
+      if (filtroStock === 'bajo' && status !== 'bajo') return false;
       if (filtroStock === 'agotado' && status !== 'agotado') return false;
       if (filtroSerie && !prod.tieneNumeroSerie) return false;
       if (filtroInterno && !isInternalBarcode(prod.codigoBarras)) return false;
@@ -908,7 +1308,7 @@ export async function initInventario(container) {
               <span class="inv-product__name" title="${prod.nombre}">${prod.nombre}</span>
             </div>
           </td>
-          <td class="inv-cat">${prod.categoria ? prod.categoria.nombre : 'General'}</td>
+          <td class="inv-cat">${prod.categoria?.nombre || categoriasCache.find((c) => String(c.id) === String(prod.categoriaId))?.nombre || '—'}</td>
           <td class="text-end inv-money">${formatter.format(prod.precioCosto)}</td>
           <td class="text-end inv-money inv-money--sale">${formatter.format(prod.precioVenta)}</td>
           <td class="text-end"><span class="inv-qty ${statusClass}">${formatStockUnidad(stockQty, prod.unidadMedida)}</span></td>
@@ -948,7 +1348,7 @@ export async function initInventario(container) {
       document.getElementById('prod-costo').value = item.producto.precioCosto;
       document.getElementById('prod-venta').value = item.producto.precioVenta;
       document.getElementById('prod-minimo').value = item.producto.stockMinimo;
-      document.getElementById('prod-categoria').value = item.producto.categoriaId;
+      setProdCategoria(item.producto.categoriaId);
       document.getElementById('prod-serie').checked = item.producto.tieneNumeroSerie;
       document.getElementById('prod-iva').checked = item.producto.tieneIVA;
       document.getElementById('prod-reacondicionado').checked = item.producto.esReacondicionado;
@@ -1026,6 +1426,7 @@ export async function initInventario(container) {
     const tbody = document.getElementById('inventario-table-body');
 
     if (!force && stockCacheSedeId === sedeId) {
+      syncStockChipCounts();
       applyInventarioFilters();
       return;
     }
@@ -1036,11 +1437,14 @@ export async function initInventario(container) {
     try {
       stockCache = await apiFetch(`/inventario/stock?sedeId=${sedeId}`);
       stockCacheSedeId = sedeId;
+      await loadCategoriasList();
+      syncStockChipCounts();
       applyInventarioFilters();
     } catch (e) {
       console.error(e);
       stockCache = [];
       stockCacheSedeId = null;
+      syncStockChipCounts();
       tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Error al cargar el inventario.</td></tr>`;
       if (resultCountEl) resultCountEl.textContent = '';
     }
@@ -1103,54 +1507,336 @@ export async function initInventario(container) {
 
   // Botón Nuevo Producto
   if (isAdminOrGerente) {
-    // Gestión de Categorías
+    // Organizar categorías (rename, conteos, reasignar al borrar)
     const btnGestionarCats = document.getElementById('btn-gestionar-categorias');
     if (btnGestionarCats) {
-      const loadCategoriasPanel = async () => {
-        const tbody = document.getElementById('lista-categorias-body');
-        tbody.innerHTML = `<tr><td colspan="2" class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary" role="status"></div></td></tr>`;
-        try {
-          const list = await apiFetch('/productos/categorias').catch(() => []);
-          if (list.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="2" class="text-center py-3 text-secondary">No hay categorías registradas.</td></tr>`;
-            return;
-          }
-          tbody.innerHTML = list.map(c => `
-            <tr>
-              <td>${c.nombre}</td>
-              <td class="text-end">
-                 <button class="btn btn-icon btn-ghost-danger btn-sm btn-eliminar-categoria" data-id="${c.id}" aria-label="Eliminar categoría">
-                  <i class="ti ti-trash"></i>
-                </button>
-              </td>
-            </tr>
-          `).join('');
+      const escapeHtml = (s) => String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/"/g, '&quot;');
 
-          // Escuchar botones de eliminar categoría
-          tbody.querySelectorAll('.btn-eliminar-categoria').forEach(btn => {
-            btn.addEventListener('click', async () => {
-              const id = btn.getAttribute('data-id');
-              const verificado = await showConfirm('Eliminar Categoría', '¿Está seguro de que desea eliminar esta categoría?');
-              if (verificado) {
-                try {
-                  await apiFetch(`/productos/categorias/${id}`, { method: 'DELETE' });
-                  showToast('Éxito', 'Categoría eliminada correctamente.', 'success');
-                  loadCategoriasPanel();
-                  await loadCategoriasList(); // Actualizar select en formulario de producto
-                } catch (err) {
-                  showToast('Error', err.message, 'error');
-                }
-              }
-            });
+      let catPanelQuery = '';
+      let catPanelSoloVacias = false;
+
+      const closeCatReasignarSheet = () => {
+        const sheet = document.getElementById('inv-cat-reasignar-sheet');
+        if (!sheet) return;
+        sheet.hidden = true;
+        sheet.classList.remove('is-open');
+        document.getElementById('modal-categorias')?.classList.remove('inv-cat-sheet-open');
+        catPendingDelete = null;
+      };
+
+      const openCatReasignarSheet = () => {
+        const sheet = document.getElementById('inv-cat-reasignar-sheet');
+        if (!sheet) return;
+        scrubOrphanModalBackdrops();
+        sheet.hidden = false;
+        sheet.classList.add('is-open');
+        document.getElementById('modal-categorias')?.classList.add('inv-cat-sheet-open');
+        requestAnimationFrame(() => document.getElementById('cat-reasignar-destino')?.focus());
+      };
+
+      const normalizeCatNombre = (raw) => {
+        const typed = String(raw || '').trim();
+        if (!typed) return '';
+        if (!typed.includes('/')) return typed;
+        return typed.split(/\s*\/\s*/).map((p) => p.trim()).filter(Boolean).join(' / ');
+      };
+
+      const syncCatRowDirty = (input) => {
+        const row = input.closest('.inv-cat-row');
+        const btn = row?.querySelector('.btn-guardar-categoria');
+        const nombre = normalizeCatNombre(input.value);
+        const dirty = Boolean(nombre) && nombre !== (input.dataset.original || '');
+        btn?.classList.toggle('d-none', !dirty);
+        row?.classList.toggle('is-dirty', dirty);
+        return dirty;
+      };
+
+      const resetCatInput = (input, fullNombre) => {
+        const nombre = String(fullNombre || '');
+        input.dataset.original = nombre;
+        input.value = nombre;
+        input.title = nombre;
+        syncCatRowDirty(input);
+      };
+
+      const focusCatEdit = (input, { select = true } = {}) => {
+        if (!input) return;
+        input.focus();
+        if (select) input.select();
+      };
+
+      const rowSaveCategoria = async (input) => {
+        const id = input.dataset.id;
+        const nombre = normalizeCatNombre(input.value);
+        if (!nombre) {
+          showToast('Error', 'El nombre no puede quedar vacío.', 'error');
+          return;
+        }
+        if (nombre === input.dataset.original) {
+          input.value = nombre;
+          syncCatRowDirty(input);
+          return;
+        }
+        try {
+          await apiFetch(`/productos/categorias/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ nombre })
           });
+          const cached = categoriasCache.find((c) => String(c.id) === String(id));
+          if (cached) cached.nombre = nombre;
+          resetCatInput(input, nombre);
+          showToast('Guardado', 'Categoría actualizada.', 'success');
+          await loadCategoriasList();
+          loadInventario({ force: true });
         } catch (err) {
-          tbody.innerHTML = `<tr><td colspan="2" class="text-center py-3 text-danger">Error al cargar categorías.</td></tr>`;
+          showToast('Error', err.message, 'error');
         }
       };
 
-      btnGestionarCats.addEventListener('click', () => {
+      const bindCategoriasPanelRows = (listEl) => {
+        listEl.querySelectorAll('.inv-cat-row').forEach((row) => {
+          row.addEventListener('click', (e) => {
+            if (e.target.closest('button, a, select, label')) return;
+            const input = row.querySelector('.inv-cat-name');
+            if (!input || document.activeElement === input) return;
+            focusCatEdit(input);
+          });
+        });
+
+        listEl.querySelectorAll('.inv-cat-name').forEach((input) => {
+          input.addEventListener('input', () => syncCatRowDirty(input));
+          input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              rowSaveCategoria(input);
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              resetCatInput(input, input.dataset.original || '');
+              input.blur();
+            }
+          });
+        });
+
+        listEl.querySelectorAll('.btn-editar-categoria').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const input = btn.closest('.inv-cat-row')?.querySelector('.inv-cat-name');
+            focusCatEdit(input);
+          });
+        });
+
+        listEl.querySelectorAll('.btn-guardar-categoria').forEach((btn) => {
+          btn.addEventListener('mousedown', (e) => e.preventDefault()); // evita blur antes del click
+          btn.addEventListener('click', () => {
+            const input = btn.closest('.inv-cat-row')?.querySelector('.inv-cat-name');
+            if (input) rowSaveCategoria(input);
+          });
+        });
+
+        listEl.querySelectorAll('.btn-eliminar-categoria').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const id = btn.dataset.id;
+            const nombre = btn.dataset.nombre || 'esta categoría';
+            const count = parseInt(btn.dataset.count, 10) || 0;
+
+            if (count <= 0) {
+              const ok = await showConfirm('Eliminar categoría', `¿Eliminar «${nombre}»? No tiene productos.`);
+              if (!ok) return;
+              try {
+                await apiFetch(`/productos/categorias/${id}`, { method: 'DELETE' });
+                showToast('Éxito', 'Categoría eliminada.', 'success');
+                await loadCategoriasPanel();
+                await loadCategoriasList();
+              } catch (err) {
+                showToast('Error', err.message, 'error');
+              }
+              return;
+            }
+
+            const otras = categoriasCache.filter((c) => String(c.id) !== String(id));
+            if (!otras.length) {
+              showToast('No se puede eliminar', 'Crea otra categoría para reasignar los productos primero.', 'warning');
+              return;
+            }
+
+            catPendingDelete = { id, nombre, count };
+            const msg = document.getElementById('cat-reasignar-msg');
+            const dest = document.getElementById('cat-reasignar-destino');
+            if (msg) {
+              msg.textContent = `«${nombre}» tiene ${count} producto${count === 1 ? '' : 's'}. Elige a dónde moverlos.`;
+            }
+            if (dest) {
+              dest.innerHTML = otras.map((c) =>
+                `<option value="${c.id}">${escapeHtml(c.nombre)}</option>`
+              ).join('');
+            }
+            openCatReasignarSheet();
+          });
+        });
+      };
+
+      const getFilteredCategorias = () => {
+        const q = catPanelQuery.trim().toLowerCase();
+        let list = [...categoriasCache];
+        if (catPanelSoloVacias) {
+          list = list.filter((c) => (c.productCount ?? 0) === 0);
+        }
+        if (q) {
+          list = list.filter((c) => String(c.nombre || '').toLowerCase().includes(q));
+        }
+        list.sort((a, b) => {
+          const ac = a.productCount ?? 0;
+          const bc = b.productCount ?? 0;
+          // Vacías primero (limpieza), luego por nombre
+          if (ac === 0 && bc !== 0) return -1;
+          if (bc === 0 && ac !== 0) return 1;
+          if (ac !== bc) return ac - bc;
+          return String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es');
+        });
+        return list;
+      };
+
+      const renderCategoriasPanel = () => {
+        const listEl = document.getElementById('lista-categorias-body');
+        const metaEl = document.getElementById('inv-cat-list-meta');
+        if (!listEl) return;
+
+        const filtered = getFilteredCategorias();
+        const emptyCount = categoriasCache.filter((c) => (c.productCount ?? 0) === 0).length;
+        if (metaEl) {
+          const total = categoriasCache.length;
+          if (!total) {
+            metaEl.textContent = '';
+          } else if (catPanelQuery || catPanelSoloVacias) {
+            metaEl.textContent = `${filtered.length} de ${total}`;
+          } else {
+            metaEl.textContent = emptyCount
+              ? `${total} · ${emptyCount} vacía${emptyCount === 1 ? '' : 's'}`
+              : `${total}`;
+          }
+        }
+
+        if (!categoriasCache.length) {
+          listEl.innerHTML = `<div class="inv-cat-list-status">No hay categorías. Crea la primera arriba.</div>`;
+          return;
+        }
+        if (!filtered.length) {
+          listEl.innerHTML = `<div class="inv-cat-list-status">Sin coincidencias. Prueba otra búsqueda${catPanelSoloVacias ? ' o quita «Solo vacías»' : ''}.</div>`;
+          return;
+        }
+
+        listEl.innerHTML = filtered.map((c) => {
+          const count = c.productCount ?? 0;
+          const nombre = String(c.nombre || '');
+          const depth = nombre.split(/\s*\/\s*/).filter(Boolean).length;
+          return `
+            <article class="inv-cat-row${count === 0 ? ' is-empty' : ''}" data-cat-id="${c.id}" role="listitem">
+              <span class="inv-cat-row__rail" aria-hidden="true"></span>
+              <div class="inv-cat-row__main">
+                <div class="inv-cat-row__identity"${depth > 1 ? ` style="--cat-depth:${Math.min(depth - 1, 3)}"` : ''}>
+                  <input type="text" class="inv-cat-name" value="${escapeHtml(nombre)}" data-id="${c.id}" data-original="${escapeHtml(nombre)}" title="${escapeHtml(nombre)}" aria-label="Nombre de categoría: ${escapeHtml(nombre)}" spellcheck="false" autocomplete="off">
+                </div>
+                <span class="inv-cat-count${count === 0 ? ' is-zero' : ''}" title="${count} producto${count === 1 ? '' : 's'}">${count}</span>
+                <div class="inv-cat-row__actions">
+                  <button type="button" class="btn btn-sm btn-primary btn-guardar-categoria d-none" data-id="${c.id}" title="Guardar (Enter)">
+                    <i class="ti ti-check" aria-hidden="true"></i>
+                    <span>Guardar</span>
+                  </button>
+                  <button type="button" class="btn btn-icon btn-ghost-secondary btn-sm btn-editar-categoria" data-id="${c.id}" title="Editar nombre" aria-label="Editar ${escapeHtml(nombre)}">
+                    <i class="ti ti-pencil" aria-hidden="true"></i>
+                  </button>
+                  <button type="button" class="btn btn-icon btn-ghost-danger btn-sm btn-eliminar-categoria" data-id="${c.id}" data-nombre="${escapeHtml(nombre)}" data-count="${count}" title="Eliminar" aria-label="Eliminar ${escapeHtml(nombre)}">
+                    <i class="ti ti-trash" aria-hidden="true"></i>
+                  </button>
+                </div>
+              </div>
+            </article>
+          `;
+        }).join('');
+        bindCategoriasPanelRows(listEl);
+      };
+
+      const loadCategoriasPanel = async () => {
+        const listEl = document.getElementById('lista-categorias-body');
+        if (!listEl) return;
+        if (categoriasCache.length) {
+          renderCategoriasPanel();
+        } else {
+          listEl.innerHTML = `<div class="inv-cat-list-status"><div class="spinner-border spinner-border-sm text-primary" role="status"></div></div>`;
+        }
+        try {
+          const list = await apiFetch('/productos/categorias');
+          categoriasCache = Array.isArray(list) ? list : [];
+          renderCategoriasPanel();
+        } catch (err) {
+          console.error(err);
+          if (!categoriasCache.length) {
+            listEl.innerHTML = `<div class="inv-cat-list-status text-danger">Error al cargar categorías.</div>`;
+          }
+        }
+      };
+
+      // Abrir con data-bs-toggle; cargar/listar al mostrar (más fiable que click en dropdown-item)
+      const modalCategoriasEl = document.getElementById('modal-categorias');
+      modalCategoriasEl?.addEventListener('show.bs.modal', () => {
+        catPanelQuery = '';
+        catPanelSoloVacias = false;
+        const filterInput = document.getElementById('inv-cat-filter');
+        const soloBtn = document.getElementById('inv-cat-solo-vacias');
+        if (filterInput) filterInput.value = '';
+        soloBtn?.classList.remove('is-active');
+        soloBtn?.setAttribute('aria-pressed', 'false');
+        closeCatReasignarSheet();
         loadCategoriasPanel();
-        modalCategorias.show();
+        requestAnimationFrame(() => filterInput?.focus());
+      });
+      modalCategoriasEl?.addEventListener('hidden.bs.modal', () => {
+        closeCatReasignarSheet();
+        scrubOrphanModalBackdrops();
+      });
+      btnGestionarCats.addEventListener('click', () => {
+        const dropdownToggle = btnGestionarCats.closest('.dropdown')?.querySelector('[data-bs-toggle="dropdown"]');
+        bootstrap.Dropdown.getInstance(dropdownToggle)?.hide();
+      });
+
+      document.getElementById('inv-cat-filter')?.addEventListener('input', (e) => {
+        catPanelQuery = e.target.value || '';
+        renderCategoriasPanel();
+      });
+
+      document.getElementById('inv-cat-solo-vacias')?.addEventListener('click', (e) => {
+        catPanelSoloVacias = !catPanelSoloVacias;
+        e.currentTarget.classList.toggle('is-active', catPanelSoloVacias);
+        e.currentTarget.setAttribute('aria-pressed', catPanelSoloVacias ? 'true' : 'false');
+        renderCategoriasPanel();
+      });
+
+      document.getElementById('btn-cat-reasignar-close')?.addEventListener('click', closeCatReasignarSheet);
+      document.getElementById('btn-cat-reasignar-cancel')?.addEventListener('click', closeCatReasignarSheet);
+
+      document.getElementById('btn-cat-reasignar-confirm')?.addEventListener('click', async () => {
+        if (!catPendingDelete) return;
+        const dest = document.getElementById('cat-reasignar-destino')?.value;
+        if (!dest) {
+          showToast('Error', 'Elige una categoría destino.', 'error');
+          return;
+        }
+        try {
+          const res = await apiFetch(`/productos/categorias/${catPendingDelete.id}`, {
+            method: 'DELETE',
+            body: JSON.stringify({ reasignarA: dest })
+          });
+          closeCatReasignarSheet();
+          showToast('Éxito', res.message || 'Categoría eliminada.', 'success');
+          loadCategoriasPanel();
+          await loadCategoriasList();
+          loadInventario({ force: true });
+        } catch (err) {
+          showToast('Error', err.message, 'error');
+        }
       });
 
       document.getElementById('form-crear-categoria').addEventListener('submit', async (e) => {
@@ -1165,9 +1851,10 @@ export async function initInventario(container) {
             body: JSON.stringify({ nombre })
           });
           nombreInput.value = '';
-          showToast('Éxito', 'Categoría creada exitosamente.', 'success');
+          showToast('Éxito', 'Categoría creada.', 'success');
           loadCategoriasPanel();
-          await loadCategoriasList(); // Actualizar select en formulario de producto
+          await loadCategoriasList();
+          document.getElementById('inv-cat-filter')?.focus();
         } catch (err) {
           showToast('Error', err.message, 'error');
         }
@@ -1193,6 +1880,10 @@ export async function initInventario(container) {
       document.getElementById('sec-gestion-seriales').classList.add('d-none');
       document.getElementById('modal-producto-title').textContent = 'Crear producto';
       document.getElementById('prod-unidad').value = 'und';
+      setProdCategoria('');
+      const catSearch = document.getElementById('prod-cat-search');
+      if (catSearch) catSearch.value = '';
+      closeProdCatPanel();
       syncProdFormMeta();
       syncProdUnidadHint();
       modalProd.show();
@@ -1204,13 +1895,20 @@ export async function initInventario(container) {
       const id = document.getElementById('producto-id').value;
       const codigoRaw = document.getElementById('prod-codigo').value.trim();
       const sedeId = (document.getElementById('select-sede-inventario') ? document.getElementById('select-sede-inventario').value : null) || usuario.sedeId;
+      const categoriaId = document.getElementById('prod-categoria').value;
+      if (!categoriaId) {
+        showToast('Falta categoría', 'Elige el estante / categoría del producto.', 'warning');
+        openProdCatPanel();
+        return;
+      }
+      rememberRecentCat(categoriaId);
       const data = {
         nombre: document.getElementById('prod-nombre').value,
         descripcion: document.getElementById('prod-descripcion').value,
         precioCosto: parseFloat(document.getElementById('prod-costo').value),
         precioVenta: parseFloat(document.getElementById('prod-venta').value),
         stockMinimo: parseInt(document.getElementById('prod-minimo').value),
-        categoriaId: document.getElementById('prod-categoria').value,
+        categoriaId,
         tieneNumeroSerie: document.getElementById('prod-serie').checked,
         tieneIVA: document.getElementById('prod-iva').checked,
         esReacondicionado: document.getElementById('prod-reacondicionado').checked,

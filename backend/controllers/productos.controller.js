@@ -441,8 +441,21 @@ exports.generarCodigoInterno = async (req, res, next) => {
 
 exports.getCategorias = async (req, res, next) => {
   try {
-    const categorias = await Categoria.findAll({ order: [['nombre', 'ASC']] });
-    return res.json(categorias);
+    const categorias = await Categoria.findAll({
+      attributes: {
+        include: [[sequelize.fn('COUNT', sequelize.col('productos.id')), 'productCount']]
+      },
+      include: [{ model: Producto, as: 'productos', attributes: [], required: false }],
+      group: ['Categoria.id'],
+      order: [['nombre', 'ASC']],
+      subQuery: false
+    });
+
+    return res.json(categorias.map((c) => {
+      const json = c.toJSON();
+      json.productCount = parseInt(json.productCount, 10) || 0;
+      return json;
+    }));
   } catch (error) {
     next(error);
   }
@@ -455,13 +468,18 @@ exports.createCategoria = async (req, res, next) => {
       return res.status(400).json({ error: 'El nombre de la categoría es obligatorio.' });
     }
 
-    const existe = await Categoria.findOne({ where: { nombre } });
+    const nombreTrim = String(nombre).trim();
+    if (!nombreTrim) {
+      return res.status(400).json({ error: 'El nombre de la categoría es obligatorio.' });
+    }
+
+    const existe = await Categoria.findOne({ where: { nombre: nombreTrim } });
     if (existe) {
       return res.status(400).json({ error: 'Ya existe una categoría con ese nombre.' });
     }
 
     const categoria = await Categoria.create({
-      nombre,
+      nombre: nombreTrim,
       descripcion: descripcion || ''
     });
 
@@ -474,40 +492,124 @@ exports.createCategoria = async (req, res, next) => {
       });
     }
 
-    return res.status(201).json(categoria);
+    return res.status(201).json({ ...categoria.toJSON(), productCount: 0 });
   } catch (error) {
     next(error);
   }
 };
 
-exports.deleteCategoria = async (req, res, next) => {
+exports.updateCategoria = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const { nombre, descripcion } = req.body;
 
     const categoria = await Categoria.findByPk(id);
     if (!categoria) {
       return res.status(404).json({ error: 'La categoría no existe.' });
     }
 
-    // Verificar si hay productos asociados
-    const productosAsociados = await Producto.count({ where: { categoriaId: id } });
-    if (productosAsociados > 0) {
-      return res.status(400).json({ error: 'No se puede eliminar esta categoría porque tiene productos asociados.' });
+    const valorAnterior = categoria.toJSON();
+    const patch = {};
+
+    if (nombre !== undefined) {
+      const nombreTrim = String(nombre).trim();
+      if (!nombreTrim) {
+        return res.status(400).json({ error: 'El nombre de la categoría no puede quedar vacío.' });
+      }
+      const existe = await Categoria.findOne({
+        where: { nombre: nombreTrim, id: { [Op.ne]: id } }
+      });
+      if (existe) {
+        return res.status(400).json({ error: 'Ya existe una categoría con ese nombre.' });
+      }
+      patch.nombre = nombreTrim;
     }
 
-    await categoria.destroy();
+    if (descripcion !== undefined) {
+      patch.descripcion = descripcion == null ? '' : String(descripcion);
+    }
+
+    if (!Object.keys(patch).length) {
+      return res.status(400).json({ error: 'No hay cambios para guardar.' });
+    }
+
+    await categoria.update(patch);
+    const productCount = await Producto.count({ where: { categoriaId: id } });
+
+    if (req.logAudit) {
+      await req.logAudit({
+        accion: 'UPDATE',
+        modulo: 'Productos',
+        registroId: id,
+        valorAnterior,
+        valorNuevo: categoria.toJSON()
+      });
+    }
+
+    return res.json({ ...categoria.toJSON(), productCount });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.deleteCategoria = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const reasignarA = req.body?.reasignarA || req.query?.reasignarA || null;
+
+    const categoria = await Categoria.findByPk(id, { transaction });
+    if (!categoria) {
+      await transaction.rollback();
+      return res.status(404).json({ error: 'La categoría no existe.' });
+    }
+
+    const productosAsociados = await Producto.count({ where: { categoriaId: id }, transaction });
+    if (productosAsociados > 0) {
+      if (!reasignarA) {
+        await transaction.rollback();
+        return res.status(400).json({
+          error: `Hay ${productosAsociados} producto(s) en esta categoría. Reasigna a otra categoría para poder eliminarla.`,
+          productCount: productosAsociados,
+          requiereReasignar: true
+        });
+      }
+      if (String(reasignarA) === String(id)) {
+        await transaction.rollback();
+        return res.status(400).json({ error: 'La categoría destino debe ser distinta.' });
+      }
+      const destino = await Categoria.findByPk(reasignarA, { transaction });
+      if (!destino) {
+        await transaction.rollback();
+        return res.status(400).json({ error: 'La categoría destino no existe.' });
+      }
+      await Producto.update(
+        { categoriaId: reasignarA },
+        { where: { categoriaId: id }, transaction }
+      );
+    }
+
+    const valorAnterior = categoria.toJSON();
+    await categoria.destroy({ transaction });
+    await transaction.commit();
 
     if (req.logAudit) {
       await req.logAudit({
         accion: 'DELETE',
         modulo: 'Productos',
         registroId: id,
-        valorAnterior: categoria.toJSON()
+        valorAnterior
       });
     }
 
-    return res.json({ message: 'Categoría eliminada correctamente.' });
+    return res.json({
+      message: productosAsociados > 0
+        ? `Categoría eliminada. ${productosAsociados} producto(s) reasignado(s).`
+        : 'Categoría eliminada correctamente.',
+      reasignados: productosAsociados
+    });
   } catch (error) {
+    await transaction.rollback();
     next(error);
   }
 };
