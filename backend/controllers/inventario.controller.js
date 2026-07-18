@@ -16,7 +16,7 @@ exports.getStockSede = async (req, res, next) => {
           model: Producto,
           as: 'producto',
           where: { activo: true },
-          attributes: ['id', 'nombre', 'codigoBarras', 'precioVenta', 'precioCosto', 'stockMinimo', 'tieneNumeroSerie', 'tieneIVA', 'esReacondicionado', 'esServicio', 'categoriaId', 'imagenUrl']
+          attributes: ['id', 'nombre', 'codigoBarras', 'precioVenta', 'precioCosto', 'stockMinimo', 'tieneNumeroSerie', 'tieneIVA', 'esReacondicionado', 'esServicio', 'unidadMedida', 'categoriaId', 'imagenUrl']
         }
       ],
       order: [[{ model: Producto, as: 'producto' }, 'nombre', 'ASC']]

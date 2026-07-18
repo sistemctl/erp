@@ -182,13 +182,15 @@ Caja.belongsTo(Usuario, { foreignKey: 'usuarioAperturaId', as: 'usuarioApertura'
 Caja.belongsTo(Usuario, { foreignKey: 'usuarioCierreId', as: 'usuarioCierre' });
 Sede.hasMany(Caja, { foreignKey: 'sedeId', as: 'cajas' });
 
-// Factura <-> Venta, OrdenReparacion, Cliente, Sede
+// Factura <-> Venta, OrdenReparacion, OrdenInstalacion, Cliente, Sede
 Factura.belongsTo(Venta, { foreignKey: 'ventaId', as: 'venta' });
 Factura.belongsTo(OrdenReparacion, { foreignKey: 'ordenReparacionId', as: 'ordenReparacion' });
+Factura.belongsTo(OrdenInstalacion, { foreignKey: 'ordenInstalacionId', as: 'ordenInstalacion' });
 Factura.belongsTo(Cliente, { foreignKey: 'clienteId', as: 'cliente' });
 Factura.belongsTo(Sede, { foreignKey: 'sedeId', as: 'sede' });
 Venta.hasOne(Factura, { foreignKey: 'ventaId', as: 'factura' });
 OrdenReparacion.hasOne(Factura, { foreignKey: 'ordenReparacionId', as: 'factura' });
+OrdenInstalacion.hasOne(Factura, { foreignKey: 'ordenInstalacionId', as: 'factura' });
 Cliente.hasMany(Factura, { foreignKey: 'clienteId', as: 'facturas' });
 Sede.hasMany(Factura, { foreignKey: 'sedeId', as: 'facturas' });
 

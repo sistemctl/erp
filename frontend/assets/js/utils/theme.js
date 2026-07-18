@@ -114,36 +114,199 @@ export const DEFAULT_THEME = {
   }
 };
 
+/** Full light + dark surface tokens per preset (identity = accent family). */
 export const THEME_PRESETS = {
   'modern-blue': {
     label: 'Azul moderno',
     description: 'Blanco limpio con acento azul — predeterminado',
-    colors: { accent: '#2563eb', accentHover: '#1d4ed8', accentDark: '#3b82f6' }
+    colors: {
+      accent: '#2563eb',
+      accentHover: '#1d4ed8',
+      accentDark: '#3b82f6',
+      accentSoft: 'rgba(37, 99, 235, 0.08)',
+      accentGlow: 'rgba(37, 99, 235, 0.12)',
+      canvas: '#f4f7fb',
+      surface: '#ffffff',
+      ink: '#0b1220',
+      inkSecondary: '#64748b',
+      inkMuted: '#94a3b8',
+      borderSubtle: 'rgba(15, 23, 42, 0.09)',
+      borderHairline: 'rgba(15, 23, 42, 0.055)',
+      success: '#059669',
+      warning: '#d97706',
+      danger: '#dc2626'
+    },
+    colorsDark: {
+      canvas: '#0a0e17',
+      surface: '#121a2b',
+      ink: '#f1f5f9',
+      inkSecondary: '#94a3b8',
+      inkMuted: '#64748b',
+      borderSubtle: 'rgba(255, 255, 255, 0.09)',
+      borderHairline: 'rgba(255, 255, 255, 0.05)',
+      accentSoft: 'rgba(59, 130, 246, 0.14)',
+      accentGlow: 'rgba(59, 130, 246, 0.22)'
+    }
   },
   'ocean-teal': {
     label: 'Océano teal',
     description: 'Fresco y profesional para retail tech',
-    colors: { accent: '#0d9488', accentHover: '#0f766e', accentDark: '#14b8a6', accentSoft: 'rgba(13, 148, 136, 0.08)', accentGlow: 'rgba(13, 148, 136, 0.12)' }
+    colors: {
+      accent: '#0d9488',
+      accentHover: '#0f766e',
+      accentDark: '#14b8a6',
+      accentSoft: 'rgba(13, 148, 136, 0.08)',
+      accentGlow: 'rgba(13, 148, 136, 0.12)',
+      canvas: '#f0fafa',
+      surface: '#ffffff',
+      ink: '#0f172a',
+      inkSecondary: '#5b6b7c',
+      inkMuted: '#8b9aab',
+      borderSubtle: 'rgba(13, 148, 136, 0.14)',
+      borderHairline: 'rgba(15, 23, 42, 0.05)',
+      success: '#059669',
+      warning: '#d97706',
+      danger: '#dc2626'
+    },
+    colorsDark: {
+      canvas: '#071412',
+      surface: '#0f221f',
+      ink: '#ecfdf8',
+      inkSecondary: '#99b8b2',
+      inkMuted: '#6b8f88',
+      borderSubtle: 'rgba(20, 184, 166, 0.18)',
+      borderHairline: 'rgba(255, 255, 255, 0.05)',
+      accentSoft: 'rgba(20, 184, 166, 0.14)',
+      accentGlow: 'rgba(20, 184, 166, 0.22)'
+    }
   },
   'violet-pro': {
     label: 'Violeta pro',
     description: 'Sofisticado con acento púrpura',
-    colors: { accent: '#7c3aed', accentHover: '#6d28d9', accentDark: '#8b5cf6', accentSoft: 'rgba(124,  58, 237, 0.08)', accentGlow: 'rgba(124, 58, 237, 0.12)' }
+    colors: {
+      accent: '#7c3aed',
+      accentHover: '#6d28d9',
+      accentDark: '#8b5cf6',
+      accentSoft: 'rgba(124, 58, 237, 0.08)',
+      accentGlow: 'rgba(124, 58, 237, 0.12)',
+      canvas: '#f7f5fc',
+      surface: '#ffffff',
+      ink: '#1e1233',
+      inkSecondary: '#6b6280',
+      inkMuted: '#9a91ad',
+      borderSubtle: 'rgba(124, 58, 237, 0.14)',
+      borderHairline: 'rgba(30, 18, 51, 0.05)',
+      success: '#059669',
+      warning: '#d97706',
+      danger: '#dc2626'
+    },
+    colorsDark: {
+      canvas: '#0f0a1a',
+      surface: '#1a122c',
+      ink: '#f5f3ff',
+      inkSecondary: '#a89cc4',
+      inkMuted: '#7c7199',
+      borderSubtle: 'rgba(139, 92, 246, 0.2)',
+      borderHairline: 'rgba(255, 255, 255, 0.05)',
+      accentSoft: 'rgba(139, 92, 246, 0.16)',
+      accentGlow: 'rgba(139, 92, 246, 0.24)'
+    }
   },
   'emerald-retail': {
     label: 'Esmeralda retail',
     description: 'Verde confiable para operaciones',
-    colors: { accent: '#059669', accentHover: '#047857', accentDark: '#10b981', accentSoft: 'rgba(5, 150, 105, 0.08)', accentGlow: 'rgba(5, 150, 105, 0.12)' }
+    colors: {
+      accent: '#059669',
+      accentHover: '#047857',
+      accentDark: '#10b981',
+      accentSoft: 'rgba(5, 150, 105, 0.08)',
+      accentGlow: 'rgba(5, 150, 105, 0.12)',
+      canvas: '#f3faf6',
+      surface: '#ffffff',
+      ink: '#0c1f17',
+      inkSecondary: '#5c7268',
+      inkMuted: '#8fa399',
+      borderSubtle: 'rgba(5, 150, 105, 0.14)',
+      borderHairline: 'rgba(12, 31, 23, 0.05)',
+      success: '#047857',
+      warning: '#d97706',
+      danger: '#dc2626'
+    },
+    colorsDark: {
+      canvas: '#06140e',
+      surface: '#0e2118',
+      ink: '#ecfdf5',
+      inkSecondary: '#95b5a6',
+      inkMuted: '#6a8b7a',
+      borderSubtle: 'rgba(16, 185, 129, 0.18)',
+      borderHairline: 'rgba(255, 255, 255, 0.05)',
+      accentSoft: 'rgba(16, 185, 129, 0.14)',
+      accentGlow: 'rgba(16, 185, 129, 0.22)'
+    }
   },
   'indigo-night': {
     label: 'Índigo corporativo',
     description: 'Profundo y serio para finanzas',
-    colors: { accent: '#4f46e5', accentHover: '#4338ca', accentDark: '#6366f1', accentSoft: 'rgba(79, 70, 229, 0.08)', accentGlow: 'rgba(79, 70, 229, 0.12)' }
+    colors: {
+      accent: '#4f46e5',
+      accentHover: '#4338ca',
+      accentDark: '#6366f1',
+      accentSoft: 'rgba(79, 70, 229, 0.08)',
+      accentGlow: 'rgba(79, 70, 229, 0.12)',
+      canvas: '#f4f5fb',
+      surface: '#ffffff',
+      ink: '#111827',
+      inkSecondary: '#60687a',
+      inkMuted: '#9199ab',
+      borderSubtle: 'rgba(79, 70, 229, 0.14)',
+      borderHairline: 'rgba(17, 24, 39, 0.05)',
+      success: '#059669',
+      warning: '#d97706',
+      danger: '#dc2626'
+    },
+    colorsDark: {
+      canvas: '#0a0b16',
+      surface: '#14162a',
+      ink: '#eef0ff',
+      inkSecondary: '#9aa3c4',
+      inkMuted: '#6e7699',
+      borderSubtle: 'rgba(99, 102, 241, 0.2)',
+      borderHairline: 'rgba(255, 255, 255, 0.05)',
+      accentSoft: 'rgba(99, 102, 241, 0.16)',
+      accentGlow: 'rgba(99, 102, 241, 0.24)'
+    }
   },
   'slate-minimal': {
     label: 'Slate minimal',
     description: 'Neutro, casi monocromático',
-    colors: { accent: '#334155', accentHover: '#1e293b', accentDark: '#475569', accentSoft: 'rgba(51, 65, 85, 0.08)', accentGlow: 'rgba(51, 65, 85, 0.1)', canvas: '#f8fafc' }
+    colors: {
+      accent: '#334155',
+      accentHover: '#1e293b',
+      accentDark: '#475569',
+      accentSoft: 'rgba(51, 65, 85, 0.08)',
+      accentGlow: 'rgba(51, 65, 85, 0.1)',
+      canvas: '#f8fafc',
+      surface: '#ffffff',
+      ink: '#0f172a',
+      inkSecondary: '#64748b',
+      inkMuted: '#94a3b8',
+      borderSubtle: 'rgba(15, 23, 42, 0.1)',
+      borderHairline: 'rgba(15, 23, 42, 0.05)',
+      success: '#059669',
+      warning: '#d97706',
+      danger: '#dc2626'
+    },
+    colorsDark: {
+      canvas: '#0b1220',
+      surface: '#152033',
+      ink: '#f1f5f9',
+      inkSecondary: '#94a3b8',
+      inkMuted: '#64748b',
+      borderSubtle: 'rgba(148, 163, 184, 0.16)',
+      borderHairline: 'rgba(255, 255, 255, 0.05)',
+      accentSoft: 'rgba(148, 163, 184, 0.12)',
+      accentGlow: 'rgba(148, 163, 184, 0.18)'
+    }
   }
 };
 
@@ -155,6 +318,8 @@ export const FONT_OPTIONS = [
   { id: 'Sora', label: 'Sora', weights: '400;500;600;700' },
   { id: 'Manrope', label: 'Manrope', weights: '400;500;600;700;800' }
 ];
+
+export const PRESET_IDS = Object.keys(THEME_PRESETS);
 
 const SHADOW_SCALES = {
   low: {
@@ -200,7 +365,72 @@ export function mergeTheme(custom) {
 export function getPresetTheme(presetId) {
   const preset = THEME_PRESETS[presetId];
   if (!preset) return mergeTheme({ preset: 'modern-blue' });
-  return mergeTheme({ preset: presetId, ...preset, colors: { ...DEFAULT_THEME.colors, ...preset.colors } });
+  return mergeTheme({
+    preset: presetId,
+    colors: { ...DEFAULT_THEME.colors, ...preset.colors },
+    colorsDark: { ...DEFAULT_THEME.colorsDark, ...preset.colorsDark }
+  });
+}
+
+function normColor(c) {
+  if (!c) return '';
+  if (typeof c !== 'string') return String(c);
+  const hex = rgbaToHex(c);
+  return (hex || c).toLowerCase();
+}
+
+/** Snapshot of fields that define “same look” for preset matching / dirty check. */
+export function themeFingerprint(theme) {
+  const t = mergeTheme(theme);
+  return JSON.stringify({
+    colors: {
+      accent: normColor(t.colors.accent),
+      accentHover: normColor(t.colors.accentHover),
+      accentDark: normColor(t.colors.accentDark),
+      canvas: normColor(t.colors.canvas),
+      surface: normColor(t.colors.surface),
+      ink: normColor(t.colors.ink),
+      inkSecondary: normColor(t.colors.inkSecondary),
+      inkMuted: normColor(t.colors.inkMuted),
+      borderSubtle: normColor(t.colors.borderSubtle),
+      success: normColor(t.colors.success),
+      warning: normColor(t.colors.warning),
+      danger: normColor(t.colors.danger)
+    },
+    colorsDark: {
+      canvas: normColor(t.colorsDark.canvas),
+      surface: normColor(t.colorsDark.surface),
+      ink: normColor(t.colorsDark.ink),
+      inkSecondary: normColor(t.colorsDark.inkSecondary),
+      inkMuted: normColor(t.colorsDark.inkMuted),
+      borderSubtle: normColor(t.colorsDark.borderSubtle)
+    },
+    typography: { fontFamily: t.typography.fontFamily },
+    layout: {
+      sidebarWidth: t.layout.sidebarWidth,
+      borderRadiusLg: t.layout.borderRadiusLg
+    },
+    buttons: { style: t.buttons.style },
+    cards: { style: t.cards.style },
+    effects: {
+      meshGradient: !!t.effects.meshGradient,
+      shadowIntensity: t.effects.shadowIntensity,
+      sidebarAccentBar: !!t.effects.sidebarAccentBar
+    }
+  });
+}
+
+export function themesLookEqual(a, b) {
+  return themeFingerprint(a) === themeFingerprint(b);
+}
+
+/** If theme matches a known preset token set, return that id; else 'custom'. */
+export function detectPresetId(theme) {
+  const t = mergeTheme(theme);
+  for (const id of PRESET_IDS) {
+    if (themesLookEqual(t, getPresetTheme(id))) return id;
+  }
+  return 'custom';
 }
 
 function loadFont(typography) {
@@ -344,13 +574,17 @@ export function readThemeFromForm(formRoot) {
   const checked = (id) => formRoot.querySelector(`#${id}`)?.checked;
 
   const borderHex = val('theme-border-subtle') || '#cbd5e1';
+  const accent = val('theme-accent');
+  const accentDark = val('theme-accent-dark');
 
   return mergeTheme({
     preset: val('theme-preset') || 'custom',
     colors: {
-      accent: val('theme-accent'),
+      accent,
       accentHover: val('theme-accent-hover'),
-      accentDark: val('theme-accent-dark'),
+      accentDark,
+      accentSoft: hexToRgba(accent, 0.08),
+      accentGlow: hexToRgba(accent, 0.12),
       canvas: val('theme-canvas'),
       surface: val('theme-surface'),
       ink: val('theme-ink'),
@@ -370,6 +604,8 @@ export function readThemeFromForm(formRoot) {
       inkMuted: val('theme-dark-ink-muted'),
       borderSubtle: hexToRgba(val('theme-dark-border') || '#334155', 0.45),
       borderHairline: hexToRgba(val('theme-dark-border') || '#334155', 0.22),
+      accentSoft: hexToRgba(accentDark || accent, 0.14),
+      accentGlow: hexToRgba(accentDark || accent, 0.22)
     },
     typography: {
       fontFamily: val('theme-font'),
@@ -453,8 +689,12 @@ function hexToRgba(hex, alpha) {
 
 function rgbaToHex(color) {
   if (!color) return null;
-  if (color.startsWith('#')) return color;
+  if (color.startsWith('#')) return color.length === 4
+    ? `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`
+    : color.slice(0, 7);
   const m = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
   if (!m) return null;
   return '#' + [m[1], m[2], m[3]].map(x => parseInt(x, 10).toString(16).padStart(2, '0')).join('');
 }
+
+export { hexToRgba, rgbaToHex };

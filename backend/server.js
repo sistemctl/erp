@@ -153,6 +153,15 @@ const startServer = async () => {
     }
 
     try {
+      await sequelize.query(`
+        ALTER TABLE "Productos"
+        ADD COLUMN IF NOT EXISTS "unidadMedida" VARCHAR(8) NOT NULL DEFAULT 'und';
+      `);
+    } catch (uomErr) {
+      console.warn('No se pudo asegurar unidadMedida en Productos:', uomErr.message);
+    }
+
+    try {
       await bootstrapConsumidorFinal();
     } catch (bootErr) {
       console.warn('No se pudo preparar Consumidor Final al inicio:', bootErr.message);

@@ -19,6 +19,10 @@ const Factura = sequelize.define('Factura', {
     type: DataTypes.UUID,
     allowNull: true
   },
+  ordenInstalacionId: {
+    type: DataTypes.UUID,
+    allowNull: true
+  },
   clienteId: {
     type: DataTypes.UUID,
     allowNull: false

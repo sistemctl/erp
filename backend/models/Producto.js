@@ -47,6 +47,18 @@ const Producto = sequelize.define('Producto', {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
+  /**
+   * Unidad de medida del stock y precios.
+   * `m` = 1 unidad de inventario equivale a 1 metro (cable, etc.).
+   */
+  unidadMedida: {
+    type: DataTypes.STRING(8),
+    allowNull: false,
+    defaultValue: 'und',
+    validate: {
+      isIn: [['und', 'm']]
+    }
+  },
   esReacondicionado: {
     type: DataTypes.BOOLEAN,
     defaultValue: false

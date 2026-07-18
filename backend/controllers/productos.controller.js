@@ -1,6 +1,7 @@
 const { Producto, Categoria, Sede, StockSede, NumeroSerie, MovimientoInventario, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const { generateInternalBarcode, normalizeCodigoBarras } = require('../utils/internal-barcode');
+const { normalizeUnidadMedida } = require('../utils/unidad-medida');
 
 // --- CRUD PRODUCTOS ---
 
@@ -46,9 +47,11 @@ exports.createProducto = async (req, res, next) => {
       tieneNumeroSerie,
       esReacondicionado,
       esServicio,
+      unidadMedida,
       categoriaId,
       imagenUrl
     } = req.body;
+    const unidad = normalizeUnidadMedida(unidadMedida);
 
     let codigoFinal = normalizeCodigoBarras(codigoBarras);
     if (!codigoFinal) {
@@ -72,6 +75,7 @@ exports.createProducto = async (req, res, next) => {
           tieneNumeroSerie: esServicio ? false : !!tieneNumeroSerie,
           esReacondicionado,
           esServicio: !!esServicio,
+          unidadMedida: unidad,
           categoriaId,
           imagenUrl,
           activo: true
@@ -116,6 +120,7 @@ exports.createProducto = async (req, res, next) => {
       tieneNumeroSerie: esServicio ? false : !!tieneNumeroSerie,
       esReacondicionado,
       esServicio: !!esServicio,
+      unidadMedida: unidad,
       categoriaId,
       imagenUrl
     }, { transaction });
@@ -172,6 +177,10 @@ exports.updateProducto = async (req, res, next) => {
       productData.tieneNumeroSerie = false;
     } else if (productData.esServicio === false || productData.esServicio === 'false') {
       productData.esServicio = false;
+    }
+
+    if (productData.unidadMedida !== undefined) {
+      productData.unidadMedida = normalizeUnidadMedida(productData.unidadMedida);
     }
 
     const rolesAjusteStock = ['admin', 'superadmin'];
@@ -379,6 +388,7 @@ exports.importarCSV = async (req, res, next) => {
         stockMinimo: parseInt(row.stockMinimo || 0),
         tieneNumeroSerie: row.tieneNumeroSerie === 'true' || row.tieneNumeroSerie === '1',
         esReacondicionado: row.esReacondicionado === 'true' || row.esReacondicionado === '1',
+        unidadMedida: normalizeUnidadMedida(row.unidadMedida),
         categoriaId: categoria.id,
         imagenUrl: row.imagenUrl || null
       }, { transaction });

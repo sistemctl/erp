@@ -4,6 +4,7 @@ import { showToast, showConfirm } from '../utils/toast.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
 import { printBarcodeLabels, renderBarcodePreview, isInternalBarcode } from '../utils/barcode-label.js';
+import { formatStockUnidad, normalizeUnidadMedida } from '../utils/unidad-medida.js';
 
 let dataSedes = [];
 let inventarioKeydownHandler = null;
@@ -259,7 +260,17 @@ export async function initInventario(container) {
                         <label class="prod-price-field__label" for="prod-minimo">Mínimo alerta</label>
                         <input type="number" id="prod-minimo" class="form-control" required min="0" value="3">
                       </div>
+                      <div class="prod-price-field">
+                        <label class="prod-price-field__label" for="prod-unidad">Unidad de medida</label>
+                        <select id="prod-unidad" class="form-select">
+                          <option value="und">und (pieza)</option>
+                          <option value="m">m (metro)</option>
+                        </select>
+                      </div>
                     </div>
+                    <p class="prod-form-card__desc mb-0 mt-2" id="prod-unidad-hint">
+                      En metros, 1 und de stock = 1 metro. Precio costo/venta es por metro.
+                    </p>
                     <div class="prod-stock-block d-none" id="prod-stock-wrapper">
                       <label class="prod-price-field__label" for="prod-stock-actual">Existencias (sede actual)</label>
                       <input type="number" id="prod-stock-actual" class="form-control prod-form-stock-input" readonly>
@@ -547,6 +558,15 @@ export async function initInventario(container) {
     }
   };
 
+  const syncProdUnidadHint = () => {
+    const hint = document.getElementById('prod-unidad-hint');
+    const unidad = normalizeUnidadMedida(document.getElementById('prod-unidad')?.value);
+    if (!hint) return;
+    hint.textContent = unidad === 'm'
+      ? 'En metros, 1 und de stock = 1 metro. Precio costo/venta es por metro.'
+      : 'Unidad por pieza. El stock y los precios son por und.';
+  };
+
   document.getElementById('prod-nombre')?.addEventListener('input', () => {
     const id = document.getElementById('producto-id').value;
     const nombre = document.getElementById('prod-nombre').value.trim();
@@ -555,6 +575,7 @@ export async function initInventario(container) {
     }
   });
   document.getElementById('prod-codigo')?.addEventListener('input', syncProdFormMeta);
+  document.getElementById('prod-unidad')?.addEventListener('change', syncProdUnidadHint);
 
   const updateEtiquetaPreview = () => {
     const preview = document.getElementById('etiqueta-preview');
@@ -890,7 +911,7 @@ export async function initInventario(container) {
           <td class="inv-cat">${prod.categoria ? prod.categoria.nombre : 'General'}</td>
           <td class="text-end inv-money">${formatter.format(prod.precioCosto)}</td>
           <td class="text-end inv-money inv-money--sale">${formatter.format(prod.precioVenta)}</td>
-          <td class="text-end"><span class="inv-qty ${statusClass}">${stockQty}</span></td>
+          <td class="text-end"><span class="inv-qty ${statusClass}">${formatStockUnidad(stockQty, prod.unidadMedida)}</span></td>
           <td class="text-center">${statusBadge}</td>
           <td class="text-center">${prod.tieneNumeroSerie ? '<span class="inv-status inv-status--imei">IMEI</span>' : '<span class="text-secondary">—</span>'}</td>
           ${isAdminOrGerente ? `
@@ -933,6 +954,8 @@ export async function initInventario(container) {
       document.getElementById('prod-reacondicionado').checked = item.producto.esReacondicionado;
       document.getElementById('prod-servicio').checked = !!item.producto.esServicio;
       document.getElementById('prod-imagen-url').value = item.producto.imagenUrl || '';
+      document.getElementById('prod-unidad').value = normalizeUnidadMedida(item.producto.unidadMedida);
+      syncProdUnidadHint();
 
       const stockInput = document.getElementById('prod-stock-actual');
       const adminNote = document.getElementById('admin-stock-note');
@@ -1169,7 +1192,9 @@ export async function initInventario(container) {
       clearPendingSerials();
       document.getElementById('sec-gestion-seriales').classList.add('d-none');
       document.getElementById('modal-producto-title').textContent = 'Crear producto';
+      document.getElementById('prod-unidad').value = 'und';
       syncProdFormMeta();
+      syncProdUnidadHint();
       modalProd.show();
     });
 
@@ -1190,6 +1215,7 @@ export async function initInventario(container) {
         tieneIVA: document.getElementById('prod-iva').checked,
         esReacondicionado: document.getElementById('prod-reacondicionado').checked,
         esServicio: document.getElementById('prod-servicio').checked,
+        unidadMedida: normalizeUnidadMedida(document.getElementById('prod-unidad').value),
         imagenUrl: document.getElementById('prod-imagen-url').value.trim() || null,
         ajusteStock: ['admin', 'superadmin'].includes(usuario.rol) ? parseStockInput(document.getElementById('prod-stock-actual').value) : null,
         sedeId

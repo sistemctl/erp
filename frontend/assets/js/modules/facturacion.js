@@ -125,7 +125,11 @@ export async function initFacturacion(container) {
       else if (f.estado === 'vencida') badgeClass = 'bg-red-lt';
       else if (f.estado === 'abono_parcial') badgeClass = 'bg-warning-lt';
 
-      const origen = f.venta ? `Venta (${f.venta.numeroVenta})` : (f.ordenReparacion ? `Taller (${f.ordenReparacion.numeroOrden})` : 'Manual');
+      const origen = f.venta
+        ? `Venta (${f.venta.numeroVenta})`
+        : (f.ordenReparacion
+          ? `Taller (${f.ordenReparacion.numeroOrden})`
+          : (f.ordenInstalacion ? `Instalación (${f.ordenInstalacion.numeroOrden})` : 'Manual'));
 
       const puedeEnviarEmail = f.estado !== 'anulada' && f.cliente?.email;
 

@@ -4,6 +4,7 @@ import { initBarcodeScanner, destroyBarcodeScanner } from '../utils/barcode.js';
 import { getLocalDateStr } from '../utils/date.js';
 import { showToast } from '../utils/toast.js';
 import { renderPosReceipt } from '../utils/pos-receipt.js';
+import { formatStockUnidad, labelUnidadMedida } from '../utils/unidad-medida.js';
 
 let posKeydownHandler = null;
 let cart = [];
@@ -553,7 +554,7 @@ export async function initPos(container) {
                     <span class="pos-product-card-price">$ ${new Intl.NumberFormat('es-CO').format(item.producto.precioVenta)}</span>
                     <span class="pos-product-card-stock">${item.producto.esServicio
                       ? '<strong class="text-azure">Servicio</strong>'
-                      : `Stock <strong class="${item.cantidad <= item.producto.stockMinimo ? 'text-danger' : 'text-success'}">${item.cantidad}</strong>`}</span>
+                      : `Stock <strong class="${item.cantidad <= item.producto.stockMinimo ? 'text-danger' : 'text-success'}">${formatStockUnidad(item.cantidad, item.producto.unidadMedida)}</strong>`}</span>
                   </div>
                 </div>
               </button>
@@ -572,7 +573,8 @@ export async function initPos(container) {
             const cartItem = cart.find(c => c.productoId === id);
             const qty = cartItem ? cartItem.cantidad + 1 : 1;
             if (!item.producto.esServicio && qty > item.cantidad) {
-              showToast('Stock Insuficiente', 'No puedes agregar más unidades que las disponibles en stock.', 'error');
+              const ud = labelUnidadMedida(item.producto.unidadMedida);
+              showToast('Stock Insuficiente', `No puedes agregar más ${ud} de las disponibles en stock.`, 'error');
               return;
             }
 
@@ -657,6 +659,7 @@ export async function initPos(container) {
         precioCosto: parseFloat(producto.precioCosto),
         descuentoPct: 0,
         cantidad: 1,
+        unidadMedida: producto.unidadMedida || 'und',
         tieneNumeroSerie: producto.esServicio ? false : producto.tieneNumeroSerie,
         esServicio: !!producto.esServicio,
         imei: producto.autoDetectedImei || '',
@@ -702,13 +705,14 @@ export async function initPos(container) {
            <span class="pos-cart-line__fallback" hidden aria-hidden="true">${initial}</span>`
         : `<span class="pos-cart-line__fallback" aria-hidden="true">${initial}</span>`;
 
+      const ud = labelUnidadMedida(item.unidadMedida);
       const qtyControl = item.tieneNumeroSerie
-        ? `<span class="pos-qty-fixed" aria-label="Cantidad fija">1 ud.</span>`
+        ? `<span class="pos-qty-fixed" aria-label="Cantidad fija">1 ${ud}</span>`
         : `
           <div class="pos-qty-stepper" role="group" aria-label="Cantidad de ${item.nombre}">
-            <button type="button" class="pos-qty-btn btn-dec-qty" data-idx="${idx}" aria-label="Quitar una unidad">−</button>
-            <input type="number" class="pos-qty-input input-qty-cart" data-idx="${idx}" value="${item.cantidad}" min="1" inputmode="numeric" aria-label="Cantidad">
-            <button type="button" class="pos-qty-btn btn-inc-qty" data-idx="${idx}" aria-label="Agregar una unidad">+</button>
+            <button type="button" class="pos-qty-btn btn-dec-qty" data-idx="${idx}" aria-label="Quitar ${ud}">−</button>
+            <input type="number" class="pos-qty-input input-qty-cart" data-idx="${idx}" value="${item.cantidad}" min="1" inputmode="numeric" aria-label="Cantidad en ${ud}">
+            <button type="button" class="pos-qty-btn btn-inc-qty" data-idx="${idx}" aria-label="Agregar ${ud}">+</button>
           </div>
         `;
 
@@ -721,12 +725,12 @@ export async function initPos(container) {
               <span class="pos-cart-line__subtotal">${formatter.format(item.subtotal)}</span>
             </div>
             <div class="pos-cart-line__unit">
-              ${formatter.format(item.precioModificado)} c/u
+              ${formatter.format(item.precioModificado)} / ${ud}
               ${item.descuentoPct > 0 ? `<span class="pos-cart-line__disc">−${item.descuentoPct}%</span>` : ''}
             </div>
             <div class="pos-cart-line__foot">
               <div class="pos-cart-line__qty">
-                <span class="pos-cart-line__qty-label">Cant.</span>
+                <span class="pos-cart-line__qty-label">${ud}</span>
                 ${qtyControl}
               </div>
               <div class="pos-cart-line__actions">

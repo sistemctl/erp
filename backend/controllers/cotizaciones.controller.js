@@ -62,7 +62,7 @@ exports.getCotizacionById = async (req, res, next) => {
         {
           model: ItemCotizacion,
           as: 'items',
-          include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras', 'precioVenta', 'tieneNumeroSerie', 'tieneIVA'] }]
+          include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras', 'precioVenta', 'tieneNumeroSerie', 'tieneIVA', 'unidadMedida'] }]
         }
       ]
     });
@@ -202,7 +202,7 @@ exports.generarCotizacionPDF = async (req, res, next) => {
         {
           model: ItemCotizacion,
           as: 'items',
-          include: [{ model: Producto, as: 'producto', attributes: ['codigoBarras', 'nombre', 'tieneIVA'] }]
+          include: [{ model: Producto, as: 'producto', attributes: ['codigoBarras', 'nombre', 'tieneIVA', 'unidadMedida'] }]
         }
       ]
     });

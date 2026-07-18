@@ -2,6 +2,8 @@ const {
   Notificacion,
   ConfiguracionSistema,
   OrdenReparacion,
+  OrdenInstalacion,
+  MaterialInstalacion,
   Cliente,
   Sede,
   Factura,
@@ -47,6 +49,18 @@ const FACTURA_PDF_INCLUDES = [
       {
         model: RepuestoOrden,
         as: 'repuestos',
+        include: [{ model: Producto, as: 'producto' }]
+      }
+    ]
+  },
+  {
+    model: OrdenInstalacion,
+    as: 'ordenInstalacion',
+    include: [
+      { model: Usuario, as: 'tecnico', attributes: ['id', 'nombre'] },
+      {
+        model: MaterialInstalacion,
+        as: 'materiales',
         include: [{ model: Producto, as: 'producto' }]
       }
     ]

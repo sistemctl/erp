@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { numeroALetras } = require('./numero-a-letras');
 const { calcCotIvaItems, etiquetaIvaCot } = require('./cotizacion-iva');
+const { labelUnidadMedida } = require('./unidad-medida');
 
 const MARGIN = 32;
 const PAGE_W = 595.28;
@@ -213,7 +214,8 @@ async function generarCotizacionPDF(doc, cotizacion, config = {}) {
     const sub = item ? fmtMoney(item.subtotal) : '';
 
     cx = tableX;
-    const cells = [codigo, desc, 'UND', cant, unit, sub];
+    const unidad = item ? labelUnidadMedida(item.producto?.unidadMedida) : '';
+    const cells = [codigo, desc, unidad, cant, unit, sub];
     cells.forEach((val, idx) => {
       doc.text(val, cx + 4, y + 5, { width: cols[idx].w - 8, align: cols[idx].align, ellipsis: true });
       cx += cols[idx].w;

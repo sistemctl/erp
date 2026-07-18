@@ -4,6 +4,8 @@ const {
   ItemVenta,
   PagoVenta,
   OrdenReparacion,
+  OrdenInstalacion,
+  MaterialInstalacion,
   RepuestoOrden,
   Cliente,
   Sede,
@@ -61,7 +63,8 @@ exports.getFacturas = async (req, res, next) => {
         { model: Cliente, as: 'cliente', attributes: ['nombre', 'documento', 'telefono', 'email'] },
         { model: Sede, as: 'sede', attributes: ['nombre'] },
         { model: Venta, as: 'venta', attributes: ['numeroVenta'] },
-        { model: OrdenReparacion, as: 'ordenReparacion', attributes: ['numeroOrden'] }
+        { model: OrdenReparacion, as: 'ordenReparacion', attributes: ['numeroOrden'] },
+        { model: OrdenInstalacion, as: 'ordenInstalacion', attributes: ['numeroOrden'] }
       ],
       order: [['createdAt', 'DESC']]
     });
@@ -87,7 +90,7 @@ exports.getFacturaById = async (req, res, next) => {
             {
               model: ItemVenta,
               as: 'items',
-              include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras'] }]
+              include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras', 'unidadMedida'] }]
             },
             { model: PagoVenta, as: 'pagos' },
             { model: Usuario, as: 'usuario', attributes: ['nombre'] }
@@ -100,7 +103,19 @@ exports.getFacturaById = async (req, res, next) => {
             {
               model: RepuestoOrden,
               as: 'repuestos',
-              include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras'] }]
+              include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras', 'unidadMedida'] }]
+            }
+          ]
+        },
+        {
+          model: OrdenInstalacion,
+          as: 'ordenInstalacion',
+          include: [
+            { model: Usuario, as: 'tecnico', attributes: ['id', 'nombre'] },
+            {
+              model: MaterialInstalacion,
+              as: 'materiales',
+              include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras', 'unidadMedida'] }]
             }
           ]
         }
@@ -332,6 +347,18 @@ exports.getFacturaPdf = async (req, res, next) => {
             {
               model: RepuestoOrden,
               as: 'repuestos',
+              include: [{ model: Producto, as: 'producto' }]
+            }
+          ]
+        },
+        {
+          model: OrdenInstalacion,
+          as: 'ordenInstalacion',
+          include: [
+            { model: Usuario, as: 'tecnico', attributes: ['id', 'nombre'] },
+            {
+              model: MaterialInstalacion,
+              as: 'materiales',
               include: [{ model: Producto, as: 'producto' }]
             }
           ]

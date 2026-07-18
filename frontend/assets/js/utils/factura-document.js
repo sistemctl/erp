@@ -44,6 +44,42 @@ function getFacItems(f) {
     }
     return items;
   }
+  if (f.ordenInstalacion) {
+    const orden = f.ordenInstalacion;
+    const precioCerrado = orden.precioCerrado === true || orden.precioCerrado === 1;
+    const valorServicio = parseFloat(orden.valorServicio) || 0;
+    const sitio = (orden.sitio || '').trim();
+    const desc = (orden.descripcion || '').trim();
+    const items = [];
+
+    if (valorServicio > 0 || precioCerrado || !(orden.materiales || []).length) {
+      const partes = ['Servicio de instalación'];
+      if (sitio) partes.push(sitio);
+      if (desc) partes.push(desc);
+      items.push({
+        codigo: orden.numeroOrden || '—',
+        descripcion: partes.join(' — '),
+        cantidad: 1,
+        precioUnitario: valorServicio,
+        subtotal: valorServicio
+      });
+    }
+
+    for (const mat of orden.materiales || []) {
+      const cant = parseInt(mat.cantidad, 10) || 0;
+      const unit = precioCerrado ? 0 : (parseFloat(mat.precioUnitario) || 0);
+      const nombre = mat.producto?.nombre || 'Material';
+      items.push({
+        codigo: mat.producto?.codigoBarras || '—',
+        descripcion: precioCerrado ? `${nombre} (incluido en servicio)` : nombre,
+        cantidad: cant,
+        precioUnitario: unit,
+        subtotal: unit * cant
+      });
+    }
+
+    return items;
+  }
   return [];
 }
 
@@ -94,7 +130,9 @@ export function renderFacturaDocumento(f, config = {}) {
   const cliente = f.cliente;
   const items = getFacItems(f);
   const minRows = Math.max(items.length, 3);
-  const vendedor = f.venta?.usuario?.nombre || '—';
+  const vendedor = f.venta?.usuario?.nombre
+    || f.ordenInstalacion?.tecnico?.nombre
+    || '—';
 
   const itemRows = items.map((item) => `
     <tr>
@@ -211,7 +249,7 @@ export function renderFacturaDocumento(f, config = {}) {
         </div>
         <div class="cot-doc__totals">
           <div class="cot-doc__total-row"><span>Total bruto</span><span>${fmtFacMoney(f.subtotal)}</span></div>
-          <div class="cot-doc__total-row"><span>IVA (${ivaPct}%)</span><span>${fmtFacMoney(f.iva)}</span></div>
+          <div class="cot-doc__total-row"><span>${(parseFloat(f.iva) || 0) > 0 ? `IVA (${ivaPct}%)` : 'IVA (Exento)'}</span><span>${fmtFacMoney(f.iva)}</span></div>
           <div class="cot-doc__total-row cot-doc__total-row--final"><span>Total a pagar</span><span>${fmtFacMoney(f.total)}</span></div>
         </div>
       </footer>

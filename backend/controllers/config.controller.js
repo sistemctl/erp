@@ -560,11 +560,22 @@ exports.getSistemaConfig = async (req, res, next) => {
 
 exports.updateSistemaConfig = async (req, res, next) => {
   try {
+    const { sanitizeTemaInterfaz } = require('../utils/tema-interfaz');
     let config = await ConfiguracionSistema.findOne();
     let valorAnterior = {};
     const payload = { ...req.body };
     let requiereReinicio = false;
     let puertoNuevo = null;
+
+    if (payload.temaInterfaz !== undefined) {
+      try {
+        payload.temaInterfaz = sanitizeTemaInterfaz(payload.temaInterfaz);
+      } catch (validationError) {
+        return res.status(validationError.status || 400).json({
+          error: validationError.message || 'temaInterfaz inválido.'
+        });
+      }
+    }
 
     if (payload.logoUrl !== undefined) {
       payload.logoUrl = normalizeLogoUrl(payload.logoUrl);

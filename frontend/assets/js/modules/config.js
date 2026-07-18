@@ -1220,8 +1220,18 @@ export async function initConfig(container) {
   });
   document.querySelector('a[href="#tab-config-log"]').addEventListener('shown.bs.tab', loadNotificationsLog);
   document.querySelector('a[href="#tab-config-twilio"]')?.addEventListener('shown.bs.tab', syncNotificacionEmailPreview);
+  const bootApariencia = () => {
+    initConfigApariencia(sistemaConfig.temaInterfaz, {
+      empresa: sistemaConfig.empresa,
+      logoUrl: sistemaConfig.logoUrl,
+      onSaved: (tema) => {
+        sistemaConfig.temaInterfaz = tema;
+      }
+    });
+  };
+
   document.querySelector('a[href="#tab-config-apariencia"]')?.addEventListener('shown.bs.tab', () => {
-    initConfigApariencia(sistemaConfig.temaInterfaz);
+    bootApariencia();
   });
   document.querySelector('a[href="#tab-config-auditoria"]')?.addEventListener('shown.bs.tab', () => {
     initAuditLogTab();
@@ -1230,7 +1240,7 @@ export async function initConfig(container) {
   // Inicialización
   await loadConfig();
   initNotificacionEmailPreview();
-  initConfigApariencia(sistemaConfig.temaInterfaz);
+  bootApariencia();
 
   const configParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
   if (configParams.get('tab') === 'auditoria') {

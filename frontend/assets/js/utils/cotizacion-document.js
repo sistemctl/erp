@@ -1,5 +1,6 @@
 import { numeroALetras } from './numero-a-letras.js';
 import { calcCotIvaItems, etiquetaIvaCot } from './cotizacion-iva.js';
+import { labelUnidadMedida } from './unidad-medida.js';
 
 const cotFormatter = new Intl.NumberFormat('es-CO', {
   style: 'currency',
@@ -67,7 +68,7 @@ export function renderCotizacionDocumento(c, config = {}) {
     <tr>
       <td>${item.producto?.codigoBarras || '—'}</td>
       <td>${item.descripcion}</td>
-      <td class="text-center">UND</td>
+      <td class="text-center">${labelUnidadMedida(item.producto?.unidadMedida)}</td>
       <td class="text-center">${item.cantidad}</td>
       <td class="text-end">${cotFormatter.format(item.precioUnitario)}</td>
       <td class="text-end">${cotFormatter.format(item.subtotal)}</td>

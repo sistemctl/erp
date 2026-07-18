@@ -8,10 +8,15 @@ const {
   StockSede,
   MovimientoInventario,
   NumeroSerie,
+  Factura,
+  CuentaPorCobrar,
+  ConfiguracionSistema,
   sequelize
 } = require('../models');
 const { Op } = require('sequelize');
 const { resolveQuerySede, resolveActionSede } = require('../utils/sede');
+const { findCajaAbierta } = require('../utils/caja-abierta');
+const { calcularFechaVencimientoCredito, getDiasPlazoCredito } = require('../utils/credito');
 
 const includeDetalle = [
   { model: Cliente, as: 'cliente', attributes: ['id', 'nombre', 'telefono', 'documento', 'email'] },
@@ -20,7 +25,7 @@ const includeDetalle = [
   {
     model: MaterialInstalacion,
     as: 'materiales',
-    include: [{ model: Producto, as: 'producto', attributes: ['id', 'nombre', 'codigoBarras', 'tieneNumeroSerie', 'esServicio'] }]
+    include: [{ model: Producto, as: 'producto', attributes: ['id', 'nombre', 'codigoBarras', 'tieneNumeroSerie', 'esServicio', 'unidadMedida'] }]
   }
 ];
 
@@ -29,22 +34,37 @@ function recalcTotales(orden, materiales) {
     (sum, m) => sum + parseFloat(m.costoUnitario) * parseInt(m.cantidad, 10),
     0
   );
+  const ventaMateriales = materiales.reduce(
+    (sum, m) => sum + parseFloat(m.precioUnitario) * parseInt(m.cantidad, 10),
+    0
+  );
   const valorServicio = parseFloat(orden.valorServicio) || 0;
+  const precioCerrado = orden.precioCerrado === true || orden.precioCerrado === 'true' || orden.precioCerrado === 1;
   return {
     costoMateriales,
-    totalCobrado: valorServicio + costoMateriales
+    totalCobrado: precioCerrado ? valorServicio : valorServicio + ventaMateriales
   };
 }
 
 exports.getOrdenes = async (req, res, next) => {
   try {
-    const { estado, tecnico, sede, buscar } = req.query;
+    const { estado, tecnico, sede, buscar, desde, hasta } = req.query;
     const where = {};
     const querySedeId = resolveQuerySede(sede, req.usuario);
 
     if (estado) where.estado = estado;
     if (tecnico) where.tecnicoId = tecnico;
     if (querySedeId) where.sedeId = querySedeId;
+
+    if (desde || hasta) {
+      where.createdAt = {};
+      if (desde) where.createdAt[Op.gte] = new Date(desde);
+      if (hasta) {
+        const fin = new Date(hasta);
+        fin.setHours(23, 59, 59, 999);
+        where.createdAt[Op.lte] = fin;
+      }
+    }
 
     if (buscar) {
       where[Op.or] = [
@@ -96,7 +116,8 @@ exports.createOrden = async (req, res, next) => {
       valorServicio,
       fechaProgramada,
       observaciones,
-      estado
+      estado,
+      precioCerrado
     } = req.body;
 
     if (!clienteId) {
@@ -113,6 +134,7 @@ exports.createOrden = async (req, res, next) => {
     const count = await OrdenInstalacion.count({ transaction });
     const numeroOrden = `IN-${String(count + 1).padStart(6, '0')}`;
     const svc = parseFloat(valorServicio) || 0;
+    const cerrado = precioCerrado === true || precioCerrado === 'true' || precioCerrado === 1;
 
     const orden = await OrdenInstalacion.create({
       numeroOrden,
@@ -123,6 +145,7 @@ exports.createOrden = async (req, res, next) => {
       direccion: direccion || null,
       descripcion: descripcion || null,
       valorServicio: svc,
+      precioCerrado: cerrado,
       costoMateriales: 0,
       totalCobrado: svc,
       estado: estado || 'borrador',
@@ -173,7 +196,8 @@ exports.updateOrden = async (req, res, next) => {
       valorServicio,
       fechaProgramada,
       observaciones,
-      estado
+      estado,
+      precioCerrado
     } = req.body;
 
     const patch = {};
@@ -193,10 +217,16 @@ exports.updateOrden = async (req, res, next) => {
     if (valorServicio !== undefined) {
       patch.valorServicio = parseFloat(valorServicio) || 0;
     }
+    if (precioCerrado !== undefined) {
+      patch.precioCerrado = precioCerrado === true || precioCerrado === 'true' || precioCerrado === 1;
+    }
 
     await orden.update(patch, { transaction });
     const totales = recalcTotales(
-      { valorServicio: patch.valorServicio !== undefined ? patch.valorServicio : orden.valorServicio },
+      {
+        valorServicio: patch.valorServicio !== undefined ? patch.valorServicio : orden.valorServicio,
+        precioCerrado: patch.precioCerrado !== undefined ? patch.precioCerrado : orden.precioCerrado
+      },
       orden.materiales
     );
     await orden.update(totales, { transaction });
@@ -334,9 +364,127 @@ exports.addMaterial = async (req, res, next) => {
     }
 
     const full = await MaterialInstalacion.findByPk(material.id, {
-      include: [{ model: Producto, as: 'producto', attributes: ['id', 'nombre', 'codigoBarras', 'tieneNumeroSerie'] }]
+      include: [{ model: Producto, as: 'producto', attributes: ['id', 'nombre', 'codigoBarras', 'tieneNumeroSerie', 'unidadMedida'] }]
     });
     return res.status(201).json(full);
+  } catch (error) {
+    await transaction.rollback();
+    next(error);
+  }
+};
+
+/** Ajusta la cantidad de un material (delta de stock) sin borrar la línea. */
+exports.updateMaterial = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const { id, mid } = req.params;
+    const newQty = parseInt(req.body.cantidad, 10);
+
+    if (!newQty || newQty <= 0) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'La cantidad debe ser un entero mayor a 0.' });
+    }
+
+    const orden = await OrdenInstalacion.findByPk(id, { transaction });
+    if (!orden) {
+      await transaction.rollback();
+      return res.status(404).json({ error: 'Orden no encontrada.' });
+    }
+    if (['entregada', 'cancelada'].includes(orden.estado)) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'No se pueden ajustar materiales de esta orden.' });
+    }
+
+    const material = await MaterialInstalacion.findOne({
+      where: { id: mid, ordenId: id },
+      include: [{ model: Producto, as: 'producto' }],
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
+    if (!material) {
+      await transaction.rollback();
+      return res.status(404).json({ error: 'Material no encontrado.' });
+    }
+
+    if (material.producto?.tieneNumeroSerie) {
+      await transaction.rollback();
+      return res.status(400).json({
+        error: 'Los productos con serial no se pueden ajustar. Revierta la línea y vuelva a agregarlos.'
+      });
+    }
+
+    const oldQty = parseInt(material.cantidad, 10);
+    if (oldQty === newQty) {
+      await transaction.rollback();
+      return res.json(material);
+    }
+
+    const delta = newQty - oldQty;
+    const stock = await StockSede.findOne({
+      where: { productoId: material.productoId, sedeId: orden.sedeId },
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
+
+    if (delta > 0) {
+      if (!stock || stock.cantidad < delta) {
+        await transaction.rollback();
+        return res.status(400).json({
+          error: `Stock insuficiente de ${material.producto?.nombre || 'producto'} en esta sede.`
+        });
+      }
+      await stock.update({ cantidad: stock.cantidad - delta }, { transaction });
+      await MovimientoInventario.create({
+        productoId: material.productoId,
+        sedeId: orden.sedeId,
+        tipo: 'salida',
+        cantidad: -delta,
+        motivo: `Ajuste material instalación #${orden.numeroOrden} (${oldQty} → ${newQty})`,
+        referenciaId: orden.id,
+        usuarioId: req.usuario.userId
+      }, { transaction });
+    } else {
+      const volver = Math.abs(delta);
+      if (stock) {
+        await stock.update({ cantidad: stock.cantidad + volver }, { transaction });
+      }
+      await MovimientoInventario.create({
+        productoId: material.productoId,
+        sedeId: orden.sedeId,
+        tipo: 'entrada',
+        cantidad: volver,
+        motivo: `Ajuste material instalación #${orden.numeroOrden} (${oldQty} → ${newQty})`,
+        referenciaId: orden.id,
+        usuarioId: req.usuario.userId
+      }, { transaction });
+    }
+
+    await material.update({ cantidad: newQty }, { transaction });
+
+    const materiales = await MaterialInstalacion.findAll({ where: { ordenId: id }, transaction });
+    const totales = recalcTotales(orden, materiales);
+    await orden.update(totales, { transaction });
+
+    await transaction.commit();
+
+    if (req.logAudit) {
+      await req.logAudit({
+        accion: 'UPDATE',
+        modulo: 'Instalaciones',
+        registroId: id,
+        valorNuevo: {
+          materialId: mid,
+          producto: material.producto?.nombre,
+          cantidadAnterior: oldQty,
+          cantidadNueva: newQty
+        }
+      });
+    }
+
+    const full = await MaterialInstalacion.findByPk(mid, {
+      include: [{ model: Producto, as: 'producto', attributes: ['id', 'nombre', 'codigoBarras', 'tieneNumeroSerie', 'unidadMedida'] }]
+    });
+    return res.json({ material: full, ...totales });
   } catch (error) {
     await transaction.rollback();
     next(error);
@@ -418,35 +566,167 @@ exports.removeMaterial = async (req, res, next) => {
 };
 
 exports.cerrarOrden = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
   try {
-    const orden = await OrdenInstalacion.findByPk(req.params.id, {
-      include: [{ model: MaterialInstalacion, as: 'materiales' }]
+    const { id } = req.params;
+    const { modoCobro, pagos, metodoPago } = req.body || {};
+
+    const orden = await OrdenInstalacion.findByPk(id, {
+      include: [{ model: MaterialInstalacion, as: 'materiales' }],
+      transaction
     });
     if (!orden) {
+      await transaction.rollback();
       return res.status(404).json({ error: 'Orden no encontrada.' });
     }
     if (orden.estado === 'cancelada') {
+      await transaction.rollback();
       return res.status(400).json({ error: 'La orden está cancelada.' });
     }
     if (orden.estado === 'entregada') {
-      return res.json(orden);
+      await transaction.rollback();
+      const full = await OrdenInstalacion.findByPk(orden.id, { include: includeDetalle });
+      return res.json(full);
     }
 
     const totales = recalcTotales(orden, orden.materiales || []);
-    await orden.update({ ...totales, estado: 'entregada' });
+    const totalNum = parseFloat(totales.totalCobrado) || 0;
+    let modo = null;
+
+    if (totalNum > 0) {
+      modo = modoCobro === 'fiado' ? 'fiado' : modoCobro === 'contado' ? 'contado' : null;
+      if (!modo) {
+        await transaction.rollback();
+        return res.status(400).json({
+          error: 'Indique cómo cobra: contado (Cobré en sitio) o fiado (Queda debiendo).'
+        });
+      }
+
+      const yaFacturado = await Factura.findOne({
+        where: { ordenInstalacionId: id },
+        transaction
+      });
+
+      if (!yaFacturado) {
+        const diasPlazo = await getDiasPlazoCredito(ConfiguracionSistema);
+        const fechaVencimiento = calcularFechaVencimientoCredito(diasPlazo);
+        const countFacturas = await Factura.count({ transaction });
+        const numeroFactura = `FE-${String(countFacturas + 1).padStart(6, '0')}`;
+        // Cobro de instalación: el total pactado es el valor final (sin desglose de IVA).
+        const subtotal = totalNum;
+        const iva = 0;
+
+        if (modo === 'contado') {
+          const { caja } = await findCajaAbierta({
+            sedeId: orden.sedeId,
+            usuarioId: req.usuario.userId,
+            transaction
+          });
+
+          if (!caja) {
+            await transaction.rollback();
+            return res.status(400).json({
+              error: 'No hay caja abierta en esta sede. Abre caja o usa Queda debiendo.'
+            });
+          }
+
+          if (pagos) {
+            const efectivoRec = parseFloat(pagos.efectivo || 0);
+            const nequiRec = parseFloat(pagos.nequi || 0);
+            const daviplataRec = parseFloat(pagos.daviplata || 0);
+            const tarjetaRec = parseFloat(pagos.tarjeta || 0);
+            const transferenciaRec = parseFloat(pagos.transferencia || 0);
+            const totalPagado = efectivoRec + nequiRec + daviplataRec + tarjetaRec + transferenciaRec;
+
+            if (totalPagado < totalNum - 0.01) {
+              await transaction.rollback();
+              return res.status(400).json({ error: 'El pago ingresado no cubre el total a cobrar.' });
+            }
+
+            let efectivoParaCaja = efectivoRec;
+            if (totalPagado > totalNum) {
+              const vuelto = totalPagado - totalNum;
+              efectivoParaCaja = Math.max(0, efectivoRec - vuelto);
+            }
+
+            await caja.update({
+              totalVentasEfectivo: parseFloat(caja.totalVentasEfectivo) + efectivoParaCaja,
+              totalVentasNequi: parseFloat(caja.totalVentasNequi) + nequiRec,
+              totalVentasDaviplata: parseFloat(caja.totalVentasDaviplata) + daviplataRec,
+              totalVentasTarjeta: parseFloat(caja.totalVentasTarjeta) + tarjetaRec,
+              totalVentasTransferencia: parseFloat(caja.totalVentasTransferencia) + transferenciaRec
+            }, { transaction });
+          } else {
+            const metodo = metodoPago || 'efectivo';
+            if (!['efectivo', 'nequi', 'daviplata', 'tarjeta', 'transferencia'].includes(metodo)) {
+              await transaction.rollback();
+              return res.status(400).json({ error: 'Método de pago inválido.' });
+            }
+            const campo = {
+              efectivo: 'totalVentasEfectivo',
+              nequi: 'totalVentasNequi',
+              daviplata: 'totalVentasDaviplata',
+              tarjeta: 'totalVentasTarjeta',
+              transferencia: 'totalVentasTransferencia'
+            }[metodo];
+            await caja.update({
+              [campo]: parseFloat(caja[campo]) + totalNum
+            }, { transaction });
+          }
+
+          await Factura.create({
+            numeroFactura,
+            ordenInstalacionId: id,
+            clienteId: orden.clienteId,
+            sedeId: orden.sedeId,
+            subtotal,
+            iva,
+            total: totalNum,
+            estado: 'pagada',
+            fechaVencimiento
+          }, { transaction });
+        } else {
+          const factura = await Factura.create({
+            numeroFactura,
+            ordenInstalacionId: id,
+            clienteId: orden.clienteId,
+            sedeId: orden.sedeId,
+            subtotal,
+            iva,
+            total: totalNum,
+            estado: 'pendiente',
+            fechaVencimiento
+          }, { transaction });
+
+          await CuentaPorCobrar.create({
+            facturaId: factura.id,
+            clienteId: orden.clienteId,
+            totalOriginal: totalNum,
+            totalAbonado: 0,
+            saldoPendiente: totalNum,
+            fechaVencimiento,
+            estado: 'al_dia'
+          }, { transaction });
+        }
+      }
+    }
+
+    await orden.update({ ...totales, estado: 'entregada' }, { transaction });
+    await transaction.commit();
 
     if (req.logAudit) {
       await req.logAudit({
         accion: 'UPDATE',
         modulo: 'Instalaciones',
         registroId: orden.id,
-        valorNuevo: { estado: 'entregada' }
+        valorNuevo: { estado: 'entregada', modoCobro: modo || 'sin_cobro', totalCobrado: totalNum }
       });
     }
 
     const full = await OrdenInstalacion.findByPk(orden.id, { include: includeDetalle });
     return res.json(full);
   } catch (error) {
+    await transaction.rollback();
     next(error);
   }
 };

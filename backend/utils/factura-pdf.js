@@ -19,13 +19,14 @@ const {
   drawTotalsBlock,
   drawPageFooter
 } = require('./pdf-siigo-helpers');
+const { labelUnidadMedida } = require('./unidad-medida');
 
 function getFacturaItems(factura) {
   if (factura.venta?.items?.length) {
     return factura.venta.items.map((item) => ({
       codigo: item.producto?.codigoBarras || '—',
       descripcion: item.producto?.nombre || '—',
-      unidad: 'UND',
+      unidad: labelUnidadMedida(item.producto?.unidadMedida),
       cantidad: item.cantidad,
       precioUnitario: item.precioModificado,
       subtotal: item.subtotal
@@ -37,7 +38,7 @@ function getFacturaItems(factura) {
     const items = [{
       codigo: '—',
       descripcion: `Mano de obra: ${orden.tipoEquipo || ''} ${orden.marca || ''} ${orden.modelo || ''}`.trim(),
-      unidad: 'UND',
+      unidad: 'und',
       cantidad: 1,
       precioUnitario: orden.costoManoObra,
       subtotal: orden.costoManoObra
@@ -46,12 +47,51 @@ function getFacturaItems(factura) {
       items.push({
         codigo: rep.producto?.codigoBarras || '—',
         descripcion: rep.producto?.nombre || 'Repuesto',
-        unidad: 'UND',
+        unidad: labelUnidadMedida(rep.producto?.unidadMedida),
         cantidad: rep.cantidad,
         precioUnitario: rep.costoUnitario,
         subtotal: parseFloat(rep.costoUnitario) * rep.cantidad
       });
     }
+    return items;
+  }
+
+  if (factura.ordenInstalacion) {
+    const orden = factura.ordenInstalacion;
+    const precioCerrado = orden.precioCerrado === true || orden.precioCerrado === 1;
+    const valorServicio = parseFloat(orden.valorServicio) || 0;
+    const sitio = (orden.sitio || '').trim();
+    const desc = (orden.descripcion || '').trim();
+    const items = [];
+
+    if (valorServicio > 0 || precioCerrado || !(orden.materiales || []).length) {
+      const partes = ['Servicio de instalación'];
+      if (sitio) partes.push(sitio);
+      if (desc) partes.push(desc);
+      items.push({
+        codigo: orden.numeroOrden || '—',
+        descripcion: partes.join(' — '),
+        unidad: 'und',
+        cantidad: 1,
+        precioUnitario: valorServicio,
+        subtotal: valorServicio
+      });
+    }
+
+    for (const mat of orden.materiales || []) {
+      const cant = parseInt(mat.cantidad, 10) || 0;
+      const unit = precioCerrado ? 0 : (parseFloat(mat.precioUnitario) || 0);
+      const nombre = mat.producto?.nombre || 'Material';
+      items.push({
+        codigo: mat.producto?.codigoBarras || '—',
+        descripcion: precioCerrado ? `${nombre} (incluido en servicio)` : nombre,
+        unidad: labelUnidadMedida(mat.producto?.unidadMedida),
+        cantidad: cant,
+        precioUnitario: unit,
+        subtotal: unit * cant
+      });
+    }
+
     return items;
   }
 
@@ -75,7 +115,9 @@ async function generarFacturaPDF(doc, factura, config = {}) {
   const ivaPct = config.ivaDefecto ?? 19;
   const cliente = factura.cliente;
   const items = getFacturaItems(factura);
-  const vendedor = factura.venta?.usuario?.nombre || '—';
+  const vendedor = factura.venta?.usuario?.nombre
+    || factura.ordenInstalacion?.tecnico?.nombre
+    || '—';
   const subtotal = parseFloat(factura.subtotal) || 0;
   const iva = parseFloat(factura.iva) || 0;
   const total = parseFloat(factura.total) || 0;
@@ -197,7 +239,7 @@ async function generarFacturaPDF(doc, factura, config = {}) {
   const tx = innerX + innerW - totalsW;
   drawTotalsBlock(doc, tx, footerTop, totalsW, [
     ['Total bruto', fmtMoneyDecimal(subtotal)],
-    [`IVA (${ivaPct}%)`, fmtMoneyDecimal(iva)],
+    [(parseFloat(iva) || 0) > 0 ? `IVA (${ivaPct}%)` : 'IVA (Exento)', fmtMoneyDecimal(iva)],
     ['Total a pagar', fmtMoneyDecimal(total)]
   ]);
 

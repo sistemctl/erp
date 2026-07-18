@@ -1,0 +1,12 @@
+---
+description: Never put the real production domain in docs or examples
+alwaysApply: true
+---
+
+# Dominio real fuera de ejemplos públicos
+
+- **Nunca** uses el dominio real de producción como ejemplo en README, `.env*.example`, comentarios de `docker-compose`, Plan, mensajes de commit, PRs o capturas de docs.
+- En ejemplos usa siempre un placeholder: `erp.tudominio.com` / `https://erp.tudominio.com`.
+- Al preparar commits o al subir a GitHub (`push`, “sube esta versión”), revisa que no haya filtrado el dominio real en archivos de documentación o plantillas.
+- El dominio real solo puede ir en configuración local no versionada (p. ej. `backend/.env`), nunca en plantillas del repo.
+- Tampoco pongas el dominio real en mensajes de commit.

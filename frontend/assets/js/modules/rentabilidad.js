@@ -11,8 +11,8 @@ export async function initRentabilidad(container) {
     container.innerHTML = `
       <div class="container-xl erp-module py-5">
         <div class="alert alert-danger">
-          <h4 class="alert-title">Acceso Denegado</h4>
-          <div class="text-secondary">Usted no tiene permisos para ver el análisis de rentabilidad.</div>
+          <h4 class="alert-title">Acceso denegado</h4>
+          <div class="text-secondary">No tienes permisos para ver el análisis de rentabilidad.</div>
         </div>
       </div>
     `;
@@ -31,212 +31,273 @@ export async function initRentabilidad(container) {
     console.error('Error al precargar filtros:', e);
   }
 
-  const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+  const formatter = new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    minimumFractionDigits: 0
+  });
+
+  function clampPct(n) {
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(100, n));
+  }
+
+  function margenTone(pct) {
+    if (pct < 0) return 'is-neg';
+    if (pct < 20) return 'is-low';
+    if (pct < 45) return 'is-mid';
+    return 'is-high';
+  }
+
+  function renderMargenMeter(pct) {
+    const p = Number.isFinite(pct) ? pct : 0;
+    const width = clampPct(Math.abs(p));
+    return `
+      <div class="rentab-meter ${margenTone(p)}" title="${p.toFixed(1)}%">
+        <div class="rentab-meter__track">
+          <div class="rentab-meter__fill" style="--rentab-fill:${width}%"></div>
+        </div>
+        <span class="rentab-meter__label">${p.toFixed(1)}%</span>
+      </div>
+    `;
+  }
+
+  function renderMargenStrip(el, {
+    ingresos,
+    costos,
+    margen,
+    ingresoLabel = 'Ingresos',
+    costoLabel = 'Costos',
+    margenLabel = 'Margen neto'
+  }) {
+    const pct = ingresos > 0 ? (margen / ingresos) * 100 : 0;
+    const costShare = ingresos > 0 ? clampPct((costos / ingresos) * 100) : 0;
+    const gainShare = margen < 0 ? 0 : (ingresos > 0 ? clampPct((margen / ingresos) * 100) : 0);
+    const barCost = margen < 0 ? 100 : costShare;
+
+    el.innerHTML = `
+      <div class="rentab-strip" data-tone="${margenTone(pct)}">
+        <div class="rentab-strip__equation">
+          <div class="rentab-strip__cell">
+            <span class="rentab-strip__label">${ingresoLabel}</span>
+            <span class="rentab-strip__value">${formatter.format(ingresos)}</span>
+          </div>
+          <span class="rentab-strip__op" aria-hidden="true">−</span>
+          <div class="rentab-strip__cell rentab-strip__cell--cost">
+            <span class="rentab-strip__label">${costoLabel}</span>
+            <span class="rentab-strip__value">${formatter.format(costos)}</span>
+          </div>
+          <span class="rentab-strip__op" aria-hidden="true">=</span>
+          <div class="rentab-strip__cell rentab-strip__cell--margen">
+            <span class="rentab-strip__label">${margenLabel}</span>
+            <span class="rentab-strip__value">${formatter.format(margen)}</span>
+          </div>
+          <div class="rentab-strip__pct">
+            <span class="rentab-strip__label">Margen</span>
+            <span class="rentab-strip__pct-value">${pct.toFixed(1)}%</span>
+          </div>
+        </div>
+        <div class="rentab-strip__compose" role="img" aria-label="Composición del ingreso: costos y margen">
+          <div class="rentab-strip__seg rentab-strip__seg--cost" style="--rentab-seg:${barCost}%"></div>
+          <div class="rentab-strip__seg rentab-strip__seg--gain" style="--rentab-seg:${gainShare}%"></div>
+        </div>
+        <div class="rentab-strip__legend">
+          <span><i class="rentab-dot rentab-dot--cost"></i> Costo sobre ingreso</span>
+          <span><i class="rentab-dot rentab-dot--gain"></i> Margen sobre ingreso</span>
+        </div>
+      </div>
+    `;
+
+    requestAnimationFrame(() => {
+      el.querySelector('.rentab-strip')?.classList.add('is-ready');
+    });
+  }
 
   container.innerHTML = `
-    <div class="container-xl erp-module">
+    <div class="container-xl erp-module rentab">
       ${erpHeader({
         eyebrow: 'Rentabilidad',
-        title: 'Análisis de reparaciones',
-        subtitle: 'Solo reparaciones entregadas: ingresos reales de mano de obra y repuestos',
+        title: 'Márgenes de reparaciones',
+        subtitle: 'Solo órdenes entregadas: lo cobrado frente al costo real de repuestos',
         titleId: 'rentabilidad-title',
         subId: 'rentabilidad-subtitle'
       })}
 
-      <!-- Navegación por pestañas (Tabs) -->
-      <div class="mb-3 d-print-none">
-        <ul class="nav nav-pills">
-          <li class="nav-item">
-            <button class="nav-link active" id="btn-tab-reparaciones"><i class="ti ti-tool me-1"></i>Reparaciones</button>
-          </li>
-          <li class="nav-item">
-            <button class="nav-link" id="btn-tab-ventas"><i class="ti ti-shopping-cart me-1"></i>Ventas de POS / Inventario</button>
-          </li>
-          <li class="nav-item">
-            <button class="nav-link" id="btn-tab-caja"><i class="ti ti-wallet me-1"></i>Rentabilidad de la Caja</button>
-          </li>
-        </ul>
+      <div class="rentab-switch d-print-none" role="tablist" aria-label="Vista de rentabilidad">
+        <button type="button" class="rentab-switch__btn is-active" id="btn-tab-reparaciones" role="tab" aria-selected="true">
+          <i class="ti ti-tool" aria-hidden="true"></i>
+          <span>Reparaciones</span>
+        </button>
+        <button type="button" class="rentab-switch__btn" id="btn-tab-ventas" role="tab" aria-selected="false">
+          <i class="ti ti-shopping-cart" aria-hidden="true"></i>
+          <span>Ventas POS</span>
+        </button>
+        <button type="button" class="rentab-switch__btn" id="btn-tab-caja" role="tab" aria-selected="false">
+          <i class="ti ti-wallet" aria-hidden="true"></i>
+          <span>Caja consolidada</span>
+        </button>
       </div>
 
-      <!-- SECCIÓN: REPARACIONES -->
-      <div id="sec-reparaciones">
-        <!-- Filtros Reparaciones -->
-        <div class="card mb-2 d-print-none erp-filter-card">
-          <div class="card-body">
-            <form id="form-filtros-reparaciones" class="row g-2 align-items-end">
-              <div class="col-md-3">
-                <label class="form-label">Técnico</label>
-                <select id="filtro-tecnico" class="form-select">
-                  <option value="">-- Todos los Técnicos --</option>
-                  ${tecnicos.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
-                </select>
-              </div>
-              <div class="col-md-3">
-                <label class="form-label">Desde</label>
-                <input type="date" id="filtro-desde-rep" class="form-control">
-              </div>
-              <div class="col-md-3">
-                <label class="form-label">Hasta</label>
-                <input type="date" id="filtro-hasta-rep" class="form-control">
-              </div>
-              <div class="col-md-3 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary w-100 erp-filter-submit"><i class="ti ti-filter me-1"></i>Filtrar</button>
-              </div>
-            </form>
+      <div id="sec-reparaciones" class="rentab-panel">
+        <form id="form-filtros-reparaciones" class="rentab-filters d-print-none">
+          <div class="rentab-filters__field">
+            <label class="rentab-filters__label" for="filtro-tecnico">Técnico</label>
+            <select id="filtro-tecnico" class="form-select">
+              <option value="">Todos</option>
+              ${tecnicos.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+            </select>
           </div>
-        </div>
-
-        <!-- KPIs Reparaciones -->
-        <div class="row row-cards mb-2" id="kpis-reparaciones">
-          <!-- Dinámico -->
-        </div>
-
-        <!-- Tabla Reparaciones -->
-        <div class="card erp-table-panel">
-          <div class="card-header d-flex justify-content-between align-items-center">
-            <h3 class="card-title">Desglose de Márgenes en Soporte Técnico</h3>
-            <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
-              <i class="ti ti-printer me-1"></i> Imprimir Reporte
+          <div class="rentab-filters__field">
+            <label class="rentab-filters__label" for="filtro-desde-rep">Desde</label>
+            <input type="date" id="filtro-desde-rep" class="form-control">
+          </div>
+          <div class="rentab-filters__field">
+            <label class="rentab-filters__label" for="filtro-hasta-rep">Hasta</label>
+            <input type="date" id="filtro-hasta-rep" class="form-control">
+          </div>
+          <div class="rentab-filters__action">
+            <button type="submit" class="btn btn-primary rentab-filters__submit">
+              <i class="ti ti-filter me-1"></i>Aplicar
             </button>
           </div>
+        </form>
+
+        <div id="kpis-reparaciones" class="rentab-strip-host"></div>
+
+        <section class="rentab-ledger">
+          <header class="rentab-ledger__head">
+            <div>
+              <h2 class="rentab-ledger__title">Desglose · soporte técnico</h2>
+              <p class="rentab-ledger__hint">Cada fila es una orden entregada</p>
+            </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm rentab-print" onclick="window.print()">
+              <i class="ti ti-printer me-1"></i>Imprimir
+            </button>
+          </header>
           <div class="table-responsive">
-            <table class="table table-vcenter card-table table-hover">
+            <table class="table table-vcenter rentab-table">
               <thead>
                 <tr>
                   <th>Orden</th>
                   <th>Fecha</th>
                   <th>Equipo</th>
                   <th>Técnico</th>
-                  <th class="text-end">Mano de Obra</th>
-                  <th class="text-end">Costo Repuestos</th>
-                  <th class="text-end">Total Cobrado</th>
-                  <th class="text-end">Margen (COP)</th>
-                  <th class="text-center">Margen (%)</th>
+                  <th class="text-end">Mano de obra</th>
+                  <th class="text-end">Costo repuestos</th>
+                  <th class="text-end">Total cobrado</th>
+                  <th class="text-end">Margen</th>
+                  <th>Margen %</th>
                 </tr>
               </thead>
-              <tbody id="reparaciones-table-body">
-                <!-- Dinámico -->
-              </tbody>
+              <tbody id="reparaciones-table-body"></tbody>
             </table>
           </div>
-        </div>
+        </section>
       </div>
 
-      <!-- SECCIÓN: VENTAS -->
-      <div id="sec-ventas" class="d-none">
-        <!-- Filtros Ventas -->
-        <div class="card mb-2 d-print-none erp-filter-card">
-          <div class="card-body">
-            <form id="form-filtros-ventas" class="row g-2 align-items-end">
-              <div class="col-md-3">
-                <label class="form-label">Sede</label>
-                <select id="filtro-sede" class="form-select">
-                  <option value="">-- Todas las Sedes --</option>
-                  ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
-                </select>
-              </div>
-              <div class="col-md-3">
-                <label class="form-label">Vendedor</label>
-                <select id="filtro-vendedor" class="form-select">
-                  <option value="">-- Todos los Vendedores --</option>
-                  ${vendedores.map(v => `<option value="${v.id}">${v.nombre} (${v.rol})</option>`).join('')}
-                </select>
-              </div>
-              <div class="col-md-2">
-                <label class="form-label">Desde</label>
-                <input type="date" id="filtro-desde-vta" class="form-control">
-              </div>
-              <div class="col-md-2">
-                <label class="form-label">Hasta</label>
-                <input type="date" id="filtro-hasta-vta" class="form-control">
-              </div>
-              <div class="col-md-2 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary w-100 erp-filter-submit"><i class="ti ti-filter me-1"></i>Filtrar</button>
-              </div>
-            </form>
+      <div id="sec-ventas" class="rentab-panel d-none">
+        <form id="form-filtros-ventas" class="rentab-filters d-print-none">
+          <div class="rentab-filters__field">
+            <label class="rentab-filters__label" for="filtro-sede">Sede</label>
+            <select id="filtro-sede" class="form-select">
+              <option value="">Todas</option>
+              ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+            </select>
           </div>
-        </div>
-
-        <!-- KPIs Ventas -->
-        <div class="row row-cards mb-2" id="kpis-ventas">
-          <!-- Dinámico -->
-        </div>
-
-        <!-- Tabla Ventas -->
-        <div class="card erp-table-panel">
-          <div class="card-header d-flex justify-content-between align-items-center">
-            <h3 class="card-title">Desglose de Márgenes en Ventas Directas</h3>
-            <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
-              <i class="ti ti-printer me-1"></i> Imprimir Reporte
+          <div class="rentab-filters__field rentab-filters__field--wide">
+            <label class="rentab-filters__label" for="filtro-vendedor">Vendedor</label>
+            <select id="filtro-vendedor" class="form-select">
+              <option value="">Todos</option>
+              ${vendedores.map(v => `<option value="${v.id}">${v.nombre} (${v.rol})</option>`).join('')}
+            </select>
+          </div>
+          <div class="rentab-filters__field">
+            <label class="rentab-filters__label" for="filtro-desde-vta">Desde</label>
+            <input type="date" id="filtro-desde-vta" class="form-control">
+          </div>
+          <div class="rentab-filters__field">
+            <label class="rentab-filters__label" for="filtro-hasta-vta">Hasta</label>
+            <input type="date" id="filtro-hasta-vta" class="form-control">
+          </div>
+          <div class="rentab-filters__action">
+            <button type="submit" class="btn btn-primary rentab-filters__submit">
+              <i class="ti ti-filter me-1"></i>Aplicar
             </button>
           </div>
+        </form>
+
+        <div id="kpis-ventas" class="rentab-strip-host"></div>
+
+        <section class="rentab-ledger">
+          <header class="rentab-ledger__head">
+            <div>
+              <h2 class="rentab-ledger__title">Desglose · ventas POS</h2>
+              <p class="rentab-ledger__hint">Costo de inventario frente al total de la venta</p>
+            </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm rentab-print" onclick="window.print()">
+              <i class="ti ti-printer me-1"></i>Imprimir
+            </button>
+          </header>
           <div class="table-responsive">
-            <table class="table table-vcenter card-table table-hover">
+            <table class="table table-vcenter rentab-table">
               <thead>
                 <tr>
                   <th>Venta</th>
                   <th>Fecha</th>
                   <th>Sede</th>
                   <th>Cliente</th>
-                  <th>Artículos Vendidos</th>
+                  <th>Artículos</th>
                   <th>Vendedor</th>
-                  <th class="text-end">Costo Total</th>
-                  <th class="text-end">Total Venta</th>
-                  <th class="text-end">Margen (COP)</th>
-                  <th class="text-center">Margen (%)</th>
+                  <th class="text-end">Costo</th>
+                  <th class="text-end">Total venta</th>
+                  <th class="text-end">Margen</th>
+                  <th>Margen %</th>
                 </tr>
               </thead>
-              <tbody id="ventas-table-body">
-                <!-- Dinámico -->
-              </tbody>
+              <tbody id="ventas-table-body"></tbody>
             </table>
           </div>
-        </div>
+        </section>
       </div>
 
-      <!-- SECCIÓN: CAJA -->
-      <div id="sec-caja" class="d-none">
-        <!-- Filtros Caja -->
-        <div class="card mb-2 d-print-none erp-filter-card">
-          <div class="card-body">
-            <form id="form-filtros-caja" class="row g-2 align-items-end">
-              <div class="col-md-4">
-                <label class="form-label">Sede</label>
-                <select id="filtro-sede-caja" class="form-select">
-                  <option value="">-- Todas las Sedes --</option>
-                  ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
-                </select>
-              </div>
-              <div class="col-md-3">
-                <label class="form-label">Desde</label>
-                <input type="date" id="filtro-desde-caja" class="form-control">
-              </div>
-              <div class="col-md-3">
-                <label class="form-label">Hasta</label>
-                <input type="date" id="filtro-hasta-caja" class="form-control">
-              </div>
-              <div class="col-md-2 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary w-100 erp-filter-submit"><i class="ti ti-filter me-1"></i>Filtrar</button>
-              </div>
-            </form>
+      <div id="sec-caja" class="rentab-panel d-none">
+        <form id="form-filtros-caja" class="rentab-filters d-print-none">
+          <div class="rentab-filters__field rentab-filters__field--wide">
+            <label class="rentab-filters__label" for="filtro-sede-caja">Sede</label>
+            <select id="filtro-sede-caja" class="form-select">
+              <option value="">Todas</option>
+              ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+            </select>
           </div>
-        </div>
-
-        <!-- KPIs Caja -->
-        <div class="row row-cards mb-2" id="kpis-caja">
-          <!-- Dinámico -->
-        </div>
-
-        <!-- Tabla Caja -->
-        <div class="card erp-table-panel">
-          <div class="card-header d-flex justify-content-between align-items-center">
-            <h3 class="card-title">Desglose Consolidado de Márgenes en Caja (Ventas y Reparaciones)</h3>
-            <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
-              <i class="ti ti-printer me-1"></i> Imprimir Reporte
+          <div class="rentab-filters__field">
+            <label class="rentab-filters__label" for="filtro-desde-caja">Desde</label>
+            <input type="date" id="filtro-desde-caja" class="form-control">
+          </div>
+          <div class="rentab-filters__field">
+            <label class="rentab-filters__label" for="filtro-hasta-caja">Hasta</label>
+            <input type="date" id="filtro-hasta-caja" class="form-control">
+          </div>
+          <div class="rentab-filters__action">
+            <button type="submit" class="btn btn-primary rentab-filters__submit">
+              <i class="ti ti-filter me-1"></i>Aplicar
             </button>
           </div>
+        </form>
+
+        <div id="kpis-caja" class="rentab-strip-host"></div>
+
+        <section class="rentab-ledger">
+          <header class="rentab-ledger__head">
+            <div>
+              <h2 class="rentab-ledger__title">Desglose · caja consolidada</h2>
+              <p class="rentab-ledger__hint">Ventas, reparaciones e instalaciones cobradas</p>
+            </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm rentab-print" onclick="window.print()">
+              <i class="ti ti-printer me-1"></i>Imprimir
+            </button>
+          </header>
           <div class="table-responsive">
-            <table class="table table-vcenter card-table table-hover">
+            <table class="table table-vcenter rentab-table">
               <thead>
                 <tr>
                   <th>Tipo</th>
@@ -244,23 +305,20 @@ export async function initRentabilidad(container) {
                   <th>Fecha</th>
                   <th>Sede</th>
                   <th>Cliente</th>
-                  <th class="text-end">Costo de Operación</th>
-                  <th class="text-end">Total Recaudado</th>
-                  <th class="text-end">Margen (COP)</th>
-                  <th class="text-center">Margen (%)</th>
+                  <th class="text-end">Costo</th>
+                  <th class="text-end">Recaudado</th>
+                  <th class="text-end">Margen</th>
+                  <th>Margen %</th>
                 </tr>
               </thead>
-              <tbody id="caja-table-body">
-                <!-- Dinámico -->
-              </tbody>
+              <tbody id="caja-table-body"></tbody>
             </table>
           </div>
-        </div>
+        </section>
       </div>
     </div>
   `;
 
-  // Referencias DOM
   const titleEl = document.getElementById('rentabilidad-title');
   const subtitleEl = document.getElementById('rentabilidad-subtitle');
   const btnReparaciones = document.getElementById('btn-tab-reparaciones');
@@ -272,93 +330,65 @@ export async function initRentabilidad(container) {
 
   const tbodyReparaciones = document.getElementById('reparaciones-table-body');
   const kpisReparaciones = document.getElementById('kpis-reparaciones');
-
   const tbodyVentas = document.getElementById('ventas-table-body');
   const kpisVentas = document.getElementById('kpis-ventas');
-
   const tbodyCaja = document.getElementById('caja-table-body');
   const kpisCaja = document.getElementById('kpis-caja');
 
-  // LÓGICA DE PESTAÑAS
+  function setTab(active) {
+    const map = [
+      { btn: btnReparaciones, sec: secReparaciones, key: 'rep' },
+      { btn: btnVentas, sec: secVentas, key: 'vta' },
+      { btn: btnCaja, sec: secCaja, key: 'caja' }
+    ];
+    map.forEach(({ btn, sec, key }) => {
+      const on = key === active;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      sec.classList.toggle('d-none', !on);
+    });
+  }
+
   btnReparaciones.addEventListener('click', () => {
-    btnReparaciones.classList.add('active');
-    btnVentas.classList.remove('active');
-    btnCaja.classList.remove('active');
-    secReparaciones.classList.remove('d-none');
-    secVentas.classList.add('d-none');
-    secCaja.classList.add('d-none');
-    titleEl.textContent = 'Análisis de Rentabilidad de Reparaciones';
-    subtitleEl.textContent = 'Solo reparaciones entregadas: ingresos reales de mano de obra y repuestos';
+    setTab('rep');
+    titleEl.textContent = 'Márgenes de reparaciones';
+    subtitleEl.textContent = 'Solo órdenes entregadas: lo cobrado frente al costo real de repuestos';
     loadReparacionesReport();
   });
 
   btnVentas.addEventListener('click', () => {
-    btnVentas.classList.add('active');
-    btnReparaciones.classList.remove('active');
-    btnCaja.classList.remove('active');
-    secVentas.classList.remove('d-none');
-    secReparaciones.classList.add('d-none');
-    secCaja.classList.add('d-none');
-    titleEl.textContent = 'Análisis de Rentabilidad de Ventas';
-    subtitleEl.textContent = 'Comparativa de precios de venta y costos de adquisición de productos del inventario';
+    setTab('vta');
+    titleEl.textContent = 'Márgenes de ventas POS';
+    subtitleEl.textContent = 'Precio de venta frente al costo de adquisición del inventario';
     loadVentasReport();
   });
 
   btnCaja.addEventListener('click', () => {
-    btnCaja.classList.add('active');
-    btnReparaciones.classList.remove('active');
-    btnVentas.classList.remove('active');
-    secCaja.classList.remove('d-none');
-    secReparaciones.classList.add('d-none');
-    secVentas.classList.add('d-none');
-    titleEl.textContent = 'Análisis de Rentabilidad de la Caja';
-    subtitleEl.textContent = 'Margen neto consolidado de todas las ventas y servicios técnicos cobrados';
+    setTab('caja');
+    titleEl.textContent = 'Márgenes de caja';
+    subtitleEl.textContent = 'Margen neto consolidado de ventas, reparaciones e instalaciones';
     loadCajaReport();
   });
 
-  // LÓGICA DE PESTAÑAS
-  btnReparaciones.addEventListener('click', () => {
-    btnReparaciones.classList.add('active');
-    btnVentas.classList.remove('active');
-    secReparaciones.classList.remove('d-none');
-    secVentas.classList.add('d-none');
-    titleEl.textContent = 'Análisis de Rentabilidad de Reparaciones';
-    subtitleEl.textContent = 'Solo reparaciones entregadas: ingresos reales de mano de obra y repuestos';
-    loadReparacionesReport();
-  });
-
-  btnVentas.addEventListener('click', () => {
-    btnVentas.classList.add('active');
-    btnReparaciones.classList.remove('active');
-    secVentas.classList.remove('d-none');
-    secReparaciones.classList.add('d-none');
-    titleEl.textContent = 'Análisis de Rentabilidad de Ventas';
-    subtitleEl.textContent = 'Comparativa de precios de venta y costos de adquisición de productos del inventario';
-    loadVentasReport();
-  });
-
-  // CARGAR REPORTE DE REPARACIONES
   async function loadReparacionesReport() {
-    tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>`;
+    tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="rentab-table__loading"><span class="spinner-border spinner-border-sm text-primary" role="status"></span> Cargando…</td></tr>`;
+    kpisReparaciones.innerHTML = '';
 
     try {
       const tecnico = document.getElementById('filtro-tecnico').value;
       const desde = document.getElementById('filtro-desde-rep').value;
       const hasta = document.getElementById('filtro-hasta-rep').value;
 
-      let query = '';
       const params = [];
       if (tecnico) params.push(`tecnico=${tecnico}`);
       if (desde) params.push(`desde=${desde}`);
       if (hasta) params.push(`hasta=${hasta}`);
-      if (params.length > 0) {
-        query = '?' + params.join('&');
-      }
+      const query = params.length ? `?${params.join('&')}` : '';
 
       const data = await apiFetch(`/reparaciones/rentabilidad/reporte${query}`);
 
       if (data.length === 0) {
-        tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-secondary">No hay reparaciones entregadas (cobradas) en el período. El cobro se registra al entregar el equipo.</td></tr>`;
+        tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="rentab-table__empty">No hay reparaciones entregadas en este período. El cobro se registra al entregar el equipo.</td></tr>`;
         kpisReparaciones.innerHTML = '';
         return;
       }
@@ -367,7 +397,7 @@ export async function initRentabilidad(container) {
       let totalCostoAcum = 0;
       let totalMargenAcum = 0;
 
-      tbodyReparaciones.innerHTML = data.map(r => {
+      tbodyReparaciones.innerHTML = data.map((r, i) => {
         const orden = r.orden || {};
         const manoObra = parseFloat(orden.costoManoObra || 0);
         const costoRepuestos = parseFloat(orden.costoRepuestos || 0);
@@ -380,100 +410,38 @@ export async function initRentabilidad(container) {
         totalCostoAcum += costoReal;
         totalMargenAcum += margen;
 
-        let badgeClass = 'bg-green-lt';
-        if (pctMargen < 20) badgeClass = 'bg-danger-lt';
-        else if (pctMargen < 45) badgeClass = 'bg-warning-lt';
-
         return `
-          <tr>
-            <td><strong class="text-blue">${orden.numeroOrden || 'N/A'}</strong></td>
-            <td>${orden.createdAt ? new Date(orden.createdAt).toLocaleDateString() : 'N/A'}</td>
-            <td>${orden.tipoEquipo || ''} ${orden.marca || ''} ${orden.modelo || ''}</td>
-            <td>${orden.tecnico ? orden.tecnico.nombre : 'N/A'}</td>
-            <td class="text-end">${formatter.format(manoObra)}</td>
-            <td class="text-end text-danger">${formatter.format(costoRepuestos)}</td>
-            <td class="text-end fw-bold text-primary">${formatter.format(cobrado)}</td>
-            <td class="text-end fw-bold ${margen >= 0 ? 'text-success' : 'text-danger'}">${formatter.format(margen)}</td>
-            <td class="text-center">
-              <span class="badge ${badgeClass} px-2 py-1">${pctMargen.toFixed(1)}%</span>
-            </td>
+          <tr style="--rentab-row:${i}">
+            <td><strong class="rentab-ref">${orden.numeroOrden || 'N/A'}</strong></td>
+            <td class="rentab-muted">${orden.createdAt ? new Date(orden.createdAt).toLocaleDateString('es-CO') : '—'}</td>
+            <td>${[orden.tipoEquipo, orden.marca, orden.modelo].filter(Boolean).join(' ') || '—'}</td>
+            <td>${orden.tecnico ? orden.tecnico.nombre : '—'}</td>
+            <td class="text-end rentab-num">${formatter.format(manoObra)}</td>
+            <td class="text-end rentab-num rentab-num--cost">${formatter.format(costoRepuestos)}</td>
+            <td class="text-end rentab-num rentab-num--ink">${formatter.format(cobrado)}</td>
+            <td class="text-end rentab-num ${margen >= 0 ? 'rentab-num--gain' : 'rentab-num--loss'}">${formatter.format(margen)}</td>
+            <td>${renderMargenMeter(pctMargen)}</td>
           </tr>
         `;
       }).join('');
 
-      const pctMargenPromedio = totalCobradoAcum > 0 ? (totalMargenAcum / totalCobradoAcum) * 100 : 0;
-
-      kpisReparaciones.innerHTML = `
-        <div class="col-sm-6 col-lg-3">
-          <div class="card card-sm">
-            <div class="card-body">
-              <div class="row align-items-center">
-                <div class="col-auto">
-                  <span class="bg-blue text-white avatar"><i class="ti ti-cash fs-1"></i></span>
-                </div>
-                <div class="col">
-                  <div class="font-weight-medium">Ingresos Totales</div>
-                  <div class="text-secondary h3 mb-0">${formatter.format(totalCobradoAcum)}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <div class="card card-sm">
-            <div class="card-body">
-              <div class="row align-items-center">
-                <div class="col-auto">
-                  <span class="bg-red text-white avatar"><i class="ti ti-calculator fs-1"></i></span>
-                </div>
-                <div class="col">
-                  <div class="font-weight-medium">Costos Operativos</div>
-                  <div class="text-secondary h3 mb-0">${formatter.format(totalCostoAcum)}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <div class="card card-sm">
-            <div class="card-body">
-              <div class="row align-items-center">
-                <div class="col-auto">
-                  <span class="bg-green text-white avatar"><i class="ti ti-trending-up fs-1"></i></span>
-                </div>
-                <div class="col">
-                  <div class="font-weight-medium">Margen Neto</div>
-                  <div class="text-secondary h3 mb-0">${formatter.format(totalMargenAcum)}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <div class="card card-sm">
-            <div class="card-body">
-              <div class="row align-items-center">
-                <div class="col-auto">
-                  <span class="bg-purple text-white avatar"><i class="ti ti-chart-pie fs-1"></i></span>
-                </div>
-                <div class="col">
-                  <div class="font-weight-medium">Margen Promedio</div>
-                  <div class="text-secondary h3 mb-0">${pctMargenPromedio.toFixed(2)}%</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
+      renderMargenStrip(kpisReparaciones, {
+        ingresos: totalCobradoAcum,
+        costos: totalCostoAcum,
+        margen: totalMargenAcum,
+        ingresoLabel: 'Ingresos',
+        costoLabel: 'Costo repuestos',
+        margenLabel: 'Margen neto'
+      });
     } catch (err) {
-      tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Error al cargar rentabilidad de reparaciones: ${err.message}</td></tr>`;
+      tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="rentab-table__empty text-danger">Error al cargar: ${err.message}</td></tr>`;
       kpisReparaciones.innerHTML = '';
     }
   }
 
-  // CARGAR REPORTE DE VENTAS
   async function loadVentasReport() {
-    tbodyVentas.innerHTML = `<tr><td colspan="10" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>`;
+    tbodyVentas.innerHTML = `<tr><td colspan="10" class="rentab-table__loading"><span class="spinner-border spinner-border-sm text-primary" role="status"></span> Cargando…</td></tr>`;
+    kpisVentas.innerHTML = '';
 
     try {
       const SedeId = document.getElementById('filtro-sede').value;
@@ -481,22 +449,18 @@ export async function initRentabilidad(container) {
       const desde = document.getElementById('filtro-desde-vta').value;
       const hasta = document.getElementById('filtro-hasta-vta').value;
 
-      let query = '';
       const params = [];
       if (SedeId) params.push(`sede=${SedeId}`);
       if (vendedor) params.push(`usuario=${vendedor}`);
       if (desde) params.push(`desde=${desde}`);
       if (hasta) params.push(`hasta=${hasta}`);
-      if (params.length > 0) {
-        query = '?' + params.join('&');
-      }
+      const query = params.length ? `?${params.join('&')}` : '';
 
-      // Reutiliza el endpoint general de ventas que ya cuenta con los filtros y la carga de precioCosto
       const ventas = await apiFetch(`/ventas${query}`);
       const ventasValidas = ventas.filter(v => v.estado !== 'anulada');
 
       if (ventasValidas.length === 0) {
-        tbodyVentas.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-secondary">No se encontraron registros de ventas concretadas.</td></tr>`;
+        tbodyVentas.innerHTML = `<tr><td colspan="10" class="rentab-table__empty">No hay ventas en este período.</td></tr>`;
         kpisVentas.innerHTML = '';
         return;
       }
@@ -505,15 +469,13 @@ export async function initRentabilidad(container) {
       let totalCostoAcum = 0;
       let totalMargenAcum = 0;
 
-      tbodyVentas.innerHTML = ventasValidas.map(v => {
+      tbodyVentas.innerHTML = ventasValidas.map((v, i) => {
         const totalVenta = parseFloat(v.total || 0);
-        
-        // Calcular costo del inventario vendido en esta venta
         let costoVenta = 0;
         const itemsInfo = (v.items || []).map(item => {
           const costoUnit = parseFloat(item.producto ? item.producto.precioCosto : 0);
-          costoVenta += (costoUnit * parseInt(item.cantidad || 0));
-          return `${item.cantidad}x ${item.producto ? item.producto.nombre : 'N/A'}`;
+          costoVenta += costoUnit * parseInt(item.cantidad || 0, 10);
+          return `${item.cantidad}× ${item.producto ? item.producto.nombre : 'N/A'}`;
         }).join(', ');
 
         const margen = totalVenta - costoVenta;
@@ -523,119 +485,38 @@ export async function initRentabilidad(container) {
         totalCostoAcum += costoVenta;
         totalMargenAcum += margen;
 
-        let badgeClass = 'bg-green-lt';
-        if (pctMargen < 15) badgeClass = 'bg-danger-lt';
-        else if (pctMargen < 35) badgeClass = 'bg-warning-lt';
-
         return `
-          <tr>
-            <td><strong class="text-blue">${v.numeroVenta || 'N/A'}</strong></td>
-            <td>${v.createdAt ? new Date(v.createdAt).toLocaleDateString() : 'N/A'}</td>
-            <td>${v.sede ? v.sede.nombre : 'N/A'}</td>
-            <td>${v.cliente ? v.cliente.nombre : 'Cliente General'}</td>
-            <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${itemsInfo}">
-              ${itemsInfo || 'N/A'}
-            </td>
-            <td>${v.usuario ? v.usuario.nombre : 'N/A'}</td>
-            <td class="text-end text-secondary">${formatter.format(costoVenta)}</td>
-            <td class="text-end fw-bold text-primary">${formatter.format(totalVenta)}</td>
-            <td class="text-end fw-bold ${margen >= 0 ? 'text-success' : 'text-danger'}">${formatter.format(margen)}</td>
-            <td class="text-center">
-              <span class="badge ${badgeClass} px-2 py-1">${pctMargen.toFixed(1)}%</span>
-            </td>
+          <tr style="--rentab-row:${i}">
+            <td><strong class="rentab-ref">${v.numeroVenta || 'N/A'}</strong></td>
+            <td class="rentab-muted">${v.createdAt ? new Date(v.createdAt).toLocaleDateString('es-CO') : '—'}</td>
+            <td>${v.sede ? v.sede.nombre : '—'}</td>
+            <td>${v.cliente ? v.cliente.nombre : 'Cliente general'}</td>
+            <td class="rentab-items" title="${itemsInfo}">${itemsInfo || '—'}</td>
+            <td>${v.usuario ? v.usuario.nombre : '—'}</td>
+            <td class="text-end rentab-num rentab-num--cost">${formatter.format(costoVenta)}</td>
+            <td class="text-end rentab-num rentab-num--ink">${formatter.format(totalVenta)}</td>
+            <td class="text-end rentab-num ${margen >= 0 ? 'rentab-num--gain' : 'rentab-num--loss'}">${formatter.format(margen)}</td>
+            <td>${renderMargenMeter(pctMargen)}</td>
           </tr>
         `;
       }).join('');
 
-      const pctMargenPromedio = totalVentasAcum > 0 ? (totalMargenAcum / totalVentasAcum) * 100 : 0;
-
-      kpisVentas.innerHTML = `
-        <div class="col-sm-6 col-lg-3">
-          <div class="card card-sm">
-            <div class="card-body">
-              <div class="row align-items-center">
-                <div class="col-auto">
-                  <span class="bg-blue text-white avatar"><i class="ti ti-cash fs-1"></i></span>
-                </div>
-                <div class="col">
-                  <div class="font-weight-medium">Ingresos Totales</div>
-                  <div class="text-secondary h3 mb-0">${formatter.format(totalVentasAcum)}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <div class="card card-sm">
-            <div class="card-body">
-              <div class="row align-items-center">
-                <div class="col-auto">
-                  <span class="bg-red text-white avatar"><i class="ti ti-calculator fs-1"></i></span>
-                </div>
-                <div class="col">
-                  <div class="font-weight-medium">Costos Operativos</div>
-                  <div class="text-secondary h3 mb-0">${formatter.format(totalCostoAcum)}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <div class="card card-sm">
-            <div class="card-body">
-              <div class="row align-items-center">
-                <div class="col-auto">
-                  <span class="bg-green text-white avatar"><i class="ti ti-trending-up fs-1"></i></span>
-                </div>
-                <div class="col">
-                  <div class="font-weight-medium">Margen Neto</div>
-                  <div class="text-secondary h3 mb-0">${formatter.format(totalMargenAcum)}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <div class="card card-sm">
-            <div class="card-body">
-              <div class="row align-items-center">
-                <div class="col-auto">
-                  <span class="bg-purple text-white avatar"><i class="ti ti-chart-pie fs-1"></i></span>
-                </div>
-                <div class="col">
-                  <div class="font-weight-medium">Margen Promedio</div>
-                  <div class="text-secondary h3 mb-0">${pctMargenPromedio.toFixed(2)}%</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
+      renderMargenStrip(kpisVentas, {
+        ingresos: totalVentasAcum,
+        costos: totalCostoAcum,
+        margen: totalMargenAcum,
+        ingresoLabel: 'Ventas',
+        costoLabel: 'Costo inventario',
+        margenLabel: 'Margen neto'
+      });
     } catch (err) {
-      tbodyVentas.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-danger">Error al cargar rentabilidad de ventas: ${err.message}</td></tr>`;
+      tbodyVentas.innerHTML = `<tr><td colspan="10" class="rentab-table__empty text-danger">Error al cargar: ${err.message}</td></tr>`;
       kpisVentas.innerHTML = '';
     }
   }
 
-  // EVENT LISTENERS DE FORMULARIOS
-  document.getElementById('form-filtros-reparaciones').addEventListener('submit', (e) => {
-    e.preventDefault();
-    loadReparacionesReport();
-  });
-
-  document.getElementById('form-filtros-ventas').addEventListener('submit', (e) => {
-    e.preventDefault();
-    loadVentasReport();
-  });
-
-  document.getElementById('form-filtros-caja').addEventListener('submit', (e) => {
-    e.preventDefault();
-    loadCajaReport();
-  });
-
-  // CARGAR REPORTE CONSOLIDADO DE CAJA (VENTAS + REPARACIONES)
   async function loadCajaReport() {
-    tbodyCaja.innerHTML = `<tr><td colspan="9" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>`;
+    tbodyCaja.innerHTML = `<tr><td colspan="9" class="rentab-table__loading"><span class="spinner-border spinner-border-sm text-primary" role="status"></span> Cargando…</td></tr>`;
     kpisCaja.innerHTML = '';
 
     try {
@@ -647,167 +528,145 @@ export async function initRentabilidad(container) {
       if (SedeId) params.push(`sede=${SedeId}`);
       if (desde) params.push(`desde=${desde}`);
       if (hasta) params.push(`hasta=${hasta}`);
-      const query = params.length > 0 ? '?' + params.join('&') : '';
+      const query = params.length ? `?${params.join('&')}` : '';
+      const queryInst = params.length
+        ? `?estado=entregada&${params.join('&')}`
+        : '?estado=entregada';
 
-      // Consolidar llamadas a los dos endpoints
-      const [ventas, reparaciones] = await Promise.all([
+      const [ventas, reparaciones, instalaciones] = await Promise.all([
         apiFetch(`/ventas${query}`).catch(() => []),
-        apiFetch(`/reparaciones${query}`).catch(() => [])
+        apiFetch(`/reparaciones${query}`).catch(() => []),
+        apiFetch(`/instalaciones${queryInst}`).catch(() => [])
       ]);
 
       const ventasValidas = ventas.filter(v => v.estado !== 'anulada');
       const reparacionesEntregadas = reparaciones.filter(o => o.estado === 'entregado');
+      const instalacionesEntregadas = (Array.isArray(instalaciones) ? instalaciones : [])
+        .filter(o => o.estado === 'entregada');
 
-      if (ventasValidas.length === 0 && reparacionesEntregadas.length === 0) {
-        tbodyCaja.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-secondary">No se encontraron registros de caja en este período.</td></tr>`;
+      if (
+        ventasValidas.length === 0 &&
+        reparacionesEntregadas.length === 0 &&
+        instalacionesEntregadas.length === 0
+      ) {
+        tbodyCaja.innerHTML = `<tr><td colspan="9" class="rentab-table__empty">No hay movimientos cobrados en este período.</td></tr>`;
         return;
       }
 
-      // Combinar los datos en una sola lista para el historial
       const itemsCaja = [];
-
       let totalIngresos = 0;
       let totalCostos = 0;
       let totalMargen = 0;
 
-      // 1. Agregar Ventas
       ventasValidas.forEach(v => {
         const totalVenta = parseFloat(v.total || 0);
         let costoVenta = 0;
         (v.items || []).forEach(item => {
           const costoUnit = parseFloat(item.producto ? item.producto.precioCosto : 0);
-          costoVenta += (costoUnit * parseInt(item.cantidad || 0));
+          costoVenta += costoUnit * parseInt(item.cantidad || 0, 10);
         });
-
         const margen = totalVenta - costoVenta;
         totalIngresos += totalVenta;
         totalCostos += costoVenta;
         totalMargen += margen;
-
         itemsCaja.push({
           tipo: 'VENTA',
+          tipoClass: 'rentab-tipo--venta',
           referencia: v.numeroVenta || 'N/A',
           fecha: new Date(v.createdAt),
-          sede: v.sede ? v.sede.nombre : 'N/A',
-          cliente: v.cliente ? v.cliente.nombre : 'Cliente General',
+          sede: v.sede ? v.sede.nombre : '—',
+          cliente: v.cliente ? v.cliente.nombre : 'Cliente general',
           costo: costoVenta,
           total: totalVenta,
-          margen: margen
+          margen
         });
       });
 
-      // 2. Agregar Reparaciones Entregadas
       reparacionesEntregadas.forEach(o => {
         const cobrado = parseFloat(o.totalCobrado || 0);
-        const costoRepuestos = parseFloat(o.costoRepuestos || 0); // costo real de repuestos
+        const costoRepuestos = parseFloat(o.costoRepuestos || 0);
         const margen = cobrado - costoRepuestos;
-
         totalIngresos += cobrado;
         totalCostos += costoRepuestos;
         totalMargen += margen;
-
         itemsCaja.push({
           tipo: 'REPARACIÓN',
+          tipoClass: 'rentab-tipo--rep',
           referencia: o.numeroOrden || 'N/A',
           fecha: new Date(o.createdAt),
-          sede: o.sede ? o.sede.nombre : 'N/A',
-          cliente: o.cliente ? o.cliente.nombre : 'Cliente General',
+          sede: o.sede ? o.sede.nombre : '—',
+          cliente: o.cliente ? o.cliente.nombre : 'Cliente general',
           costo: costoRepuestos,
           total: cobrado,
-          margen: margen
+          margen
         });
       });
 
-      // Ordenar por fecha descendente
+      instalacionesEntregadas.forEach(o => {
+        const cobrado = parseFloat(o.totalCobrado || 0);
+        const costoMateriales = parseFloat(o.costoMateriales || 0);
+        const margen = cobrado - costoMateriales;
+        totalIngresos += cobrado;
+        totalCostos += costoMateriales;
+        totalMargen += margen;
+        itemsCaja.push({
+          tipo: 'INSTALACIÓN',
+          tipoClass: 'rentab-tipo--inst',
+          referencia: o.numeroOrden || 'N/A',
+          fecha: new Date(o.updatedAt || o.createdAt),
+          sede: o.sede ? o.sede.nombre : '—',
+          cliente: o.cliente ? o.cliente.nombre : 'Cliente general',
+          costo: costoMateriales,
+          total: cobrado,
+          margen
+        });
+      });
+
       itemsCaja.sort((a, b) => b.fecha - a.fecha);
 
-      // Renderizar tabla
-      tbodyCaja.innerHTML = itemsCaja.map(item => {
+      tbodyCaja.innerHTML = itemsCaja.map((item, i) => {
         const pctMargen = item.total > 0 ? (item.margen / item.total) * 100 : 0;
-        let badgeClass = 'bg-green-lt';
-        if (pctMargen < 20) badgeClass = 'bg-danger-lt';
-        else if (pctMargen < 45) badgeClass = 'bg-warning-lt';
-
         return `
-          <tr>
-            <td><span class="badge ${item.tipo === 'VENTA' ? 'bg-blue-lt' : 'bg-purple-lt'} px-2 py-1">${item.tipo}</span></td>
-            <td><strong class="text-blue">${item.referencia}</strong></td>
-            <td>${item.fecha.toLocaleDateString()}</td>
+          <tr style="--rentab-row:${i}">
+            <td><span class="rentab-tipo ${item.tipoClass}">${item.tipo}</span></td>
+            <td><strong class="rentab-ref">${item.referencia}</strong></td>
+            <td class="rentab-muted">${item.fecha.toLocaleDateString('es-CO')}</td>
             <td>${item.sede}</td>
             <td>${item.cliente}</td>
-            <td class="text-end text-secondary">${formatter.format(item.costo)}</td>
-            <td class="text-end fw-bold text-primary">${formatter.format(item.total)}</td>
-            <td class="text-end fw-bold ${item.margen >= 0 ? 'text-success' : 'text-danger'}">${formatter.format(item.margen)}</td>
-            <td class="text-center">
-              <span class="badge ${badgeClass} px-2 py-1">${pctMargen.toFixed(1)}%</span>
-            </td>
+            <td class="text-end rentab-num rentab-num--cost">${formatter.format(item.costo)}</td>
+            <td class="text-end rentab-num rentab-num--ink">${formatter.format(item.total)}</td>
+            <td class="text-end rentab-num ${item.margen >= 0 ? 'rentab-num--gain' : 'rentab-num--loss'}">${formatter.format(item.margen)}</td>
+            <td>${renderMargenMeter(pctMargen)}</td>
           </tr>
         `;
       }).join('');
 
-      const pctMargenPromedio = totalIngresos > 0 ? (totalMargen / totalIngresos) * 100 : 0;
-
-      // Renderizar KPIs
-      kpisCaja.innerHTML = `
-        <div class="col-sm-6 col-lg-3">
-          <div class="card card-sm">
-            <div class="card-body">
-              <div class="row align-items-center">
-                <div class="col-auto"><span class="bg-blue text-white avatar"><i class="ti ti-cash fs-1"></i></span></div>
-                <div class="col">
-                  <div class="font-weight-medium">Ingresos Totales (Caja)</div>
-                  <div class="text-secondary h3 mb-0">${formatter.format(totalIngresos)}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <div class="card card-sm">
-            <div class="card-body">
-              <div class="row align-items-center">
-                <div class="col-auto"><span class="bg-red text-white avatar"><i class="ti ti-calculator fs-1"></i></span></div>
-                <div class="col">
-                  <div class="font-weight-medium">Costos Totales</div>
-                  <div class="text-secondary h3 mb-0">${formatter.format(totalCostos)}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <div class="card card-sm">
-            <div class="card-body">
-              <div class="row align-items-center">
-                <div class="col-auto"><span class="bg-green text-white avatar"><i class="ti ti-trending-up fs-1"></i></span></div>
-                <div class="col">
-                  <div class="font-weight-medium">Rentabilidad Neta (Margen)</div>
-                  <div class="text-secondary h3 mb-0 text-success fw-bold">${formatter.format(totalMargen)}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="col-sm-6 col-lg-3">
-          <div class="card card-sm">
-            <div class="card-body">
-              <div class="row align-items-center">
-                <div class="col-auto"><span class="bg-purple text-white avatar"><i class="ti ti-chart-pie fs-1"></i></span></div>
-                <div class="col">
-                  <div class="font-weight-medium">Margen Promedio</div>
-                  <div class="text-secondary h3 mb-0">${pctMargenPromedio.toFixed(2)}%</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
+      renderMargenStrip(kpisCaja, {
+        ingresos: totalIngresos,
+        costos: totalCostos,
+        margen: totalMargen,
+        ingresoLabel: 'Recaudado',
+        costoLabel: 'Costo operación',
+        margenLabel: 'Margen neto'
+      });
     } catch (err) {
-      tbodyCaja.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Error al cargar rentabilidad de caja: ${err.message}</td></tr>`;
+      tbodyCaja.innerHTML = `<tr><td colspan="9" class="rentab-table__empty text-danger">Error al cargar: ${err.message}</td></tr>`;
       kpisCaja.innerHTML = '';
     }
   }
 
-  // Carga inicial
+  document.getElementById('form-filtros-reparaciones').addEventListener('submit', (e) => {
+    e.preventDefault();
+    loadReparacionesReport();
+  });
+  document.getElementById('form-filtros-ventas').addEventListener('submit', (e) => {
+    e.preventDefault();
+    loadVentasReport();
+  });
+  document.getElementById('form-filtros-caja').addEventListener('submit', (e) => {
+    e.preventDefault();
+    loadCajaReport();
+  });
+
   loadReparacionesReport();
 }

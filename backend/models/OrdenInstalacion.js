@@ -39,6 +39,12 @@ const OrdenInstalacion = sequelize.define('OrdenInstalacion', {
     type: DataTypes.DECIMAL(15, 2),
     defaultValue: 0.00
   },
+  /** Si true, el valor del servicio ya incluye materiales: totalCobrado = valorServicio */
+  precioCerrado: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    allowNull: false
+  },
   costoMateriales: {
     type: DataTypes.DECIMAL(15, 2),
     defaultValue: 0.00
