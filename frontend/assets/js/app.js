@@ -5,7 +5,7 @@ import { applyDocumentBranding, getCachedBrand, resolveAssetUrl } from './utils/
 import { isPublicSeguimientoLocation } from './modules/seguimiento-reparacion.js';
 
 /** Bump with index.html ?v= so dynamic ES modules are not stuck on CDN/browser cache. */
-const ASSET_V = '3.0.22';
+const ASSET_V = '3.0.59';
 const importModule = (path) => import(`${path}?v=${ASSET_V}`);
 
 // Anular global alert del navegador con una notificación Toast Premium animada
@@ -209,6 +209,18 @@ function getModuleLabel(rawHash, rol) {
   return labels[hash] || 'Inicio';
 }
 
+/** True si el rol puede abrir esa ruta (menú o rutas satélite permitidas). */
+function canAccessModule(rol, hash) {
+  const base = (hash || '').split('?')[0] || '#/dashboard';
+  const modulos = modulosPorRol[rol] || [];
+  if (modulos.some((m) => m.hash.split('?')[0] === base)) return true;
+  // Series/IMEI: quien ve inventario
+  if (base === '#/series' && modulos.some((m) => m.hash.split('?')[0] === '#/inventario')) return true;
+  // Auditoría vive bajo Configuración
+  if (base === '#/auditlog' && modulos.some((m) => m.hash.split('?')[0] === '#/config')) return true;
+  return false;
+}
+
 function updateTopbarContext(rawHash) {
   const usuario = getUsuario();
   if (!usuario) return;
@@ -272,6 +284,16 @@ async function router() {
   if (hash === '#/login') {
     const modulos = modulosPorRol[usuarioActual.rol] || [];
     window.location.hash = modulos[0] ? modulos[0].hash : '#/dashboard';
+    return;
+  }
+
+  // Bloquear deep-links a módulos fuera del rol (p. ej. cajero → #/instalaciones)
+  if (!canAccessModule(usuarioActual.rol, hash)) {
+    const modulos = modulosPorRol[usuarioActual.rol] || [];
+    const fallback = modulos[0]?.hash || '#/dashboard';
+    if (rawHash !== fallback) {
+      window.location.hash = fallback;
+    }
     return;
   }
 
