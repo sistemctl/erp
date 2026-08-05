@@ -14,7 +14,7 @@ function escapeHtml(value) {
 
 function buildLabelHtml(product, options = {}) {
   const { includePrice = false } = options;
-  const nombre = escapeHtml((product.nombre || 'Producto').slice(0, 42));
+  const nombre = escapeHtml((product.nombre || 'Producto').slice(0, 48));
   const codigo = escapeHtml(product.codigoBarras || '');
   const priceHtml = includePrice && product.precioVenta != null
     ? `<div class="barcode-label__price">${escapeHtml(priceFormatter.format(Number(product.precioVenta)))}</div>`
@@ -36,12 +36,15 @@ function renderBarcodesInContainer(container) {
     const value = svg.getAttribute('data-barcode');
     if (!value) return;
     try {
+      // Ancho fino: cabe en rollo térmico 58 mm sin cortar barras
       window.JsBarcode(svg, value, {
         format: 'CODE128',
-        width: 1.4,
-        height: 42,
+        width: 1.15,
+        height: 36,
         displayValue: false,
-        margin: 2
+        margin: 0,
+        background: '#ffffff',
+        lineColor: '#000000'
       });
     } catch (_) {
       /* código inválido para Code128 */

@@ -10,6 +10,7 @@ const {
   StockSede,
   MovimientoInventario,
   Factura,
+  CuentaPorCobrar,
   Caja,
   ConfiguracionSistema,
   sequelize
@@ -282,7 +283,7 @@ exports.updateEstado = async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const { estado, metodoPago, pagos } = req.body;
+    const { estado, metodoPago, pagos, esCredito } = req.body;
 
     if (!['recibido', 'diagnostico', 'en_reparacion', 'listo', 'entregado', 'cancelado'].includes(estado)) {
       return res.status(400).json({ error: 'Estado de reparación inválido.' });
@@ -305,6 +306,8 @@ exports.updateEstado = async (req, res, next) => {
       }
 
       const totalNum = parseFloat(orden.totalCobrado || 0);
+      let totalPagado = totalNum;
+      let saldoPendiente = 0;
 
       // Si se envía un desglose de pagos mixtos
       if (pagos) {
@@ -314,7 +317,29 @@ exports.updateEstado = async (req, res, next) => {
         const tarjetaRec = parseFloat(pagos.tarjeta || 0);
         const transferenciaRec = parseFloat(pagos.transferencia || 0);
 
-        const totalPagado = efectivoRec + nequiRec + daviplataRec + tarjetaRec + transferenciaRec;
+        totalPagado = efectivoRec + nequiRec + daviplataRec + tarjetaRec + transferenciaRec;
+
+        if (![efectivoRec, nequiRec, daviplataRec, tarjetaRec, transferenciaRec].every((monto) => (
+          Number.isFinite(monto) && monto >= 0
+        ))) {
+          throw new Error('Los montos de pago deben ser valores positivos o cero.');
+        }
+
+        saldoPendiente = Math.max(0, totalNum - totalPagado);
+        if (saldoPendiente > 0) {
+          if (!esCredito) {
+            throw new Error('El pago no cubre el total. Active la opción de crédito para registrar el saldo pendiente.');
+          }
+
+          const cliente = await Cliente.findByPk(orden.clienteId, { transaction });
+          const esConsumidorFinal = !cliente ||
+            cliente.nombre === 'Consumidor Final' ||
+            ['222222222', '222222222-0', '222222222222'].includes(cliente.documento);
+
+          if (esConsumidorFinal) {
+            throw new Error('Debe asignar un cliente registrado para entregar una reparación a crédito.');
+          }
+        }
 
         let efectivoParaCaja = efectivoRec;
         if (totalPagado > totalNum) {
@@ -358,7 +383,7 @@ exports.updateEstado = async (req, res, next) => {
         const diasPlazo = await getDiasPlazoCredito(ConfiguracionSistema);
         const fechaVencimiento = calcularFechaVencimientoCredito(diasPlazo);
         
-        await Factura.create({
+        const factura = await Factura.create({
           numeroFactura,
           ordenReparacionId: id,
           clienteId: orden.clienteId,
@@ -366,9 +391,21 @@ exports.updateEstado = async (req, res, next) => {
           subtotal: totalNum / 1.19,
           iva: (totalNum / 1.19) * 0.19,
           total: totalNum,
-          estado: 'pagada',
+          estado: saldoPendiente > 0 ? 'abono_parcial' : 'pagada',
           fechaVencimiento
         }, { transaction });
+
+        if (saldoPendiente > 0) {
+          await CuentaPorCobrar.create({
+            facturaId: factura.id,
+            clienteId: orden.clienteId,
+            totalOriginal: totalNum,
+            totalAbonado: totalPagado,
+            saldoPendiente,
+            fechaVencimiento,
+            estado: 'al_dia'
+          }, { transaction });
+        }
       }
     }
 

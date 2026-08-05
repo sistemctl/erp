@@ -76,12 +76,12 @@ export async function initReparaciones(container) {
 
       <div class="rep-kanban-board rep-kanban-board--view-activas" role="region" aria-label="Tablero de reparaciones">
         <div class="rep-kanban-track">
-        ${renderKanbanColumn('Recibido', 'recibido', 'rep-kanban-col--recibido', 'active')}
-        ${renderKanbanColumn('En diagnóstico', 'diagnostico', 'rep-kanban-col--diagnostico', 'active')}
-        ${renderKanbanColumn('En reparación', 'en_reparacion', 'rep-kanban-col--reparacion', 'active')}
-        ${renderKanbanColumn('Listo para entrega', 'listo', 'rep-kanban-col--listo', 'active')}
-        ${renderKanbanColumn('Entregado', 'entregado', 'rep-kanban-col--entregado', 'archive')}
-        ${renderKanbanColumn('Cancelado', 'cancelado', 'rep-kanban-col--cancelado', 'archive')}
+        ${renderKanbanColumn('Recibido', 'recibido', 'rep-kanban-col--recibido', 'active', 'ti-inbox')}
+        ${renderKanbanColumn('En diagnóstico', 'diagnostico', 'rep-kanban-col--diagnostico', 'active', 'ti-search')}
+        ${renderKanbanColumn('En reparación', 'en_reparacion', 'rep-kanban-col--reparacion', 'active', 'ti-tool')}
+        ${renderKanbanColumn('Listo para entrega', 'listo', 'rep-kanban-col--listo', 'active', 'ti-package-export')}
+        ${renderKanbanColumn('Entregado', 'entregado', 'rep-kanban-col--entregado', 'archive', 'ti-circle-check')}
+        ${renderKanbanColumn('Cancelado', 'cancelado', 'rep-kanban-col--cancelado', 'archive', 'ti-circle-x')}
         </div>
       </div>
     </div>
@@ -292,6 +292,11 @@ export async function initReparaciones(container) {
                   <div class="fs-4 fw-bold">Total a Cobrar:</div>
                   <div class="h2 mb-0 fw-bold text-primary" id="entregar-total-txt">$ 0</div>
                 </div>
+                <label class="form-check form-switch mt-3 mb-0">
+                  <input class="form-check-input" type="checkbox" id="entregar-credito">
+                  <span class="form-check-label fw-bold text-primary">Entregar con saldo a crédito</span>
+                </label>
+                <div class="text-secondary small mt-1" id="entregar-credito-ayuda">El saldo pendiente se registrará en la cartera del cliente.</div>
               </div>
               <div class="col-md-6">
                 <h4 class="mb-3 text-secondary">Desglose de Pago (Mixto)</h4>
@@ -355,11 +360,11 @@ export async function initReparaciones(container) {
   const modalEntregar = new bootstrap.Modal(document.getElementById('modal-entregar-reparacion'));
 
   // Renderizar columnas de Kanban
-  function renderKanbanColumn(title, statusKey, colorClass, phase = 'active') {
+  function renderKanbanColumn(title, statusKey, colorClass, phase = 'active', icon = 'ti-circle') {
     return `
       <div class="rep-kanban-col ${colorClass}" data-phase="${phase}" data-status-col="${statusKey}">
         <div class="rep-kanban-col__head">
-          <h3 class="rep-kanban-col__title">${title}</h3>
+          <h3 class="rep-kanban-col__title"><i class="ti ${icon}" aria-hidden="true"></i>${title}</h3>
           <span class="rep-kanban-col__count" id="badge-count-${statusKey}">0</span>
         </div>
         <div class="rep-kanban-col__body kanban-col" data-status="${statusKey}">
@@ -402,9 +407,9 @@ export async function initReparaciones(container) {
 
     statsEl.innerHTML = `
       <span class="rep-stat-pill"><strong>${activas}</strong> activas</span>
-      <span class="rep-stat-pill rep-stat-pill--bench"><strong>${enTaller}</strong> en banco</span>
-      <span class="rep-stat-pill rep-stat-pill--ready"><strong>${counts.listo}</strong> listas</span>
-      <span class="rep-stat-pill rep-stat-pill--done"><strong>${counts.entregado}</strong> entregadas</span>
+      <span class="rep-stat-pill rep-stat-pill--bench"><strong>${enTaller}</strong> en proceso</span>
+      <span class="rep-stat-pill rep-stat-pill--ready"><strong>${counts.listo}</strong> por entregar</span>
+      <span class="rep-stat-pill rep-stat-pill--done"><strong>${counts.entregado}</strong> cerradas</span>
     `;
   }
 
@@ -453,7 +458,7 @@ export async function initReparaciones(container) {
           </div>
           ${o.imei ? `<div class="rep-card__meta" title="IMEI/Serie: ${o.imei}"><i class="ti ti-device-mobile" aria-hidden="true"></i><span>${o.imei}</span></div>` : ''}
           <div class="rep-card__footer">
-            <div class="rep-card__tec">
+            <div class="rep-card__tec ${o.tecnico ? '' : 'rep-card__tec--unassigned'}">
               <i class="ti ti-tool" aria-hidden="true"></i>
               ${o.tecnico ? o.tecnico.nombre.split(' ')[0] : 'Sin asignar'}
             </div>
@@ -495,8 +500,11 @@ export async function initReparaciones(container) {
     }
 
     document.querySelectorAll('.kanban-col').forEach((col) => {
-      if (col.querySelector('.rep-card')) return;
-      col.innerHTML = '<div class="rep-kanban-empty">Sin órdenes en esta etapa</div>';
+      const kanbanColumn = col.closest('.rep-kanban-col');
+      const hasOrders = Boolean(col.querySelector('.rep-card'));
+      kanbanColumn?.classList.toggle('is-empty', !hasOrders);
+      if (hasOrders) return;
+      col.innerHTML = '<div class="rep-kanban-empty"><i class="ti ti-inbox-off" aria-hidden="true"></i><span>Sin órdenes en esta etapa</span></div>';
     });
 
     updateBoardStats(counts);
@@ -1154,6 +1162,14 @@ export async function initReparaciones(container) {
     document.getElementById('entregar-pay-daviplata').value = 0;
     document.getElementById('entregar-pay-tarjeta').value = 0;
     document.getElementById('entregar-pay-transferencia').value = 0;
+    const creditoInput = document.getElementById('entregar-credito');
+    const esConsumidorFinal = !o.cliente || o.cliente.nombre === 'Consumidor Final' ||
+      ['222222222', '222222222-0', '222222222222'].includes(o.cliente.documento);
+    creditoInput.checked = false;
+    creditoInput.disabled = esConsumidorFinal;
+    document.getElementById('entregar-credito-ayuda').textContent = esConsumidorFinal
+      ? 'Asigne un cliente registrado a la orden para poder dejar saldo a crédito.'
+      : 'El saldo pendiente se registrará en la cartera del cliente.';
 
     calcularTotalesEntrega();
 
@@ -1175,21 +1191,27 @@ export async function initReparaciones(container) {
     const cambioVal = document.getElementById('entregar-cambio');
     const labelCambio = document.getElementById('entregar-label-cambio');
     const submitBtn = document.getElementById('entregar-submit-btn');
+    const esCredito = document.getElementById('entregar-credito').checked;
 
     const diferencia = totalIngresado - currentTotalCobrar;
 
     if (diferencia < 0) {
-      labelCambio.textContent = 'Faltante (Pendiente):';
+      labelCambio.textContent = esCredito ? 'Saldo a Crédito:' : 'Faltante (Pendiente):';
       cambioVal.textContent = formatter.format(Math.abs(diferencia));
-      cambioVal.classList.add('text-danger');
+      cambioVal.classList.toggle('text-danger', !esCredito);
+      cambioVal.classList.toggle('text-primary', esCredito);
       cambioVal.classList.remove('text-success');
-      submitBtn.disabled = true;
+      submitBtn.disabled = !esCredito;
+      submitBtn.innerHTML = esCredito
+        ? '<i class="ti ti-file-invoice me-1"></i>Entregar a Crédito'
+        : '<i class="ti ti-check me-1"></i>Cobrar y Entregar';
     } else {
       labelCambio.textContent = 'Cambio (Vuelto):';
       cambioVal.textContent = formatter.format(diferencia);
       cambioVal.classList.add('text-success');
-      cambioVal.classList.remove('text-danger');
+      cambioVal.classList.remove('text-danger', 'text-primary');
       submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="ti ti-check me-1"></i>Cobrar y Entregar';
     }
   }
 
@@ -1197,6 +1219,7 @@ export async function initReparaciones(container) {
   document.querySelectorAll('.input-entregar-pago').forEach(input => {
     input.addEventListener('input', calcularTotalesEntrega);
   });
+  document.getElementById('entregar-credito').addEventListener('change', calcularTotalesEntrega);
 
   // Submit Entregar/Cobrar Form
   document.getElementById('form-entregar-reparacion').addEventListener('submit', async (e) => {
@@ -1218,7 +1241,8 @@ export async function initReparaciones(container) {
         method: 'PUT',
         body: JSON.stringify({
           estado: 'entregado',
-          pagos
+          pagos,
+          esCredito: document.getElementById('entregar-credito').checked
         })
       });
 
@@ -1232,7 +1256,11 @@ export async function initReparaciones(container) {
       
       await loadData();
       fillKanban(document.getElementById('kanban-search').value);
-      showToast('Éxito', 'Reparación cobrada y entregada correctamente.', 'success');
+      const totalPagado = Object.values(pagos).reduce((total, monto) => total + monto, 0);
+      const fueCredito = document.getElementById('entregar-credito').checked && totalPagado < currentTotalCobrar;
+      showToast('Éxito', fueCredito
+        ? 'Reparación entregada y saldo registrado en cartera.'
+        : 'Reparación cobrada y entregada correctamente.', 'success');
     } catch (err) {
       const { showToast } = await import('../utils/toast.js').catch(() => ({ showToast: alert }));
       showToast('Error', err.message, 'error');

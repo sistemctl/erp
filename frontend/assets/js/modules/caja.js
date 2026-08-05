@@ -4,6 +4,7 @@ import { getLocalDateStr } from '../utils/date.js';
 import { showToast, showConfirm } from '../utils/toast.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { erpAction } from '../utils/action-buttons.js';
+import { printCierreTicket } from '../utils/cierre-ticket-print.js';
 
 export async function initCaja(container) {
   const usuario = getUsuario();
@@ -360,12 +361,22 @@ export async function initCaja(container) {
         </div>
       </div>
     </div>
+
+    <!-- Modal Reporte Z Cierre -->
+    <div class="modal modal-blur fade" id="modal-cierre-z-report" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content" id="cierre-z-modal-content">
+          <!-- Dinámico -->
+        </div>
+      </div>
+    </div>
   `;
 
   const modalApertura = new bootstrap.Modal(document.getElementById('modal-apertura'));
   const modalEgreso = new bootstrap.Modal(document.getElementById('modal-egreso'));
   const modalCierre = new bootstrap.Modal(document.getElementById('modal-cierre'));
   const modalDetallePast = new bootstrap.Modal(document.getElementById('modal-detalle-past-caja'));
+  const modalCierreZReport = new bootstrap.Modal(document.getElementById('modal-cierre-z-report'));
 
   if (isAdminOrContador) {
     const selectSede = document.getElementById('select-caja-sede');
@@ -786,6 +797,106 @@ export async function initCaja(container) {
     }
   });
 
+  // Mostrar Modal interactivo del Reporte Z
+  const mostrarModalReporteZ = async (cajaId) => {
+    const content = document.getElementById('cierre-z-modal-content');
+    if (!content) return;
+
+    content.innerHTML = `
+      <div class="modal-body text-center py-5">
+        <div class="spinner-border text-primary" role="status"></div>
+        <div class="mt-2 text-secondary">Cargando Informe Z de Cierre…</div>
+      </div>
+    `;
+    modalCierreZReport.show();
+
+    try {
+      const zData = await apiFetch(`/caja/${cajaId}/detalle-z`);
+      const { caja, detalle } = zData;
+
+      const diff = parseFloat(caja.diferencia || 0);
+      let diffBadge = '<span class="badge bg-success-lt fs-3 px-3 py-2"><i class="ti ti-check me-1"></i> Caja Cuadrada a la Perfección</span>';
+      if (diff > 0) {
+        diffBadge = `<span class="badge bg-warning-lt fs-3 px-3 py-2"><i class="ti ti-alert-triangle me-1"></i> Sobrante de Caja: ${formatter.format(diff)}</span>`;
+      } else if (diff < 0) {
+        diffBadge = `<span class="badge bg-danger-lt fs-3 px-3 py-2"><i class="ti ti-alert-circle me-1"></i> Faltante de Caja: ${formatter.format(Math.abs(diff))}</span>`;
+      }
+
+      content.innerHTML = `
+        <div class="modal-header bg-light py-3">
+          <h4 class="modal-title">
+            <i class="ti ti-report-money text-primary me-2"></i>Informe Z de Cierre de Caja #${caja.id}
+          </h4>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="text-center mb-4">
+            ${diffBadge}
+            <div class="text-secondary small mt-2">Sede: ${caja.sede?.nombre || 'General'} | Fecha: ${caja.fecha} | Cierre por: ${caja.usuarioCierre?.nombre || 'N/A'}</div>
+          </div>
+
+          ${buildDesglosePagosHtml(caja, {
+            title: 'Resumen de Ventas e Ingresos por Medio de Pago',
+            totalLabel: 'Total Ventas',
+            showNote: false,
+            embedded: true
+          })}
+
+          <div class="card mt-3 mb-3">
+            <div class="card-header py-2"><h4 class="card-title mb-0">Arqueo de Efectivo</h4></div>
+            <div class="card-body p-0">
+              <table class="table table-sm mb-0">
+                <tbody>
+                  <tr><th class="ps-3">Fondo Base (Apertura)</th><td class="text-end pe-3">${formatter.format(caja.montoApertura)}</td></tr>
+                  <tr><th class="ps-3">Efectivo Ingresado por Ventas</th><td class="text-end pe-3 text-success">+${formatter.format(caja.totalVentasEfectivo)}</td></tr>
+                  <tr><th class="ps-3 text-danger">Retiros / Egresos Realizados</th><td class="text-end pe-3 text-danger">-${formatter.format(caja.totalEgresos)}</td></tr>
+                  <tr class="table-light"><th class="ps-3">Efectivo Esperado Teórico</th><td class="text-end pe-3 fw-bold">${formatter.format(parseFloat(caja.montoApertura) + parseFloat(caja.totalVentasEfectivo) - parseFloat(caja.totalEgresos))}</td></tr>
+                  <tr class="table-light"><th class="ps-3">Diferencia Final</th><td class="text-end pe-3 fw-bold ${diff >= 0 ? 'text-success' : 'text-danger'}">${formatter.format(caja.diferencia)}</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          ${caja.observaciones ? `
+            <div class="alert alert-warning py-2 mb-0">
+              <strong>Observaciones de Cierre:</strong> ${caja.observaciones}
+            </div>
+          ` : ''}
+        </div>
+        <div class="modal-footer d-flex justify-content-between flex-wrap gap-2">
+          <div>
+            <button type="button" id="btn-z-ir-historia" class="btn btn-outline-secondary">
+              <i class="ti ti-history me-1"></i> Ver en Historial
+            </button>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="button" id="btn-z-ticket-print" class="btn btn-dark">
+              <i class="ti ti-printer me-1"></i> Imprimir Ticket Térmico Z
+            </button>
+            <a href="/api/caja/${caja.id}/reporte-z-pdf" target="_blank" class="btn btn-primary">
+              <i class="ti ti-file-pdf me-1"></i> Descargar PDF (Reporte Z)
+            </a>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('btn-z-ticket-print')?.addEventListener('click', () => {
+        printCierreTicket(zData);
+      });
+
+      document.getElementById('btn-z-ir-historia')?.addEventListener('click', async () => {
+        modalCierreZReport.hide();
+        await abrirHistorialConCaja(caja.id, caja.fecha);
+      });
+    } catch (err) {
+      content.innerHTML = `
+        <div class="modal-body py-4">
+          <div class="alert alert-danger mb-0">Error al cargar Informe Z: ${err.message}</div>
+        </div>
+      `;
+    }
+  };
+
   // Submit Cierre
   document.getElementById('form-cierre').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -805,21 +916,13 @@ export async function initCaja(container) {
         body: JSON.stringify(data)
       });
       modalCierre.hide();
-      
-      const diff = parseFloat(res.caja.diferencia);
-      if (diff === 0) {
-        showToast('Cierre Exitoso', 'Cierre exitoso. Caja cuadriculada a la perfección.', 'success');
-      } else if (diff > 0) {
-        showToast('Cierre Exitoso', `Cierre exitoso. Se detectó un SOBRANTE de caja de: ${formatter.format(diff)}`, 'warning');
-      } else {
-        showToast('Cierre Exitoso', `Cierre exitoso. Se detectó un FALTANTE de caja de: ${formatter.format(Math.abs(diff))}`, 'warning');
-      }
+
+      showToast('Cierre Exitoso', 'Caja cerrada exitosamente. Desplegando Reporte Z…', 'success');
 
       loadCajaStatus();
 
       if (res.caja?.id) {
-        showToast('Ver análisis', 'Abriendo el desglose del cierre en Historial…', 'info');
-        await abrirHistorialConCaja(res.caja.id, res.caja.fecha);
+        await mostrarModalReporteZ(res.caja.id);
       }
     } catch (err) {
       showToast('Error', err.message, 'error');
@@ -999,10 +1102,27 @@ export async function initCaja(container) {
           </div>
         ` : ''}
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer d-flex justify-content-between">
+        <div class="d-flex gap-2">
+          <a href="/api/caja/${c.id}/reporte-z-pdf" target="_blank" class="btn btn-outline-primary">
+            <i class="ti ti-file-pdf me-1"></i> Descargar Reporte Z (PDF)
+          </a>
+          <button type="button" class="btn btn-outline-dark btn-print-past-ticket" data-id="${c.id}">
+            <i class="ti ti-printer me-1"></i> Ticket Térmico
+          </button>
+        </div>
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
       </div>
     `;
+
+    content.querySelector('.btn-print-past-ticket')?.addEventListener('click', async () => {
+      try {
+        const zData = await apiFetch(`/caja/${c.id}/detalle-z`);
+        printCierreTicket(zData);
+      } catch (err) {
+        showToast('Error', err.message, 'error');
+      }
+    });
 
     modalDetallePast.show();
   }

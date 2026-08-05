@@ -543,7 +543,8 @@ export async function initInventario(container) {
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <p class="text-secondary mb-3" id="etiqueta-producto-nombre">—</p>
+            <p class="text-secondary mb-1" id="etiqueta-producto-nombre">—</p>
+            <p class="text-secondary small mb-3">Optimizado para impresora térmica de etiquetas adhesivas <strong>58×40 mm</strong> (USB económica).</p>
             <div class="row g-3">
               <div class="col-sm-6">
                 <label class="form-label" for="etiqueta-copias">Cantidad de copias</label>

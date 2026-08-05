@@ -295,8 +295,8 @@ export async function initPos(container) {
               <div class="row">
                 <div class="col-6">
                   <div class="mb-3">
-                    <label class="form-label">Descuento (%)</label>
-                    <input type="number" id="override-descuento-pct" class="form-control" min="0" max="100" step="0.1">
+                    <label class="form-label">Descuento / aumento (%)</label>
+                    <input type="number" id="override-descuento-pct" class="form-control" max="100" step="0.1" aria-describedby="override-ajuste-ayuda">
                   </div>
                 </div>
                 <div class="col-6">
@@ -305,6 +305,9 @@ export async function initPos(container) {
                     <input type="number" id="override-precio-mod" class="form-control" min="0" step="0.01">
                   </div>
                 </div>
+              </div>
+              <div id="override-ajuste-ayuda" class="text-secondary small mt-n2">
+                Use un valor negativo para aumentar el precio; uno positivo aplica descuento.
               </div>
 
               <!-- Alerta de venta a pérdida -->

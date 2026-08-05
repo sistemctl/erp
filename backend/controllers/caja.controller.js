@@ -1,7 +1,8 @@
-const { Caja, EgresoCaja, CategoriaEgreso, Usuario, ConfiguracionSistema, Sede, sequelize } = require('../models');
+const { Caja, EgresoCaja, CategoriaEgreso, Usuario, ConfiguracionSistema, Sede, Venta, Cliente, Factura, PagoVenta, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const { resolveQuerySede, resolveActionSede } = require('../utils/sede');
 const { findCajaAbierta, isCajaCompartidaSede } = require('../utils/caja-abierta');
+const { generarCierrePDF } = require('../utils/cierre-pdf');
 
 function getLocalDateStr(date = new Date()) {
   const d = new Date(date);
@@ -22,7 +23,8 @@ exports.aperturaCaja = async (req, res, next) => {
       return res.status(400).json({ error: 'Debe seleccionar la sede para abrir caja.' });
     }
 
-    if (montoApertura === undefined || parseFloat(montoApertura) < 0) {
+    const parsedMonto = parseFloat(montoApertura);
+    if (montoApertura === undefined || isNaN(parsedMonto) || parsedMonto < 0) {
       return res.status(400).json({ error: 'Monto de apertura inválido.' });
     }
 
@@ -80,7 +82,8 @@ exports.egresoCaja = async (req, res, next) => {
     const { monto, categoriaId, motivo, pinAdmin, sedeId: bodySedeId } = req.body;
     const sedeId = await resolveActionSede(bodySedeId, req.usuario, Sede, transaction);
 
-    if (!monto || parseFloat(monto) <= 0 || !categoriaId || !motivo) {
+    const parsedMonto = parseFloat(monto);
+    if (!monto || isNaN(parsedMonto) || parsedMonto <= 0 || !categoriaId || !motivo) {
       return res.status(400).json({ error: 'Parámetros de egreso incompletos o monto inválido.' });
     }
 
@@ -213,11 +216,11 @@ exports.cierreCaja = async (req, res, next) => {
       estado: 'cerrada',
       usuarioCierreId: req.usuario.userId,
       horaCierre: new Date(),
-      totalVentasEfectivo: parseFloat(totalVentasEfectivo || 0),
-      totalVentasNequi: parseFloat(totalVentasNequi || 0),
-      totalVentasDaviplata: parseFloat(totalVentasDaviplata || 0),
-      totalVentasTarjeta: parseFloat(totalVentasTarjeta || 0),
-      totalVentasTransferencia: parseFloat(totalVentasTransferencia || 0),
+      // Preservar totalVentasEfectivo acumulado por ingresos de ventas reales
+      totalVentasNequi: totalVentasNequi !== undefined ? parseFloat(totalVentasNequi || 0) : parseFloat(caja.totalVentasNequi),
+      totalVentasDaviplata: totalVentasDaviplata !== undefined ? parseFloat(totalVentasDaviplata || 0) : parseFloat(caja.totalVentasDaviplata),
+      totalVentasTarjeta: totalVentasTarjeta !== undefined ? parseFloat(totalVentasTarjeta || 0) : parseFloat(caja.totalVentasTarjeta),
+      totalVentasTransferencia: totalVentasTransferencia !== undefined ? parseFloat(totalVentasTransferencia || 0) : parseFloat(caja.totalVentasTransferencia),
       diferencia,
       observaciones: observaciones || ''
     }, { transaction });
@@ -261,14 +264,20 @@ exports.getReporteCaja = async (req, res, next) => {
       return res.status(400).json({ error: 'Debe indicar la sede para consultar la caja.' });
     }
 
-    // 1) Priorizar caja ABIERTA según política (compartida por sede o solo del usuario)
-    let { caja } = await findCajaAbierta({
-      sedeId: querySedeId,
-      usuarioId: req.usuario.userId,
-      include: cajaReporteInclude
-    });
+    const hoyStr = getLocalDateStr();
+    let caja = null;
 
-    // 2) Si no hay abierta aplicable, devolver el registro de la fecha pedida (histórico / cerrada)
+    // 1) Si se consulta hoy o no se envió fecha, priorizar caja ABIERTA
+    if (!fecha || queryFecha === hoyStr) {
+      const resAbierta = await findCajaAbierta({
+        sedeId: querySedeId,
+        usuarioId: req.usuario.userId,
+        include: cajaReporteInclude
+      });
+      caja = resAbierta.caja;
+    }
+
+    // 2) Si no hay abierta o es consulta de fecha pasada, buscar registro en esa fecha
     if (!caja) {
       caja = await Caja.findOne({
         where: {
@@ -384,14 +393,10 @@ exports.liberarCaja = async (req, res, next) => {
       return res.status(400).json({ error: 'No hay ninguna caja abierta en esta sede para liberar.' });
     }
 
-    // Calcular montos teóricos para el cierre automático sin discrepancias
-    const efectivoTeorico = parseFloat(caja.montoApertura) + parseFloat(caja.totalVentasEfectivo) - parseFloat(caja.totalEgresos);
-
     await caja.update({
       estado: 'cerrada',
       usuarioCierreId: req.usuario.userId,
       horaCierre: new Date(),
-      totalVentasEfectivo: efectivoTeorico, // Cuadramos con el saldo teórico
       diferencia: 0,
       observaciones: 'Liberación forzada / Cierre administrativo por Administrador.'
     }, { transaction });
@@ -416,4 +421,107 @@ exports.liberarCaja = async (req, res, next) => {
     next(error);
   }
 };
+
+// --- OBTENER DETALLE CONSOLIDADO DEL CIERRE Z ---
+
+async function fetchCierreZData(cajaId, usuario) {
+  const caja = await Caja.findByPk(cajaId, {
+    include: [
+      { model: Sede, as: 'sede', attributes: ['id', 'nombre'] },
+      { model: Usuario, as: 'usuarioApertura', attributes: ['id', 'nombre'] },
+      { model: Usuario, as: 'usuarioCierre', attributes: ['id', 'nombre'] },
+      {
+        model: EgresoCaja,
+        as: 'egresos',
+        include: [
+          { model: CategoriaEgreso, as: 'categoria', attributes: ['nombre'] },
+          { model: Usuario, as: 'usuario', attributes: ['nombre'] }
+        ]
+      }
+    ]
+  });
+
+  if (!caja) return null;
+
+  // Rango de fechas de la sesión de caja
+  const desde = caja.createdAt;
+  const hasta = caja.horaCierre || caja.updatedAt || new Date();
+
+  // Consultar Ventas de la sede dentro del rango de tiempo
+  const ventas = await Venta.findAll({
+    where: {
+      sedeId: caja.sedeId,
+      createdAt: { [Op.between]: [desde, hasta] }
+    },
+    include: [
+      { model: Cliente, as: 'cliente', attributes: ['nombre', 'documento'] },
+      { model: Factura, as: 'factura', attributes: ['numeroFactura'] }
+    ],
+    order: [['createdAt', 'ASC']]
+  });
+
+  const detalleVentas = ventas.map(v => ({
+    id: v.id,
+    numeroFactura: v.factura ? v.factura.numeroFactura : `Venta #${v.id}`,
+    cliente: v.cliente ? v.cliente.nombre : 'Cliente General',
+    medioPago: v.metodoPago || 'Efectivo',
+    total: parseFloat(v.total || 0),
+    createdAt: v.createdAt
+  }));
+
+  const detalleEgresos = (caja.egresos || []).map(eg => ({
+    id: eg.id,
+    categoria: eg.categoria ? eg.categoria.nombre : 'General',
+    motivo: eg.motivo,
+    monto: parseFloat(eg.monto || 0),
+    usuario: eg.usuario ? eg.usuario.nombre : 'N/A',
+    createdAt: eg.createdAt
+  }));
+
+  return {
+    caja,
+    detalle: {
+      ventas: detalleVentas,
+      egresos: detalleEgresos,
+      abonos: []
+    }
+  };
+}
+
+exports.getDetalleCierreZ = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const data = await fetchCierreZData(id, req.usuario);
+    if (!data) {
+      return res.status(404).json({ error: 'Registro de caja no encontrado.' });
+    }
+    return res.json(data);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// --- DESCARGAR REPORTE Z EN PDF ---
+
+exports.descargarReporteZCajaPDF = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const data = await fetchCierreZData(id, req.usuario);
+
+    if (!data) {
+      return res.status(404).json({ error: 'Registro de caja no encontrado.' });
+    }
+
+    const config = await ConfiguracionSistema.findOne() || {};
+
+    const pdfBuffer = await generarCierrePDF(data.caja, config, data.detalle);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Reporte_Z_Caja_${id}.pdf"`);
+    return res.send(pdfBuffer);
+  } catch (error) {
+    next(error);
+  }
+};
+
 

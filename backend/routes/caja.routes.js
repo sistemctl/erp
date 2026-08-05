@@ -12,5 +12,7 @@ router.get('/reporte', authMiddleware, rolesMiddleware(['admin', 'superadmin', '
 router.get('/historial', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'contador']), cajaController.getHistorialCajas);
 router.get('/egresos', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'cajero', 'contador']), cajaController.getEgresos);
 router.get('/categorias-egreso', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'cajero', 'contador']), cajaController.getCategoriasEgreso);
+router.get('/:id/reporte-z-pdf', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'contador', 'cajero']), cajaController.descargarReporteZCajaPDF);
+router.get('/:id/detalle-z', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'contador', 'cajero']), cajaController.getDetalleCierreZ);
 
 module.exports = router;
