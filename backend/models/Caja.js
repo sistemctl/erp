@@ -57,6 +57,11 @@ const Caja = sequelize.define('Caja', {
     type: DataTypes.DECIMAL(15, 2),
     defaultValue: 0.00
   },
+  totalesPorMetodo: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: {}
+  },
   totalEgresos: {
     type: DataTypes.DECIMAL(15, 2),
     defaultValue: 0.00

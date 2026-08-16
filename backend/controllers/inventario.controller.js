@@ -1,4 +1,6 @@
-const { Producto, Categoria, Sede, StockSede, MovimientoInventario, sequelize } = require('../models');
+const { Producto, Categoria, Sede, StockSede, MovimientoInventario, Usuario, sequelize } = require('../models');
+const { Op } = require('sequelize');
+const { resolveQuerySede } = require('../utils/sede');
 
 exports.getStockSede = async (req, res, next) => {
   try {
@@ -31,22 +33,54 @@ exports.getStockSede = async (req, res, next) => {
 
 exports.getMovimientos = async (req, res, next) => {
   try {
-    const { sedeId } = req.query;
-    const where = {};
-    if (sedeId) {
-      where.sedeId = sedeId;
+    const { sede, sedeId, desde, hasta, productoId, tipo } = req.query;
+    const resolvedSedeId = resolveQuerySede(sede || sedeId, req.usuario);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+    const allowedTypes = new Set(['entrada', 'salida', 'traslado_entrada', 'traslado_salida', 'ajuste']);
+    if (tipo && !allowedTypes.has(tipo)) {
+      return res.status(400).json({ error: 'Tipo de movimiento no válido.' });
     }
 
-    const movimientos = await MovimientoInventario.findAll({
+    const createdAt = {};
+    if (desde) createdAt[Op.gte] = new Date(`${desde}T00:00:00`);
+    if (hasta) createdAt[Op.lte] = new Date(`${hasta}T23:59:59.999`);
+    const where = {
+      ...(resolvedSedeId ? { sedeId: resolvedSedeId } : {}),
+      ...(productoId ? { productoId } : {}),
+      ...(tipo ? { tipo } : {}),
+      ...(Object.keys(createdAt).length ? { createdAt } : {})
+    };
+
+    const { count, rows } = await MovimientoInventario.findAndCountAll({
       where,
       include: [
         { model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras'] },
-        { model: Sede, as: 'sede', attributes: ['nombre'] }
+        { model: Sede, as: 'sede', attributes: ['nombre'] },
+        { model: Usuario, as: 'usuario', attributes: ['nombre'] }
       ],
-      order: [['createdAt', 'DESC']]
+      order: [['createdAt', 'DESC']],
+      limit,
+      offset: (page - 1) * limit
     });
 
-    return res.json(movimientos);
+    const totalPages = Math.max(Math.ceil(count / limit), 1);
+    const currentPage = Math.min(page, totalPages);
+    const items = rows.map((movimiento) => ({
+      id: movimiento.id,
+      fecha: movimiento.createdAt,
+      tipo: movimiento.tipo,
+      direccion: movimiento.cantidad >= 0 ? 'entrada' : 'salida',
+      producto: movimiento.producto?.nombre || 'Producto sin registro',
+      codigo: movimiento.producto?.codigoBarras || '—',
+      sede: movimiento.sede?.nombre || '—',
+      cantidad: Math.abs(parseInt(movimiento.cantidad, 10) || 0),
+      responsable: movimiento.usuario?.nombre || 'Sin registro',
+      referencia: movimiento.referenciaId ? String(movimiento.referenciaId).slice(0, 8).toUpperCase() : '—',
+      detalle: movimiento.motivo || 'Sin motivo'
+    }));
+
+    return res.json({ items, pagination: { page: currentPage, limit, total: count, totalPages } });
   } catch (error) {
     next(error);
   }

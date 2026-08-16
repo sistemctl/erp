@@ -1,4 +1,4 @@
-const { Caja, EgresoCaja, CategoriaEgreso, Usuario, ConfiguracionSistema, Sede, Venta, Cliente, Factura, PagoVenta, sequelize } = require('../models');
+const { Caja, EgresoCaja, CategoriaEgreso, Usuario, ConfiguracionSistema, Sede, Venta, Cliente, Factura, PagoVenta, ItemVenta, Producto, Abono, CuentaPorCobrar, PagoCompra, OrdenCompra, Proveedor, DevolucionVenta, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const { resolveQuerySede, resolveActionSede } = require('../utils/sede');
 const { findCajaAbierta, isCajaCompartidaSede } = require('../utils/caja-abierta');
@@ -187,6 +187,7 @@ exports.cierreCaja = async (req, res, next) => {
       totalVentasDaviplata,
       totalVentasTarjeta,
       totalVentasTransferencia,
+      totalesPorMetodo,
       observaciones,
       sedeId: bodySedeId
     } = req.body;
@@ -221,6 +222,9 @@ exports.cierreCaja = async (req, res, next) => {
       totalVentasDaviplata: totalVentasDaviplata !== undefined ? parseFloat(totalVentasDaviplata || 0) : parseFloat(caja.totalVentasDaviplata),
       totalVentasTarjeta: totalVentasTarjeta !== undefined ? parseFloat(totalVentasTarjeta || 0) : parseFloat(caja.totalVentasTarjeta),
       totalVentasTransferencia: totalVentasTransferencia !== undefined ? parseFloat(totalVentasTransferencia || 0) : parseFloat(caja.totalVentasTransferencia),
+      totalesPorMetodo: totalesPorMetodo && typeof totalesPorMetodo === 'object'
+        ? { ...(caja.totalesPorMetodo || {}), ...totalesPorMetodo }
+        : (caja.totalesPorMetodo || {}),
       diferencia,
       observaciones: observaciones || ''
     }, { transaction });
@@ -369,6 +373,276 @@ exports.getHistorialCajas = async (req, res, next) => {
     });
 
     return res.json(cajas);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Bitacora financiera normalizada. Los pagos de una venta se muestran por
+ * separado para no repetir el total cuando se usaron medios de pago mixtos.
+ * GET /caja/movimientos?sede=&desde=&hasta=&tipo=&page=&limit=
+ */
+exports.getMovimientosFinancieros = async (req, res, next) => {
+  try {
+    const { sede, desde, hasta, tipo } = req.query;
+    const querySedeId = resolveQuerySede(sede, req.usuario);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
+    const allowedTypes = new Set(['apertura', 'venta', 'abono', 'egreso', 'pago_compra', 'devolucion']);
+
+    if (tipo && !allowedTypes.has(tipo)) {
+      return res.status(400).json({ error: 'Tipo de movimiento no válido.' });
+    }
+
+    const createdAt = {};
+    if (desde) createdAt[Op.gte] = new Date(`${desde}T00:00:00`);
+    if (hasta) createdAt[Op.lte] = new Date(`${hasta}T23:59:59.999`);
+    const whereFecha = Object.keys(createdAt).length ? { createdAt } : {};
+    const money = (value) => parseFloat(value || 0);
+    const paymentLabel = {
+      efectivo: 'Efectivo',
+      tarjeta: 'Tarjeta',
+      nequi: 'Nequi',
+      daviplata: 'Daviplata',
+      transferencia: 'Transferencia',
+      trade_in: 'Trade-in',
+      caja_efectivo: 'Caja en efectivo',
+      efectivo_externo: 'Efectivo externo',
+      transferencia_empresa: 'Transferencia empresa',
+      otro: 'Otro'
+    };
+    const configSistema = await ConfiguracionSistema.findOne();
+    const mediosDiferidos = new Set((Array.isArray(configSistema?.mediosPago) ? configSistema.mediosPago : [])
+      .filter((medio) => medio?.recaudoDiferido === true || medio?.id === 'sistecredito')
+      .map((medio) => medio.id));
+
+    const [cajas, ventas, abonos, egresos, pagosCompra, devoluciones] = await Promise.all([
+      Caja.findAll({
+        where: { ...whereFecha, ...(querySedeId ? { sedeId: querySedeId } : {}) },
+        include: [
+          { model: Sede, as: 'sede', attributes: ['nombre'] },
+          { model: Usuario, as: 'usuarioApertura', attributes: ['nombre'] }
+        ]
+      }),
+      Venta.findAll({
+        where: {
+          ...whereFecha,
+          estado: { [Op.in]: ['completada', 'credito'] },
+          ...(querySedeId ? { sedeId: querySedeId } : {})
+        },
+        include: [
+          { model: Cliente, as: 'cliente', attributes: ['nombre'] },
+          { model: Usuario, as: 'usuario', attributes: ['nombre'] },
+          { model: PagoVenta, as: 'pagos', attributes: ['id', 'metodo', 'monto'] },
+          { model: Factura, as: 'factura', attributes: ['numeroFactura'] },
+          {
+            model: ItemVenta,
+            as: 'items',
+            attributes: ['cantidad'],
+            include: [{ model: Producto, as: 'producto', attributes: ['nombre'] }]
+          }
+        ]
+      }),
+      Abono.findAll({
+        where: whereFecha,
+        include: [
+          { model: Usuario, as: 'usuario', attributes: ['nombre'] },
+          {
+            model: CuentaPorCobrar,
+            as: 'cuentaPorCobrar',
+            required: true,
+            include: [
+              { model: Cliente, as: 'cliente', attributes: ['nombre'] },
+              {
+                model: Factura,
+                as: 'factura',
+                required: true,
+                where: querySedeId ? { sedeId: querySedeId } : undefined,
+                attributes: ['numeroFactura']
+              }
+            ]
+          }
+        ]
+      }),
+      EgresoCaja.findAll({
+        where: whereFecha,
+        include: [
+          {
+            model: Caja,
+            as: 'caja',
+            required: true,
+            where: querySedeId ? { sedeId: querySedeId } : undefined,
+            attributes: ['fecha'],
+            include: [{ model: Sede, as: 'sede', attributes: ['nombre'] }]
+          },
+          { model: CategoriaEgreso, as: 'categoria', attributes: ['nombre'] },
+          { model: Usuario, as: 'usuario', attributes: ['nombre'] },
+          { model: Usuario, as: 'autorizador', attributes: ['nombre'] }
+        ]
+      }),
+      PagoCompra.findAll({
+        where: whereFecha,
+        include: [
+          { model: Usuario, as: 'usuario', attributes: ['nombre'] },
+          {
+            model: OrdenCompra,
+            as: 'ordenCompra',
+            required: true,
+            where: querySedeId ? { sedeId: querySedeId } : undefined,
+            include: [{ model: Proveedor, as: 'proveedor', attributes: ['nombre'] }]
+          }
+        ]
+      }),
+      DevolucionVenta.findAll({
+        where: { ...whereFecha, ...(querySedeId ? { sedeId: querySedeId } : {}) },
+        include: [
+          { model: Usuario, as: 'usuario', attributes: ['nombre'] },
+          {
+            model: Venta,
+            as: 'venta',
+            attributes: ['numeroVenta'],
+            include: [{ model: Cliente, as: 'cliente', attributes: ['nombre'] }]
+          }
+        ]
+      })
+    ]);
+
+    const items = [
+      ...cajas.map((caja) => ({
+        id: `apertura-${caja.id}`,
+        tipo: 'apertura',
+        direccion: 'entrada',
+        fecha: caja.createdAt,
+        concepto: 'Apertura de caja',
+        responsable: caja.usuarioApertura?.nombre || 'Sin registro',
+        referencia: `Caja ${caja.fecha}`,
+        monto: money(caja.montoApertura),
+        medioPago: 'Efectivo',
+        detalle: `Base inicial de caja${caja.sede ? ` · ${caja.sede.nombre}` : ''}`,
+        origen: {
+          modulo: 'Caja',
+          documento: `Caja ${caja.fecha}`,
+          sede: caja.sede?.nombre || 'Sin sede',
+          ruta: '#/caja'
+        }
+      })),
+      ...ventas.flatMap((venta) => (venta.pagos || [])
+        .filter((pago) => money(pago.monto) > 0 && !mediosDiferidos.has(pago.metodo))
+        .map((pago) => ({
+          id: `venta-${pago.id}`,
+          tipo: 'venta',
+          direccion: 'entrada',
+          fecha: venta.createdAt,
+          concepto: `Venta ${venta.numeroVenta}`,
+          responsable: venta.usuario?.nombre || 'Sin registro',
+          referencia: venta.numeroVenta,
+          monto: money(pago.monto),
+          medioPago: paymentLabel[pago.metodo] || pago.metodo,
+          detalle: `Cliente: ${venta.cliente?.nombre || 'Consumidor final'}`,
+          origen: {
+            modulo: 'Ventas',
+            documento: venta.factura?.numeroFactura || venta.numeroVenta,
+            tercero: venta.cliente?.nombre || 'Consumidor final',
+            totalOperacion: money(venta.total),
+            pagos: (venta.pagos || []).map((item) => ({
+              medio: paymentLabel[item.metodo] || item.metodo,
+              monto: money(item.monto)
+            })),
+            items: (venta.items || []).map((item) => ({
+              nombre: item.producto?.nombre || 'Producto',
+              cantidad: parseInt(item.cantidad, 10) || 0
+            })),
+            ruta: '#/ventas'
+          }
+        }))),
+      ...abonos.map((abono) => ({
+        id: `abono-${abono.id}`,
+        tipo: 'abono',
+        direccion: 'entrada',
+        fecha: abono.createdAt,
+        concepto: 'Abono de cartera',
+        responsable: abono.usuario?.nombre || 'Sin registro',
+        referencia: abono.cuentaPorCobrar?.factura?.numeroFactura || 'Cuenta por cobrar',
+        monto: money(abono.monto),
+        medioPago: paymentLabel[abono.metodo] || abono.metodo,
+        detalle: `Cliente: ${abono.cuentaPorCobrar?.cliente?.nombre || 'Sin registro'}${abono.observaciones ? ` · ${abono.observaciones}` : ''}`,
+        origen: {
+          modulo: 'Cartera',
+          documento: abono.cuentaPorCobrar?.factura?.numeroFactura || 'Cuenta por cobrar',
+          tercero: abono.cuentaPorCobrar?.cliente?.nombre || 'Sin registro',
+          ruta: '#/cartera'
+        }
+      })),
+      ...egresos
+        .filter((egreso) => !egreso.pagoCompraId && !String(egreso.motivo || '').startsWith('Devolución '))
+        .map((egreso) => ({
+          id: `egreso-${egreso.id}`,
+          tipo: 'egreso',
+          direccion: 'salida',
+          fecha: egreso.createdAt,
+          concepto: egreso.categoria?.nombre || 'Egreso de caja',
+          responsable: egreso.usuario?.nombre || 'Sin registro',
+          referencia: 'Caja',
+          monto: money(egreso.monto),
+          medioPago: 'Efectivo',
+          detalle: `${egreso.motivo || 'Sin motivo'}${egreso.requirioPin ? ` · Autorizó: ${egreso.autorizador?.nombre || 'Administrador'}` : ''}`,
+          origen: {
+            modulo: 'Caja',
+            documento: `Caja ${egreso.caja?.fecha || ''}`.trim(),
+            tercero: egreso.categoria?.nombre || 'Egreso general',
+            sede: egreso.caja?.sede?.nombre || 'Sin sede',
+            autorizador: egreso.requirioPin ? (egreso.autorizador?.nombre || 'Administrador') : null,
+            ruta: '#/caja'
+          }
+        })),
+      ...pagosCompra.map((pago) => ({
+        id: `pago-compra-${pago.id}`,
+        tipo: 'pago_compra',
+        direccion: 'salida',
+        fecha: pago.createdAt,
+        concepto: `Pago a ${pago.ordenCompra?.proveedor?.nombre || 'proveedor'}`,
+        responsable: pago.usuario?.nombre || pago.pagadoPor || 'Sin registro',
+        referencia: `OC ${String(pago.ordenCompraId || '').slice(0, 8).toUpperCase()}`,
+        monto: money(pago.monto),
+        medioPago: paymentLabel[pago.fuenteFondos] || pago.fuenteFondos,
+        detalle: pago.referencia || 'Pago registrado en compras',
+        origen: {
+          modulo: 'Compras',
+          documento: `OC ${String(pago.ordenCompraId || '').slice(0, 8).toUpperCase()}`,
+          tercero: pago.ordenCompra?.proveedor?.nombre || 'Proveedor',
+          ruta: '#/compras'
+        }
+      })),
+      ...devoluciones.map((devolucion) => ({
+        id: `devolucion-${devolucion.id}`,
+        tipo: 'devolucion',
+        direccion: 'salida',
+        fecha: devolucion.createdAt,
+        concepto: `Devolución ${devolucion.numero}`,
+        responsable: devolucion.usuario?.nombre || 'Sin registro',
+        referencia: devolucion.venta?.numeroVenta || devolucion.numero,
+        monto: money(devolucion.total),
+        medioPago: paymentLabel[devolucion.metodoReembolso] || devolucion.metodoReembolso,
+        detalle: devolucion.motivo || 'Devolución de venta',
+        origen: {
+          modulo: 'Ventas',
+          documento: devolucion.venta?.numeroVenta || devolucion.numero,
+          tercero: devolucion.venta?.cliente?.nombre || 'Cliente',
+          ruta: '#/ventas'
+        }
+      }))
+    ]
+      .filter((item) => !tipo || item.tipo === tipo)
+      .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+    const total = items.length;
+    const totalPages = Math.max(Math.ceil(total / limit), 1);
+    const currentPage = Math.min(page, totalPages);
+    return res.json({
+      items: items.slice((currentPage - 1) * limit, currentPage * limit),
+      pagination: { page: currentPage, limit, total, totalPages }
+    });
   } catch (error) {
     next(error);
   }
@@ -523,5 +797,3 @@ exports.descargarReporteZCajaPDF = async (req, res, next) => {
     next(error);
   }
 };
-
-

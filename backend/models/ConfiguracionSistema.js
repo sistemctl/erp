@@ -115,6 +115,21 @@ const ConfiguracionSistema = sequelize.define('ConfiguracionSistema', {
     type: DataTypes.BOOLEAN,
     defaultValue: true
   },
+  cobrarIvaTaller: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  mediosPago: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: [
+      { id: 'efectivo', nombre: 'Efectivo', activo: true },
+      { id: 'nequi', nombre: 'Nequi', activo: true },
+      { id: 'daviplata', nombre: 'Daviplata', activo: true },
+      { id: 'tarjeta', nombre: 'Tarjeta', activo: true },
+      { id: 'transferencia', nombre: 'Transferencia', activo: true }
+    ]
+  },
   /** Si true, una caja abierta sirve a todos los usuarios de la sede. Si false, cada usuario usa solo la suya. */
   cajaCompartidaSede: {
     type: DataTypes.BOOLEAN,

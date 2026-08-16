@@ -12,7 +12,7 @@ const PagoVenta = sequelize.define('PagoVenta', {
     allowNull: false
   },
   metodo: {
-    type: DataTypes.ENUM('efectivo', 'tarjeta', 'nequi', 'daviplata', 'transferencia', 'trade_in'),
+    type: DataTypes.STRING,
     allowNull: false
   },
   monto: {

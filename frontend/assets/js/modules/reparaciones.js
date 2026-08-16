@@ -111,11 +111,9 @@ export async function initReparaciones(container) {
                     </div>
                   </header>
                   <div class="rep-orden-field">
-                    <label class="form-label" for="orden-cliente-select">Cliente existente</label>
-                    <select id="orden-cliente-select" class="form-select">
-                      <option value="">Seleccionar o crear nuevo abajo</option>
-                      ${clientes.map(c => `<option value="${c.id}">${c.nombre} (${c.documento || 'Sin doc'})</option>`).join('')}
-                    </select>
+                    <label class="form-label" for="btn-buscar-cliente-orden">Cliente existente</label>
+                    <input type="hidden" id="orden-cliente-select" value="">
+                    <button type="button" id="btn-buscar-cliente-orden" class="btn btn-outline-secondary w-100 text-start d-flex align-items-center justify-content-between"><span id="orden-cliente-nombre">Seleccionar o crear nuevo abajo</span><i class="ti ti-search"></i></button>
                   </div>
                   <div class="rep-orden-panel" id="quick-client-card">
                     <div class="rep-orden-panel__bar">
@@ -348,16 +346,18 @@ export async function initReparaciones(container) {
   `;
 
   // Montar modales en body para que el footer no quede cortado por overflow del módulo
-  ['modal-orden-reparacion', 'modal-detalle-orden', 'modal-entregar-reparacion'].forEach((id) => {
+  ['modal-orden-reparacion', 'modal-detalle-orden', 'modal-entregar-reparacion', 'modal-buscar-cliente-orden'].forEach((id) => {
     const el = document.getElementById(id);
     if (el && el.parentElement !== document.body) {
       document.body.appendChild(el);
     }
   });
 
+  document.body.insertAdjacentHTML('beforeend', `<div class="modal modal-blur fade" id="modal-buscar-cliente-orden" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable pos-client-search-dialog"><div class="modal-content pos-client-search-modal"><div class="modal-header pos-client-search-header"><div class="d-flex align-items-center gap-2"><span class="avatar avatar-sm bg-primary-lt text-primary"><i class="ti ti-users"></i></span><div><h5 class="modal-title">Buscar cliente</h5><div class="text-secondary small">Selecciona quién trae el equipo</div></div></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body pos-client-search-body"><div class="input-icon"><span class="input-icon-addon"><i class="ti ti-search"></i></span><input type="search" id="orden-cliente-busqueda" class="form-control form-control-lg" placeholder="Nombre, documento o teléfono"></div><div class="d-flex justify-content-between mt-4 mb-2"><span class="text-secondary small fw-semibold text-uppercase">Resultados</span><span id="orden-clientes-contador" class="text-secondary small"></span></div><div id="orden-clientes-resultados" class="pos-client-results"></div></div></div></div></div>`);
   const modalOrden = new bootstrap.Modal(document.getElementById('modal-orden-reparacion'));
   const modalDetalle = new bootstrap.Modal(document.getElementById('modal-detalle-orden'));
   const modalEntregar = new bootstrap.Modal(document.getElementById('modal-entregar-reparacion'));
+  const modalBuscarCliente = new bootstrap.Modal(document.getElementById('modal-buscar-cliente-orden'));
 
   // Renderizar columnas de Kanban
   function renderKanbanColumn(title, statusKey, colorClass, phase = 'active', icon = 'ti-circle') {
@@ -569,6 +569,25 @@ export async function initReparaciones(container) {
   const quickClientCard = document.getElementById('quick-client-card');
   const cliNombre = document.getElementById('cli-nombre');
 
+  const renderClientesOrden = (query = '') => {
+    const term = query.trim().toLowerCase();
+    const results = clientes.filter((c) => !term || `${c.nombre || ''} ${c.documento || ''} ${c.telefono || ''}`.toLowerCase().includes(term)).slice(0, 50);
+    document.getElementById('orden-clientes-contador').textContent = `${results.length} ${results.length === 1 ? 'cliente' : 'clientes'}`;
+    const list = document.getElementById('orden-clientes-resultados');
+    list.innerHTML = results.map((c) => `<button type="button" class="checkout-cliente-opcion orden-cliente-opcion" data-id="${c.id}"><span class="avatar avatar-sm checkout-cliente-avatar">${(c.nombre || '?').trim().charAt(0).toUpperCase()}</span><span class="checkout-cliente-info"><span class="checkout-cliente-titulo">${c.nombre || 'Sin nombre'}</span><span class="checkout-cliente-meta"><i class="ti ti-id-badge"></i>${c.documento || 'Sin documento'}</span></span><i class="ti ti-chevron-right checkout-cliente-arrow"></i></button>`).join('') || '<div class="pos-client-empty"><i class="ti ti-user-off"></i><span>No se encontraron clientes.</span></div>';
+    list.querySelectorAll('.orden-cliente-opcion').forEach((btn) => btn.addEventListener('click', () => {
+      const client = clientes.find((c) => String(c.id) === btn.dataset.id);
+      clientSelect.value = client?.id || '';
+      document.getElementById('orden-cliente-nombre').textContent = client?.nombre || 'Seleccionar o crear nuevo abajo';
+      clientSelect.dispatchEvent(new Event('change'));
+      modalBuscarCliente.hide();
+    }));
+  };
+  document.getElementById('btn-buscar-cliente-orden').addEventListener('click', () => {
+    const input = document.getElementById('orden-cliente-busqueda'); input.value = ''; renderClientesOrden(); modalBuscarCliente.show(); setTimeout(() => input.focus(), 150);
+  });
+  document.getElementById('orden-cliente-busqueda').addEventListener('input', (event) => renderClientesOrden(event.target.value));
+
   clientSelect.addEventListener('change', () => {
     if (clientSelect.value) {
       quickClientCard.style.display = 'none';
@@ -599,6 +618,7 @@ export async function initReparaciones(container) {
   if (btnNueva) {
     btnNueva.addEventListener('click', () => {
       document.getElementById('form-nueva-orden').reset();
+      document.getElementById('orden-cliente-nombre').textContent = 'Seleccionar o crear nuevo abajo';
       quickClientCard.style.display = '';
       cliNombre.setAttribute('required', 'true');
       syncModalidadUi();
@@ -1033,6 +1053,74 @@ export async function initReparaciones(container) {
           if (!container.contains(e.target)) {
             dropdownMenu.style.display = 'none';
           }
+        });
+      }
+
+      // El catálogo de repuestos usa la misma superficie de trabajo que Compras.
+      const repuestoModalTrigger = document.getElementById('repuesto-search');
+      if (repuestoModalTrigger) {
+        repuestoModalTrigger.addEventListener('click', () => {
+          document.getElementById('repuesto-dropdown-menu')?.style.setProperty('display', 'none');
+          document.getElementById('modal-repuesto-picker')?.remove();
+          const repuestos = productos.filter((p) => p.tieneNumeroSerie === false);
+          const esc = (value) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+          const normal = (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const catName = (p) => p?.categoria?.nombre || p?.categoriaNombre || '';
+          const catId = (p) => String(p?.categoriaId || p?.categoria?.id || '');
+          const shortCat = (name) => String(name || '').split('/').map((part) => part.trim()).filter(Boolean).pop() || '';
+          let selected = null;
+          let activeCategory = '';
+          const picker = document.createElement('div');
+          picker.className = 'modal modal-blur fade';
+          picker.id = 'modal-repuesto-picker';
+          picker.tabIndex = -1;
+          picker.innerHTML = `
+            <div class="modal-dialog modal-xl modal-dialog-centered" role="document"><div class="modal-content oc-product-modal">
+              <div class="modal-header oc-product-modal__header"><div><h5 class="modal-title">Buscar repuesto</h5><p class="oc-product-modal__lede mb-0">Busque, indique la cantidad y agréguelo a esta reparación.</p></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+              <div class="modal-body oc-product-modal__body p-0">
+                <aside class="oc-product-modal__cats"><p class="oc-product-modal__rail-label">Categorías</p><div id="rep-modal-categories" class="oc-product-modal__cat-list"></div></aside>
+                <div class="oc-product-modal__main"><div class="oc-product-modal__search input-group"><span class="input-group-text"><i class="ti ti-search"></i></span><input id="rep-modal-search" class="form-control" placeholder="Nombre o código…" autocomplete="off"></div><div id="rep-modal-list" class="oc-product-modal__list" role="listbox"></div></div>
+                <aside class="oc-product-modal__added"><div class="oc-product-modal__ticket-head"><p class="oc-product-modal__rail-label mb-0">En esta reparación</p><span class="oc-product-modal__ticket-hint">${(orden.repuestos || []).length || 'Vacía'}</span></div><div id="rep-modal-compose"></div><div id="rep-modal-assigned" class="oc-product-modal__added-list"></div></aside>
+              </div>
+              <div class="modal-footer oc-product-modal__footer"><div class="oc-product-modal__cart-summary">${(orden.repuestos || []).length} repuesto${(orden.repuestos || []).length === 1 ? '' : 's'} · ${formatter.format(orden.costoRepuestos || 0)}</div><button type="button" class="btn btn-primary" data-bs-dismiss="modal">Listo</button></div>
+            </div></div>`;
+          document.body.appendChild(picker);
+          const modal = bootstrap.Modal.getOrCreateInstance(picker);
+          const categoryEl = picker.querySelector('#rep-modal-categories');
+          const listEl = picker.querySelector('#rep-modal-list');
+          const searchEl = picker.querySelector('#rep-modal-search');
+          const composeEl = picker.querySelector('#rep-modal-compose');
+          const assignedEl = picker.querySelector('#rep-modal-assigned');
+          const renderAssigned = () => {
+            const rows = orden.repuestos || [];
+            assignedEl.innerHTML = rows.length ? rows.map((row) => `<div class="oc-product-modal__added-item"><div class="oc-product-modal__added-top"><strong class="oc-product-modal__added-name">${esc(row.producto?.nombre || 'Repuesto')}</strong></div><div class="oc-product-modal__added-meta"><span>× ${row.cantidad}</span><span>${formatter.format(row.costoUnitario || 0)}</span><span class="oc-product-modal__added-sub">${formatter.format((row.costoUnitario || 0) * row.cantidad)}</span></div></div>`).join('') : '<div class="oc-product-modal__added-empty"><span class="oc-product-modal__added-empty-title">Sin repuestos aún</span><span class="oc-product-modal__added-empty-hint">Elija un repuesto de la lista para agregarlo.</span></div>';
+          };
+          const renderCategories = () => {
+            const categories = Array.from(new Map(repuestos.map((p) => [catId(p), catName(p)]).filter(([key, name]) => key && name)).entries()).sort((a, b) => a[1].localeCompare(b[1], 'es'));
+            categoryEl.innerHTML = `<button type="button" class="oc-product-modal__cat${!activeCategory ? ' is-active' : ''}" data-category="">Todas</button>${categories.map(([key, name]) => `<button type="button" class="oc-product-modal__cat${activeCategory === key ? ' is-active' : ''}" data-category="${esc(key)}" title="${esc(name)}">${esc(shortCat(name))}</button>`).join('')}`;
+          };
+          const renderList = () => {
+            const query = normal(searchEl.value);
+            const matches = repuestos.filter((p) => (!activeCategory || catId(p) === activeCategory) && normal(`${p.nombre || ''} ${p.codigoBarras || ''} ${catName(p)}`).includes(query)).sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es')).slice(0, 80);
+            listEl.innerHTML = matches.length ? `<div class="oc-product-picker__count">${matches.length}${matches.length === 80 ? ' · filtre para acotar' : ''} repuesto${matches.length === 1 ? '' : 's'}</div>${matches.map((p) => `<button type="button" class="oc-product-picker__item" role="option" data-product="${esc(p.id)}"><span class="oc-product-picker__main"><span class="oc-product-picker__name">${esc(p.nombre || 'Repuesto')}</span><span class="oc-product-picker__meta"><span class="oc-product-picker__sku">${esc(p.codigoBarras || 's/c')}</span>${catName(p) ? `<span class="oc-product-picker__dot">·</span><span class="oc-product-picker__cat">${esc(shortCat(catName(p)))}</span>` : ''}</span></span><span class="oc-product-picker__cost">${formatter.format(p.precioCosto || 0)}</span></button>`).join('')}` : '<div class="oc-product-picker__empty">Sin coincidencias. Pruebe otro término o categoría.</div>';
+          };
+          const renderCompose = () => {
+            if (!selected) { composeEl.innerHTML = ''; return; }
+            composeEl.innerHTML = `<div class="oc-product-modal__compose"><div class="oc-product-modal__compose-head"><div class="oc-product-modal__compose-name"><span class="oc-product-modal__compose-label">Para agregar</span><strong>${esc(selected.nombre)}</strong></div></div><div class="oc-product-modal__compose-fields"><div><label class="form-label">Costo</label><div class="form-control-plaintext py-1 fw-semibold">${formatter.format(selected.precioCosto || 0)}</div></div><div><label class="form-label" for="rep-modal-quantity">Cant.</label><input type="number" id="rep-modal-quantity" class="form-control" value="1" min="1"></div><div class="d-flex align-items-end"><button type="button" id="rep-modal-add" class="btn btn-primary w-100">Agregar</button></div></div></div>`;
+            composeEl.querySelector('#rep-modal-add').addEventListener('click', async () => {
+              const cantidad = parseInt(composeEl.querySelector('#rep-modal-quantity').value, 10);
+              if (!Number.isInteger(cantidad) || cantidad < 1) return;
+              const button = composeEl.querySelector('#rep-modal-add'); button.disabled = true;
+              try { await apiFetch(`/reparaciones/${id}/repuestos`, { method: 'POST', body: JSON.stringify({ productoId: selected.id, cantidad }) }); modal.hide(); await loadData(); fillKanban(document.getElementById('kanban-search').value); openDetalle(id); } catch (err) { button.disabled = false; alert('Error al agregar repuesto: ' + err.message); }
+            });
+          };
+          renderAssigned(); renderCategories(); renderList();
+          searchEl.addEventListener('input', renderList);
+          categoryEl.addEventListener('click', (event) => { const chip = event.target.closest('[data-category]'); if (!chip) return; activeCategory = chip.dataset.category || ''; renderCategories(); renderList(); });
+          listEl.addEventListener('click', (event) => { const item = event.target.closest('[data-product]'); if (!item) return; selected = repuestos.find((p) => String(p.id) === item.dataset.product) || null; renderCompose(); });
+          picker.addEventListener('shown.bs.modal', () => { picker.style.zIndex = '1065'; const backdrops = document.querySelectorAll('.modal-backdrop'); backdrops[backdrops.length - 1]?.style.setProperty('z-index', '1060'); searchEl.focus(); });
+          picker.addEventListener('hidden.bs.modal', () => picker.remove());
+          modal.show();
         });
       }
 

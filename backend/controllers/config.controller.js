@@ -171,7 +171,7 @@ function maskSecretFields(data) {
 
 const OPS_CONFIG_KEYS = [
   'id', 'empresa', 'nit', 'direccion', 'telefono', 'logoUrl',
-  'descuentoMaximoPct', 'egresoMaximoSinPin', 'ivaDefecto', 'cobrarIvaPos',
+  'descuentoMaximoPct', 'egresoMaximoSinPin', 'ivaDefecto', 'cobrarIvaPos', 'cobrarIvaTaller', 'mediosPago',
   'cajaCompartidaSede', 'temaInterfaz', 'notificacionesActivas'
 ];
 
@@ -533,6 +533,7 @@ exports.getSistemaConfig = async (req, res, next) => {
         notificacionesActivas: false,
         ivaDefecto: 19.00,
         cobrarIvaPos: true,
+        cobrarIvaTaller: false,
         cajaCompartidaSede: true,
         nominaFrecuenciaDefault: 'quincenal',
         nominaDiaCorteQuincena: 15,
@@ -611,6 +612,24 @@ exports.updateSistemaConfig = async (req, res, next) => {
       await config.update(payload);
     }
 
+    // Mantener las facturas de Taller alineadas con el interruptor, sin tocar
+    // ventas ni instalaciones. El total cobrado se conserva en ambos casos.
+    const cobrarIvaTaller = config.cobrarIvaTaller === true;
+    const tasaIvaTaller = Math.max(0, parseFloat(config.ivaDefecto ?? 19)) / 100;
+    const divisorIvaTaller = 1 + tasaIvaTaller;
+    const [facturasTallerActualizadas] = await Factura.update({
+      subtotal: cobrarIvaTaller && tasaIvaTaller > 0
+        ? sequelize.literal(`ROUND("total" / ${divisorIvaTaller}, 2)`)
+        : sequelize.col('total'),
+      iva: cobrarIvaTaller && tasaIvaTaller > 0
+        ? sequelize.literal(`ROUND("total" - ("total" / ${divisorIvaTaller}), 2)`)
+        : 0
+    }, {
+      where: {
+        ordenReparacionId: { [Op.ne]: null }
+      }
+    });
+
     if (req.logAudit) {
       await req.logAudit({
         accion: 'UPDATE',
@@ -622,6 +641,7 @@ exports.updateSistemaConfig = async (req, res, next) => {
     }
 
     const response = attachServidorMeta(config, req);
+    response.facturasTallerActualizadas = facturasTallerActualizadas;
     if (requiereReinicio) {
       response.requiereReinicio = true;
       response.mensajeReinicio = `Reinicie el servidor para aplicar el puerto ${puertoNuevo}. Luego abra ${buildAppUrl(puertoNuevo)}`;
@@ -738,4 +758,3 @@ exports.importarBackup = async (req, res, next) => {
     next(error);
   }
 };
-

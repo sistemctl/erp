@@ -15,6 +15,14 @@ import {
 export async function initConfig(container) {
   const usuario = getUsuario();
   const isSuperadmin = usuario.rol === 'superadmin';
+  const METODOS_BASE = [
+    { id: 'efectivo', nombre: 'Efectivo' },
+    { id: 'nequi', nombre: 'Nequi' },
+    { id: 'daviplata', nombre: 'Daviplata' },
+    { id: 'tarjeta', nombre: 'Tarjeta' },
+    { id: 'transferencia', nombre: 'Transferencia' }
+  ];
+  let mediosPago = [];
 
   if (!isSuperadmin) {
     container.innerHTML = `
@@ -122,10 +130,31 @@ export async function initConfig(container) {
                 </div>
                 <div class="col-md-12 mt-3">
                   <label class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="cfg-cobrar-iva-taller">
+                    <span class="form-check-label fw-bold">Cobrar IVA en facturas de Taller</span>
+                  </label>
+                  <small class="text-secondary d-block mt-1">Desactivado: las reparaciones se facturan como exentas. Activado: el total cobrado incluye el IVA configurado arriba.</small>
+                </div>
+                <div class="col-md-12 mt-3">
+                  <label class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="cfg-caja-compartida" checked>
                     <span class="form-check-label fw-bold">Caja compartida por sede</span>
                   </label>
                   <small class="text-secondary d-block mt-1">Activado: una caja abierta sirve a todos los usuarios de la sede (POS, egresos, cobros). Desactivado: cada usuario solo ve y usa la caja que él mismo abrió.</small>
+                </div>
+
+                <div class="col-md-12 mt-3">
+                  <div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-2">
+                    <div>
+                      <label class="form-label fw-bold mb-0">Medios de pago</label>
+                      <div class="text-secondary small">Aparecen en el POS, recaudos de cartera y el desglose de Caja.</div>
+                    </div>
+                    <div class="input-group input-group-sm" style="max-width: 330px;">
+                      <input type="text" id="cfg-nuevo-medio-pago" class="form-control" maxlength="40" placeholder="Ej: Bancolombia">
+                      <button type="button" id="btn-agregar-medio-pago" class="btn btn-outline-primary" title="Agregar método de pago"><i class="ti ti-plus"></i></button>
+                    </div>
+                  </div>
+                  <div id="cfg-medios-pago-lista" class="d-flex flex-wrap gap-2"></div>
                 </div>
 
                 <h4 class="text-secondary border-bottom pb-2 mt-4 mb-2"><i class="ti ti-cash me-1"></i> Nómina y fechas de pago</h4>
@@ -568,6 +597,58 @@ export async function initConfig(container) {
   }
 
   // --- MÉTODOS GENERALES ---
+  const slugMetodo = (nombre) => nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 36);
+
+  const normalizarMediosPago = (lista) => {
+    const existentes = Array.isArray(lista) ? lista : [];
+    return METODOS_BASE.map((base) => {
+      const actual = existentes.find((item) => item?.id === base.id);
+      return { ...base, activo: actual?.activo !== false, fijo: true };
+    }).concat(existentes
+      .filter((item) => item?.id && !METODOS_BASE.some((base) => base.id === item.id))
+      .map((item) => ({ id: item.id, nombre: item.nombre || item.id, activo: item.activo !== false, fijo: false })));
+  };
+
+  const renderMediosPago = () => {
+    const lista = document.getElementById('cfg-medios-pago-lista');
+    if (!lista) return;
+    lista.innerHTML = mediosPago.map((medio) => `
+      <div class="border rounded px-2 py-1 d-flex align-items-center gap-2 bg-light">
+        <label class="form-check form-switch m-0" title="${medio.activo ? 'Disponible para cobrar' : 'Oculto para nuevos cobros'}">
+          <input class="form-check-input cfg-medio-activo" type="checkbox" data-id="${medio.id}" ${medio.activo ? 'checked' : ''}>
+        </label>
+        <span class="small fw-semibold">${medio.nombre}</span>
+        ${medio.fijo ? '<span class="text-secondary small">Base</span>' : `<button type="button" class="btn btn-ghost-danger btn-icon btn-sm btn-eliminar-medio" data-id="${medio.id}" title="Eliminar método"><i class="ti ti-trash"></i></button>`}
+      </div>
+    `).join('');
+    lista.querySelectorAll('.cfg-medio-activo').forEach((input) => input.addEventListener('change', async () => {
+      const medio = mediosPago.find((item) => item.id === input.dataset.id);
+      if (medio) {
+        medio.activo = input.checked;
+        await guardarMediosPago();
+      }
+    }));
+    lista.querySelectorAll('.btn-eliminar-medio').forEach((button) => button.addEventListener('click', async () => {
+      mediosPago = mediosPago.filter((medio) => medio.id !== button.dataset.id);
+      renderMediosPago();
+      await guardarMediosPago();
+    }));
+  };
+
+  const guardarMediosPago = async () => {
+    try {
+      await apiFetch('/config/sistema', {
+        method: 'PUT',
+        body: JSON.stringify({
+          mediosPago: mediosPago.map(({ id, nombre, activo }) => ({ id, nombre, activo }))
+        })
+      });
+    } catch (error) {
+      alert(`No se pudieron guardar los medios de pago: ${error.message}`);
+    }
+  };
+
   const loadConfig = async () => {
     try {
       const data = await apiFetch('/config/sistema');
@@ -583,7 +664,10 @@ export async function initConfig(container) {
       document.getElementById('cfg-egreso-max').value = data.egresoMaximoSinPin || 50000;
       document.getElementById('cfg-dias-plazo-credito').value = data.diasPlazoCredito ?? 30;
       document.getElementById('cfg-cobrar-iva').checked = !!data.cobrarIvaPos;
+      document.getElementById('cfg-cobrar-iva-taller').checked = !!data.cobrarIvaTaller;
       document.getElementById('cfg-caja-compartida').checked = data.cajaCompartidaSede !== false;
+      mediosPago = normalizarMediosPago(data.mediosPago);
+      renderMediosPago();
       document.getElementById('cfg-nomina-frecuencia').value = data.nominaFrecuenciaDefault || 'quincenal';
       document.getElementById('cfg-nomina-corte').value = data.nominaDiaCorteQuincena ?? 15;
       document.getElementById('cfg-nomina-pago1').value = data.nominaDiaPago1 ?? 15;
@@ -937,7 +1021,9 @@ export async function initConfig(container) {
       egresoMaximoSinPin: parseFloat(document.getElementById('cfg-egreso-max').value),
       diasPlazoCredito: parseInt(document.getElementById('cfg-dias-plazo-credito').value, 10) || 30,
       cobrarIvaPos: document.getElementById('cfg-cobrar-iva').checked,
+      cobrarIvaTaller: document.getElementById('cfg-cobrar-iva-taller').checked,
       cajaCompartidaSede: document.getElementById('cfg-caja-compartida').checked,
+      mediosPago: mediosPago.map(({ id, nombre, activo }) => ({ id, nombre, activo })),
       nominaFrecuenciaDefault: document.getElementById('cfg-nomina-frecuencia').value,
       nominaDiaCorteQuincena: parseInt(document.getElementById('cfg-nomina-corte').value, 10),
       nominaDiaPago1: parseInt(document.getElementById('cfg-nomina-pago1').value, 10),
@@ -979,6 +1065,28 @@ export async function initConfig(container) {
       loadConfig();
     } catch (err) {
       alert(err.message);
+    }
+  });
+
+  document.getElementById('btn-agregar-medio-pago').addEventListener('click', async () => {
+    const input = document.getElementById('cfg-nuevo-medio-pago');
+    const nombre = input.value.trim();
+    const id = slugMetodo(nombre);
+    if (!id) return;
+    if (mediosPago.some((medio) => medio.id === id)) {
+      alert('Ya existe un medio de pago con ese nombre.');
+      return;
+    }
+    mediosPago.push({ id, nombre, activo: true, fijo: false });
+    input.value = '';
+    renderMediosPago();
+    await guardarMediosPago();
+  });
+
+  document.getElementById('cfg-nuevo-medio-pago').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      document.getElementById('btn-agregar-medio-pago').click();
     }
   });
 

@@ -61,7 +61,8 @@ async function enviarRecordatoriosCartera() {
     where: {
       estado: 'vencida',
       saldoPendiente: { [Op.gt]: 0 },
-      fechaVencimiento: { [Op.lte]: limite }
+      fechaVencimiento: { [Op.lte]: limite },
+      esRecaudoExterno: false
     },
     include: [
       {

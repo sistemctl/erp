@@ -208,11 +208,9 @@ export async function initCompras(container) {
                     </header>
                     <div class="oc-field-grid">
                       <div class="oc-field">
-                        <label class="form-label required" for="oc-proveedor">Proveedor</label>
-                        <select id="oc-proveedor" class="form-select" required>
-                          <option value="">Seleccionar proveedor</option>
-                          ${proveedores.map(p => `<option value="${p.id}">${p.nombre} (NIT: ${p.nit})</option>`).join('')}
-                        </select>
+                        <label class="form-label required" for="btn-buscar-proveedor-oc">Proveedor</label>
+                        <input type="hidden" id="oc-proveedor" value="">
+                        <button type="button" id="btn-buscar-proveedor-oc" class="btn btn-outline-secondary w-100 text-start d-flex align-items-center justify-content-between"><span id="oc-proveedor-nombre">Seleccionar proveedor</span><i class="ti ti-search"></i></button>
                       </div>
                       <div class="oc-field">
                         <label class="form-label required" for="oc-sede">Sede destino</label>
@@ -542,12 +540,37 @@ export async function initCompras(container) {
     </div>
   `;
 
+  document.getElementById('modal-buscar-proveedor-oc')?.remove();
+  document.body.insertAdjacentHTML('beforeend', `<div class="modal modal-blur fade" id="modal-buscar-proveedor-oc" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable pos-client-search-dialog"><div class="modal-content pos-client-search-modal"><div class="modal-header pos-client-search-header"><div class="d-flex align-items-center gap-2"><span class="avatar avatar-sm bg-primary-lt text-primary"><i class="ti ti-building-store"></i></span><div><h5 class="modal-title">Buscar proveedor</h5><div class="text-secondary small">Selecciona el proveedor de esta orden</div></div></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body pos-client-search-body"><div class="input-icon"><span class="input-icon-addon"><i class="ti ti-search"></i></span><input type="search" id="oc-proveedor-busqueda" class="form-control form-control-lg" placeholder="Nombre, NIT o teléfono"></div><div class="d-flex justify-content-between mt-4 mb-2"><span class="text-secondary small fw-semibold text-uppercase">Resultados</span><span id="oc-proveedores-contador" class="text-secondary small"></span></div><div id="oc-proveedores-resultados" class="pos-client-results"></div></div></div></div></div>`);
+
   const tbodyCompras = document.getElementById('compras-table-body');
   const tbodyCpp = document.getElementById('cpp-table-body');
   const modalRecibir = new bootstrap.Modal(document.getElementById('modal-recibir-mercancia'));
   const modalDevolver = new bootstrap.Modal(document.getElementById('modal-devolver-mercancia'));
   const modalVer = new bootstrap.Modal(document.getElementById('modal-ver-compra'));
   const modalPagar = new bootstrap.Modal(document.getElementById('modal-pagar-cuenta'));
+  const modalBuscarProveedor = new bootstrap.Modal(document.getElementById('modal-buscar-proveedor-oc'));
+
+  const proveedorInput = document.getElementById('oc-proveedor');
+  if (proveedorInput) {
+    const renderProveedores = (query = '') => {
+      const term = query.trim().toLowerCase();
+      const results = proveedores.filter((p) => !term || `${p.nombre || ''} ${p.nit || ''} ${p.telefono || ''}`.toLowerCase().includes(term)).slice(0, 50);
+      document.getElementById('oc-proveedores-contador').textContent = `${results.length} ${results.length === 1 ? 'proveedor' : 'proveedores'}`;
+      const list = document.getElementById('oc-proveedores-resultados');
+      list.innerHTML = results.map((p) => `<button type="button" class="checkout-cliente-opcion oc-proveedor-opcion" data-id="${p.id}"><span class="avatar avatar-sm checkout-cliente-avatar">${(p.nombre || '?').trim().charAt(0).toUpperCase()}</span><span class="checkout-cliente-info"><span class="checkout-cliente-titulo">${p.nombre || 'Sin nombre'}</span><span class="checkout-cliente-meta"><i class="ti ti-id-badge"></i>${p.nit || 'Sin NIT'}</span></span><i class="ti ti-chevron-right checkout-cliente-arrow"></i></button>`).join('') || '<div class="pos-client-empty"><i class="ti ti-building-off"></i><span>No se encontraron proveedores.</span></div>';
+      list.querySelectorAll('.oc-proveedor-opcion').forEach((btn) => btn.addEventListener('click', () => {
+        const proveedor = proveedores.find((p) => String(p.id) === btn.dataset.id);
+        proveedorInput.value = proveedor?.id || '';
+        document.getElementById('oc-proveedor-nombre').textContent = proveedor?.nombre || 'Seleccionar proveedor';
+        modalBuscarProveedor.hide();
+      }));
+    };
+    document.getElementById('btn-buscar-proveedor-oc').addEventListener('click', () => {
+      const input = document.getElementById('oc-proveedor-busqueda'); input.value = ''; renderProveedores(); modalBuscarProveedor.show(); setTimeout(() => input.focus(), 150);
+    });
+    document.getElementById('oc-proveedor-busqueda').addEventListener('input', (event) => renderProveedores(event.target.value));
+  }
 
   function estadoMercPill(estado) {
     const map = {
@@ -1469,6 +1492,7 @@ export async function initCompras(container) {
         showToast('Orden emitida', 'La OC quedó pendiente. El stock entra al recibir la mercancía.', 'success');
         cartItems = [];
         formOC.reset();
+        document.getElementById('oc-proveedor-nombre').textContent = 'Seleccionar proveedor';
         if (document.getElementById('oc-sede') && defaultSedeId) {
           document.getElementById('oc-sede').value = defaultSedeId;
         }
@@ -2030,4 +2054,3 @@ export function destroyCompras() {
     comprasKeydownHandler = null;
   }
 }
-

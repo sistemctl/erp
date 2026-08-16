@@ -161,16 +161,16 @@ export function renderFacturaDocumento(f, config = {}) {
     : '';
 
   return `
-    <article class="cot-doc cot-doc--factura" id="factura-print-area">
-      <header class="cot-doc__header cot-doc__header--factura">
-        <div class="cot-doc__logo-wrap">${logoHtml}</div>
-        <div class="cot-doc__empresa cot-doc__empresa--center">
+    <article class="cot-doc" id="factura-print-area">
+      <header class="cot-doc__header">
+        <div class="cot-doc__empresa">
+          ${logoHtml}
           <h1 class="cot-doc__empresa-nombre">${empresa.toUpperCase()}</h1>
-          <p>NIT : ${nit}</p>
-          <p>${direccion}</p>
-          <p>${f.sede?.nombre || '—'} — COLOMBIA</p>
-          ${telefono ? `<p>Tel: ${telefono}</p>` : ''}
-          <p class="cot-doc__legal-line">Responsable de IVA</p>
+          <p>NIT: ${nit}</p>
+          <p>Dirección: ${direccion}</p>
+          <p>Ciudad: ${f.sede?.nombre || '—'} — COLOMBIA</p>
+          <p>Tel: ${telefono}</p>
+          ${(parseFloat(f.iva) || 0) > 0 ? '<p class="cot-doc__legal-line">Responsable de IVA</p>' : ''}
         </div>
         <div class="cot-doc__qr" aria-hidden="true">
           <div class="cot-doc__qr-placeholder cot-doc__qr-placeholder--print">
@@ -187,33 +187,33 @@ export function renderFacturaDocumento(f, config = {}) {
             <span>${f.numeroFactura}</span>
           </div>
         </div>
-      </header>
-
-      <section class="cot-doc__grid cot-doc__grid--3">
-        <div>
-          <h2>Cliente</h2>
-          <dl>
-            <div><dt>Cliente</dt><dd>${cliente?.nombre || 'Cliente general'}</dd></div>
-            <div><dt>NIT</dt><dd>${cliente?.documento || '—'}</dd></div>
-            <div><dt>Dirección</dt><dd>${cliente?.direccion || '—'}</dd></div>
-          </dl>
-        </div>
-        <div>
-          <h2>Información adicional</h2>
-          <dl>
-            <div><dt>Teléfono</dt><dd>${cliente?.telefono || '—'}</dd></div>
-            <div><dt>Vendedor</dt><dd>${vendedor}</dd></div>
-            <div><dt>Correo</dt><dd>${cliente?.email || '—'}</dd></div>
-          </dl>
-        </div>
         <div class="cot-doc__doc-id">
           <div class="cot-doc__doc-id-inner">
             <strong>FACTURA DE VENTA</strong>
-            <span>${f.numeroFactura}</span>
-            <small>Generación: ${fmtFacDate(f.createdAt)}</small>
-            <small>Vence: ${fmtFacDate(f.fechaVencimiento)}</small>
+            <span>N° ${f.numeroFactura}</span>
             <small>${(f.estado || '').toUpperCase()}</small>
           </div>
+        </div>
+      </header>
+
+      <section class="cot-doc__grid">
+        <div>
+          <h2>Datos del cliente</h2>
+          <dl>
+            <div><dt>Cliente</dt><dd>${cliente?.nombre || 'Cliente general'}</dd></div>
+            <div><dt>NIT / C.C.</dt><dd>${cliente?.documento || '—'}</dd></div>
+            <div><dt>Dirección</dt><dd>${cliente?.direccion || '—'}</dd></div>
+            <div><dt>Teléfono</dt><dd>${cliente?.telefono || '—'}</dd></div>
+          </dl>
+        </div>
+        <div>
+          <h2>Datos del documento</h2>
+          <dl>
+            <div><dt>Fecha factura</dt><dd>${fmtFacDate(f.createdAt)}</dd></div>
+            <div><dt>Fecha vencimiento</dt><dd>${fmtFacDate(f.fechaVencimiento)}</dd></div>
+            <div><dt>Vendedor</dt><dd>${vendedor}</dd></div>
+            <div><dt>Sede</dt><dd>${f.sede?.nombre || '—'}</dd></div>
+          </dl>
         </div>
       </section>
 

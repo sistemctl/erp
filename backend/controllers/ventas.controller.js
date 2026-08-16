@@ -111,19 +111,6 @@ exports.procesarVenta = async (req, res, next) => {
       }
     }
 
-    if (esCredito) {
-      const cliCred = await Cliente.findByPk(resolvedClienteId, { transaction });
-      const esConsumidor = !cliCred ||
-        cliCred.nombre === 'Consumidor Final' ||
-        ['222222222', '222222222-0', '222222222222'].includes(cliCred.documento);
-      if (esConsumidor) {
-        await transaction.rollback();
-        return res.status(400).json({
-          error: 'Debe seleccionar un cliente registrado para realizar ventas a crédito.'
-        });
-      }
-    }
-
     // 1. Verificar Caja Abierta (compartida por sede o del usuario)
     const { caja } = await findCajaAbierta({
       sedeId,
@@ -139,6 +126,34 @@ exports.procesarVenta = async (req, res, next) => {
     // 2. Cargar configuración del sistema para límites de descuento
     const config = await ConfiguracionSistema.findOne({ transaction });
     const maxDescuento = config ? parseFloat(config.descuentoMaximoPct) : 15.00;
+    const metodosActivos = Array.isArray(config?.mediosPago)
+      ? config.mediosPago.filter((medio) => medio?.id && medio.activo !== false).map((medio) => medio.id)
+      : Object.keys(METODOS_CAJA);
+    const pagoInvalido = (pagos || []).find((pago) => !metodosActivos.includes(pago.metodo) && pago.metodo !== 'trade_in');
+    if (pagoInvalido) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'El medio de pago seleccionado no está habilitado.' });
+    }
+
+    const mediosDiferidos = (Array.isArray(config?.mediosPago) ? config.mediosPago : [])
+      .filter((medio) => medio?.id && (medio.recaudoDiferido === true || medio.id === 'sistecredito'));
+    const montosDiferidos = (pagos || []).filter((pago) => mediosDiferidos.some((medio) => medio.id === pago.metodo));
+    const montoDiferido = montosDiferidos.reduce((sum, pago) => sum + (parseFloat(pago.monto) || 0), 0);
+    const medioDiferido = mediosDiferidos.find((medio) => montosDiferidos.some((pago) => pago.metodo === medio.id));
+    const esRecaudoExterno = montoDiferido > 0;
+
+    if (esCredito && !esRecaudoExterno) {
+      const cliCred = await Cliente.findByPk(resolvedClienteId, { transaction });
+      const esConsumidor = !cliCred ||
+        cliCred.nombre === 'Consumidor Final' ||
+        ['222222222', '222222222-0', '222222222222'].includes(cliCred.documento);
+      if (esConsumidor) {
+        await transaction.rollback();
+        return res.status(400).json({
+          error: 'Debe seleccionar un cliente registrado para realizar ventas a crédito.'
+        });
+      }
+    }
 
     let requierePin = false;
     let autorizadoPorId = null;
@@ -192,7 +207,9 @@ exports.procesarVenta = async (req, res, next) => {
 
     // Calcular abonos
     const totalPagado = pagos.reduce((acc, curr) => acc + parseFloat(curr.monto), 0);
-    const saldoPendiente = parseFloat(total) - totalPagado;
+    const totalRecibido = totalPagado - montoDiferido;
+    const saldoPendiente = Math.max(0, parseFloat(total) - totalRecibido);
+    const ventaACredito = !!esCredito || esRecaudoExterno;
 
     // 3. Crear Venta
     const venta = await Venta.create({
@@ -204,9 +221,9 @@ exports.procesarVenta = async (req, res, next) => {
       descuentoTotal: parseFloat(descuentoTotal),
       iva: parseFloat(iva),
       total: parseFloat(total),
-      esCredito: !!esCredito,
-      saldoPendiente: !!esCredito ? saldoPendiente : 0,
-      estado: !!esCredito ? 'credito' : 'completada',
+      esCredito: ventaACredito,
+      saldoPendiente: ventaACredito ? saldoPendiente : 0,
+      estado: ventaACredito ? 'credito' : 'completada',
       observaciones,
       idempotencyKey: idempotencyKey || null
     }, { transaction });
@@ -294,6 +311,7 @@ exports.procesarVenta = async (req, res, next) => {
     let daviplataPagado = 0;
     let tarjetaPagado = 0;
     let transferenciaPagada = 0;
+    const totalesPorMetodo = { ...(caja.totalesPorMetodo || {}) };
 
     for (const pago of pagos) {
       await PagoVenta.create({
@@ -308,6 +326,11 @@ exports.procesarVenta = async (req, res, next) => {
       else if (pago.metodo === 'daviplata') daviplataPagado += montoNum;
       else if (pago.metodo === 'tarjeta') tarjetaPagado += montoNum;
       else if (pago.metodo === 'transferencia') transferenciaPagada += montoNum;
+      else if (mediosDiferidos.some((medio) => medio.id === pago.metodo)) {
+        // El financiador aún no ha liquidado: no es dinero disponible en Caja.
+      } else if (pago.metodo !== 'trade_in') {
+        totalesPorMetodo[pago.metodo] = (parseFloat(totalesPorMetodo[pago.metodo]) || 0) + montoNum;
+      }
       else if (pago.metodo === 'trade_in') {
         const tradeIn = await TradeIn.findOne({
           where: { clienteId: resolvedClienteId, ventaId: null },
@@ -326,13 +349,16 @@ exports.procesarVenta = async (req, res, next) => {
       totalVentasNequi: parseFloat(caja.totalVentasNequi) + nequiPagado,
       totalVentasDaviplata: parseFloat(caja.totalVentasDaviplata) + daviplataPagado,
       totalVentasTarjeta: parseFloat(caja.totalVentasTarjeta) + tarjetaPagado,
-      totalVentasTransferencia: parseFloat(caja.totalVentasTransferencia) + transferenciaPagada
+      totalVentasTransferencia: parseFloat(caja.totalVentasTransferencia) + transferenciaPagada,
+      totalesPorMetodo
     }, { transaction });
 
     // 6. Generar Factura
     const countFacturas = await Factura.count({ transaction });
     const numeroFactura = `FE-${String(countFacturas + 1).padStart(6, '0')}`;
-    const diasPlazo = await getDiasPlazoCredito(ConfiguracionSistema);
+    const diasPlazo = esRecaudoExterno
+      ? Math.max(1, parseInt(medioDiferido?.plazoDias, 10) || 60)
+      : await getDiasPlazoCredito(ConfiguracionSistema);
     const fechaVencimiento = calcularFechaVencimientoCredito(diasPlazo);
 
     const factura = await Factura.create({
@@ -343,20 +369,22 @@ exports.procesarVenta = async (req, res, next) => {
       subtotal: parseFloat(subtotal),
       iva: parseFloat(iva),
       total: parseFloat(total),
-      estado: !!esCredito ? 'abono_parcial' : 'pagada',
+      estado: ventaACredito ? 'abono_parcial' : 'pagada',
       fechaVencimiento
     }, { transaction });
 
     // 7. Si es a crédito, registrar en Cuentas Por Cobrar (Cartera)
-    if (esCredito) {
+    if (ventaACredito) {
       await CuentaPorCobrar.create({
         facturaId: factura.id,
         clienteId: resolvedClienteId,
         totalOriginal: parseFloat(total),
-        totalAbonado: totalPagado,
+        totalAbonado: totalRecibido,
         saldoPendiente,
         fechaVencimiento,
-        estado: 'al_dia'
+        estado: 'al_dia',
+        pagadorExterno: esRecaudoExterno ? (medioDiferido?.nombre || medioDiferido?.id || 'Financiador') : null,
+        esRecaudoExterno
       }, { transaction });
     }
 

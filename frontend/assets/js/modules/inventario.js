@@ -5,6 +5,7 @@ import { erpHeader } from '../utils/module-shell.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
 import { printBarcodeLabels, renderBarcodePreview, isInternalBarcode } from '../utils/barcode-label.js';
 import { formatStockUnidad, normalizeUnidadMedida } from '../utils/unidad-medida.js';
+import { getLocalDateStr } from '../utils/date.js';
 
 let dataSedes = [];
 let inventarioKeydownHandler = null;
@@ -12,6 +13,10 @@ let inventarioKeydownHandler = null;
 export async function initInventario(container) {
   const usuario = getUsuario();
   const isAdminOrGerente = ['admin', 'superadmin', 'gerente_sede'].includes(usuario.rol);
+  const canViewMovementHistory = ['admin', 'superadmin', 'gerente_sede', 'contador'].includes(usuario.rol);
+  const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+  })[char]);
 
   const parseStockInput = (val) => {
     const n = parseInt(String(val ?? '').replace(/[^\d-]/g, ''), 10);
@@ -59,6 +64,18 @@ export async function initInventario(container) {
         ` : ''
       })}
 
+      <ul class="nav nav-tabs mb-3 d-print-none inv-module-tabs" data-bs-toggle="tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <a href="#tab-inventario-catalogo" class="nav-link active" data-bs-toggle="tab" aria-selected="true" role="tab"><i class="ti ti-package me-1"></i>Catálogo</a>
+        </li>
+        ${canViewMovementHistory ? `
+          <li class="nav-item" role="presentation">
+            <a href="#tab-inventario-movimientos" class="nav-link" data-bs-toggle="tab" aria-selected="false" role="tab" tabindex="-1"><i class="ti ti-arrows-exchange me-1"></i>Movimientos</a>
+          </li>
+        ` : ''}
+      </ul>
+      <div class="tab-content">
+      <div class="tab-pane active show" id="tab-inventario-catalogo" role="tabpanel">
       <div class="erp-list-workspace">
       <div class="card erp-filter-card d-print-none" role="search">
         <div class="card-body">
@@ -130,6 +147,81 @@ export async function initInventario(container) {
           </table>
         </div>
       </div>
+      </div>
+      </div>
+
+      ${canViewMovementHistory ? `
+        <div class="tab-pane" id="tab-inventario-movimientos" role="tabpanel">
+          <div class="erp-list-workspace movimiento-workspace">
+            <div class="card erp-filter-card">
+              <div class="card-body">
+                <form id="form-filtros-movimientos-inventario" class="row g-2 align-items-end">
+                  ${['admin', 'superadmin'].includes(usuario.rol) ? `
+                    <div class="col-md-3">
+                      <label class="form-label" for="mov-inv-sede">Sede</label>
+                      <select id="mov-inv-sede" class="form-select">
+                        <option value="">Todas las sedes</option>
+                        ${dataSedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                      </select>
+                    </div>
+                  ` : `<input type="hidden" id="mov-inv-sede" value="">`}
+                  <div class="col-6 col-md-2">
+                    <label class="form-label" for="mov-inv-desde">Desde</label>
+                    <input type="date" id="mov-inv-desde" class="form-control">
+                  </div>
+                  <div class="col-6 col-md-2">
+                    <label class="form-label" for="mov-inv-hasta">Hasta</label>
+                    <input type="date" id="mov-inv-hasta" class="form-control">
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label" for="mov-inv-producto">Producto</label>
+                    <select id="mov-inv-producto" class="form-select"><option value="">Todos los productos</option></select>
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label" for="mov-inv-tipo">Tipo</label>
+                    <select id="mov-inv-tipo" class="form-select">
+                      <option value="">Todos</option>
+                      <option value="entrada">Entrada</option>
+                      <option value="salida">Salida</option>
+                      <option value="traslado_entrada">Traslado recibido</option>
+                      <option value="traslado_salida">Traslado enviado</option>
+                      <option value="ajuste">Ajuste</option>
+                    </select>
+                  </div>
+                  <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100 erp-filter-submit"><i class="ti ti-filter me-1"></i>Filtrar</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+            <div class="card erp-table-panel movimiento-panel">
+              <div class="table-responsive">
+                <table class="table table-vcenter card-table table-hover mb-0 movimiento-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha y hora</th>
+                      <th>Movimiento</th>
+                      <th>Producto</th>
+                      <th class="text-end">Unidades</th>
+                      <th>Responsable</th>
+                      <th>Referencia</th>
+                      <th class="text-end">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="movimientos-inventario-tbody">
+                    <tr><td colspan="7" class="text-center py-4 text-secondary">Seleccione un período para consultar movimientos.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="movimiento-pagination" id="movimientos-inventario-pagination" hidden>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="mov-inv-prev" title="Página anterior" aria-label="Página anterior"><i class="ti ti-chevron-left"></i></button>
+                <span id="mov-inv-page-info" class="text-secondary small"></span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="mov-inv-next" title="Página siguiente" aria-label="Página siguiente"><i class="ti ti-chevron-right"></i></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ` : ''}
       </div>
     </div>
 
@@ -569,6 +661,12 @@ export async function initInventario(container) {
       </div>
     </div>
 
+    <div class="modal modal-blur fade" id="modal-detalle-movimiento-inventario" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content" id="detalle-movimiento-inventario-content"></div>
+      </div>
+    </div>
+
     <div id="barcode-print-host" class="barcode-print-host" aria-hidden="true"></div>
   `;
 
@@ -579,6 +677,9 @@ export async function initInventario(container) {
   let etiquetaProductoActual = null;
   const modalCSV = new bootstrap.Modal(document.getElementById('modal-csv'));
   const modalCategorias = new bootstrap.Modal(document.getElementById('modal-categorias'));
+  const modalDetalleMovimientoInventario = canViewMovementHistory
+    ? new bootstrap.Modal(document.getElementById('modal-detalle-movimiento-inventario'))
+    : null;
   let catPendingDelete = null;
 
   /** Quita backdrops huérfanos de modales anidados rotos (pantalla negra). */
@@ -609,6 +710,166 @@ export async function initInventario(container) {
   let filtroStock = soloStockBajo ? 'bajo' : 'todos';
   let filtroSerie = false;
   let filtroInterno = false;
+  let movimientosInventarioLoaded = false;
+  let movimientosInventarioPage = 1;
+  let movimientosInventarioCache = [];
+  let movimientosInventarioMeta = { page: 1, totalPages: 1, total: 0 };
+
+  const formatMovimientoFecha = (fecha) => {
+    const date = new Date(fecha);
+    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('es-CO', {
+      dateStyle: 'short', timeStyle: 'short'
+    });
+  };
+
+  const setDefaultMovimientoFechas = () => {
+    const hasta = getLocalDateStr();
+    const desdeDate = new Date();
+    desdeDate.setDate(desdeDate.getDate() - 30);
+    const desde = getLocalDateStr(desdeDate);
+    const desdeEl = document.getElementById('mov-inv-desde');
+    const hastaEl = document.getElementById('mov-inv-hasta');
+    if (desdeEl && !desdeEl.value) desdeEl.value = desde;
+    if (hastaEl && !hastaEl.value) hastaEl.value = hasta;
+  };
+
+  const movimientoTipoLabel = (tipo) => ({
+    entrada: 'Entrada',
+    salida: 'Salida',
+    traslado_entrada: 'Traslado recibido',
+    traslado_salida: 'Traslado enviado',
+    ajuste: 'Ajuste'
+  })[tipo] || tipo;
+
+  const loadMovimientoProductos = async () => {
+    const select = document.getElementById('mov-inv-producto');
+    if (!select || select.dataset.loaded) return;
+    try {
+      const productos = await apiFetch('/productos');
+      select.innerHTML = `<option value="">Todos los productos</option>${productos.map((producto) =>
+        `<option value="${producto.id}">${escapeHtml(producto.nombre)}${producto.codigoBarras ? ` · ${escapeHtml(producto.codigoBarras)}` : ''}</option>`
+      ).join('')}`;
+      select.dataset.loaded = '1';
+    } catch (error) {
+      console.error('No se pudieron cargar los productos para el historial:', error);
+    }
+  };
+
+  const renderMovimientosInventario = (data) => {
+    const tbody = document.getElementById('movimientos-inventario-tbody');
+    const pagination = document.getElementById('movimientos-inventario-pagination');
+    if (!tbody || !pagination) return;
+    movimientosInventarioCache = data.items || [];
+    movimientosInventarioMeta = data.pagination || movimientosInventarioMeta;
+
+    if (!movimientosInventarioCache.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-secondary">No hay movimientos de inventario para los filtros seleccionados.</td></tr>';
+      pagination.hidden = true;
+      return;
+    }
+
+    tbody.innerHTML = movimientosInventarioCache.map((movimiento) => {
+      const isEntrada = movimiento.direccion === 'entrada';
+      const directionClass = isEntrada ? 'movimiento-direction--in' : 'movimiento-direction--out';
+      const directionIcon = isEntrada ? 'ti-arrow-down-left' : 'ti-arrow-up-right';
+      return `
+        <tr class="movimiento-row">
+          <td class="text-nowrap text-secondary small">${escapeHtml(formatMovimientoFecha(movimiento.fecha))}</td>
+          <td><span class="movimiento-direction ${directionClass}"><i class="ti ${directionIcon}"></i>${isEntrada ? 'Entrada' : 'Salida'}</span></td>
+          <td>
+            <div class="fw-semibold">${escapeHtml(movimiento.producto)}</div>
+            <div class="small text-secondary">${escapeHtml(movimientoTipoLabel(movimiento.tipo))} · ${escapeHtml(movimiento.codigo)}</div>
+          </td>
+          <td class="text-end text-nowrap fw-bold ${isEntrada ? 'text-success' : 'text-danger'}">${isEntrada ? '+' : '−'}${escapeHtml(movimiento.cantidad)}</td>
+          <td>${escapeHtml(movimiento.responsable)}</td>
+          <td><code class="small">${escapeHtml(movimiento.referencia)}</code></td>
+          <td class="text-end erp-td-actions">${erpAction('view', { className: 'btn-ver-movimiento-inventario', attrs: { 'data-id': movimiento.id }, label: 'Ver detalle' })}</td>
+        </tr>
+      `;
+    }).join('');
+
+    pagination.hidden = false;
+    document.getElementById('mov-inv-page-info').textContent = `Página ${movimientosInventarioMeta.page} de ${movimientosInventarioMeta.totalPages} · ${movimientosInventarioMeta.total} movimientos`;
+    document.getElementById('mov-inv-prev').disabled = movimientosInventarioMeta.page <= 1;
+    document.getElementById('mov-inv-next').disabled = movimientosInventarioMeta.page >= movimientosInventarioMeta.totalPages;
+    tbody.querySelectorAll('.btn-ver-movimiento-inventario').forEach((button) => {
+      button.addEventListener('click', () => openDetalleMovimientoInventario(button.dataset.id));
+    });
+  };
+
+  const loadMovimientosInventario = async (page = 1) => {
+    if (!canViewMovementHistory) return;
+    movimientosInventarioPage = page;
+    setDefaultMovimientoFechas();
+    const tbody = document.getElementById('movimientos-inventario-tbody');
+    const pagination = document.getElementById('movimientos-inventario-pagination');
+    if (!tbody || !pagination) return;
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><div class="spinner-border spinner-border-sm text-primary" role="status"></div></td></tr>';
+    pagination.hidden = true;
+    try {
+      await loadMovimientoProductos();
+      const params = new URLSearchParams({ page: String(page), limit: '50' });
+      const sede = document.getElementById('mov-inv-sede')?.value;
+      const desde = document.getElementById('mov-inv-desde')?.value;
+      const hasta = document.getElementById('mov-inv-hasta')?.value;
+      const productoId = document.getElementById('mov-inv-producto')?.value;
+      const tipo = document.getElementById('mov-inv-tipo')?.value;
+      if (sede) params.set('sede', sede);
+      if (desde) params.set('desde', desde);
+      if (hasta) params.set('hasta', hasta);
+      if (productoId) params.set('productoId', productoId);
+      if (tipo) params.set('tipo', tipo);
+      renderMovimientosInventario(await apiFetch(`/inventario/movimientos?${params.toString()}`));
+      movimientosInventarioLoaded = true;
+    } catch (error) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger">Error al cargar movimientos: ${escapeHtml(error.message)}</td></tr>`;
+    }
+  };
+
+  const openDetalleMovimientoInventario = (id) => {
+    const movimiento = movimientosInventarioCache.find((item) => item.id === id);
+    if (!movimiento || !modalDetalleMovimientoInventario) return;
+    const isEntrada = movimiento.direccion === 'entrada';
+    const content = document.getElementById('detalle-movimiento-inventario-content');
+    content.innerHTML = `
+      <div class="modal-header">
+        <div>
+          <p class="text-secondary small mb-1">Movimiento de inventario</p>
+          <h5 class="modal-title mb-0">${escapeHtml(movimiento.producto)}</h5>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="movimiento-detail-amount ${isEntrada ? 'movimiento-detail-amount--in' : 'movimiento-detail-amount--out'}">
+          <span>${isEntrada ? 'Entrada' : 'Salida'}</span>
+          <strong>${isEntrada ? '+' : '−'}${escapeHtml(movimiento.cantidad)} unidades</strong>
+        </div>
+        <dl class="movimiento-detail-grid mb-0">
+          <div><dt>Fecha y hora</dt><dd>${escapeHtml(formatMovimientoFecha(movimiento.fecha))}</dd></div>
+          <div><dt>Tipo</dt><dd>${escapeHtml(movimientoTipoLabel(movimiento.tipo))}</dd></div>
+          <div><dt>Responsable</dt><dd>${escapeHtml(movimiento.responsable)}</dd></div>
+          <div><dt>Referencia</dt><dd>${escapeHtml(movimiento.referencia)}</dd></div>
+          <div class="movimiento-detail-grid__wide"><dt>Motivo</dt><dd>${escapeHtml(movimiento.detalle)}</dd></div>
+        </dl>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary ms-auto" data-bs-dismiss="modal">Cerrar</button></div>
+    `;
+    modalDetalleMovimientoInventario.show();
+  };
+
+  document.getElementById('form-filtros-movimientos-inventario')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    loadMovimientosInventario(1);
+  });
+  document.getElementById('mov-inv-prev')?.addEventListener('click', () => {
+    if (movimientosInventarioMeta.page > 1) loadMovimientosInventario(movimientosInventarioMeta.page - 1);
+  });
+  document.getElementById('mov-inv-next')?.addEventListener('click', () => {
+    if (movimientosInventarioMeta.page < movimientosInventarioMeta.totalPages) loadMovimientosInventario(movimientosInventarioMeta.page + 1);
+  });
+  document.querySelector('a[href="#tab-inventario-movimientos"]')?.addEventListener('shown.bs.tab', () => {
+    if (!movimientosInventarioLoaded) loadMovimientosInventario(1);
+  });
 
   const stockStatusOf = (item) => {
     const qty = item.cantidad;

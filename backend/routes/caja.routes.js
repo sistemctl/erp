@@ -10,6 +10,7 @@ router.post('/liberar', authMiddleware, rolesMiddleware(['admin', 'superadmin'])
 router.post('/egreso', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'cajero']), cajaController.egresoCaja);
 router.get('/reporte', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'contador', 'cajero']), cajaController.getReporteCaja);
 router.get('/historial', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'contador']), cajaController.getHistorialCajas);
+router.get('/movimientos', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'contador']), cajaController.getMovimientosFinancieros);
 router.get('/egresos', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'cajero', 'contador']), cajaController.getEgresos);
 router.get('/categorias-egreso', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'cajero', 'contador']), cajaController.getCategoriasEgreso);
 router.get('/:id/reporte-z-pdf', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'contador', 'cajero']), cajaController.descargarReporteZCajaPDF);

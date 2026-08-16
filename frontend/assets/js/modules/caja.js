@@ -51,6 +51,11 @@ export async function initCaja(container) {
                 <i class="ti ti-chart-donut me-1"></i> Análisis de Gastos
               </a>
             </li>
+            <li class="nav-item" role="presentation">
+              <a href="#tab-movimientos-caja" class="nav-link" data-bs-toggle="tab" aria-selected="false" role="tab" tabindex="-1">
+                <i class="ti ti-arrows-exchange me-1"></i> Movimientos
+              </a>
+            </li>
           </ul>
         </div>
         <div class="card-body">
@@ -225,6 +230,76 @@ export async function initCaja(container) {
                 </div>
               </div>
             </div>
+
+            <!-- TAB 4: MOVIMIENTOS FINANCIEROS -->
+            <div class="tab-pane" id="tab-movimientos-caja" role="tabpanel">
+              <div class="erp-list-workspace movimiento-workspace">
+                <div class="card erp-filter-card">
+                  <div class="card-body">
+                    <form id="form-filtros-movimientos-caja" class="row g-2 align-items-end">
+                      ${['admin', 'superadmin'].includes(usuario.rol) ? `
+                        <div class="col-md-3">
+                          <label class="form-label" for="mov-caja-sede">Sede</label>
+                          <select id="mov-caja-sede" class="form-select">
+                            <option value="">Todas las sedes</option>
+                            ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                          </select>
+                        </div>
+                      ` : `<input type="hidden" id="mov-caja-sede" value="">`}
+                      <div class="col-6 col-md-2">
+                        <label class="form-label" for="mov-caja-desde">Desde</label>
+                        <input type="date" id="mov-caja-desde" class="form-control">
+                      </div>
+                      <div class="col-6 col-md-2">
+                        <label class="form-label" for="mov-caja-hasta">Hasta</label>
+                        <input type="date" id="mov-caja-hasta" class="form-control">
+                      </div>
+                      <div class="col-md-3">
+                        <label class="form-label" for="mov-caja-tipo">Tipo</label>
+                        <select id="mov-caja-tipo" class="form-select">
+                          <option value="">Todos los movimientos</option>
+                          <option value="apertura">Aperturas</option>
+                          <option value="venta">Ventas</option>
+                          <option value="abono">Abonos</option>
+                          <option value="egreso">Egresos</option>
+                          <option value="pago_compra">Pagos a proveedor</option>
+                          <option value="devolucion">Devoluciones</option>
+                        </select>
+                      </div>
+                      <div class="col-md-2 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary w-100 erp-filter-submit"><i class="ti ti-filter me-1"></i>Filtrar</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+
+                <div class="card erp-table-panel movimiento-panel">
+                  <div class="table-responsive">
+                    <table class="table table-vcenter card-table table-hover mb-0 movimiento-table">
+                      <thead>
+                        <tr>
+                          <th>Fecha y hora</th>
+                          <th>Movimiento</th>
+                          <th>Concepto</th>
+                          <th>Responsable</th>
+                          <th>Medio</th>
+                          <th class="text-end">Valor</th>
+                          <th class="text-end">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody id="movimientos-caja-tbody">
+                        <tr><td colspan="7" class="text-center py-4 text-secondary">Seleccione un período para consultar movimientos.</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="movimiento-pagination" id="movimientos-caja-pagination" hidden>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="mov-caja-prev" title="Página anterior" aria-label="Página anterior"><i class="ti ti-chevron-left"></i></button>
+                    <span id="mov-caja-page-info" class="text-secondary small"></span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="mov-caja-next" title="Página siguiente" aria-label="Página siguiente"><i class="ti ti-chevron-right"></i></button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -337,6 +412,7 @@ export async function initCaja(container) {
                     <label class="form-label">Total Transferencias</label>
                     <input type="number" id="cierre-transferencia" class="form-control" required min="0">
                   </div>
+                  <div id="cierre-medios-extra"></div>
                   <div class="mb-3">
                     <label class="form-label">Observaciones y Notas</label>
                     <textarea id="cierre-observaciones" class="form-control" rows="2" placeholder="Describa diferencias si las hay…"></textarea>
@@ -370,6 +446,12 @@ export async function initCaja(container) {
         </div>
       </div>
     </div>
+
+    <div class="modal modal-blur fade" id="modal-detalle-movimiento-caja" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content" id="detalle-movimiento-caja-content"></div>
+      </div>
+    </div>
   `;
 
   const modalApertura = new bootstrap.Modal(document.getElementById('modal-apertura'));
@@ -377,6 +459,7 @@ export async function initCaja(container) {
   const modalCierre = new bootstrap.Modal(document.getElementById('modal-cierre'));
   const modalDetallePast = new bootstrap.Modal(document.getElementById('modal-detalle-past-caja'));
   const modalCierreZReport = new bootstrap.Modal(document.getElementById('modal-cierre-z-report'));
+  const modalDetalleMovimiento = new bootstrap.Modal(document.getElementById('modal-detalle-movimiento-caja'));
 
   if (isAdminOrContador) {
     const selectSede = document.getElementById('select-caja-sede');
@@ -389,6 +472,9 @@ export async function initCaja(container) {
   }
 
   const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+  const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+  })[char]);
 
   const METODOS_PAGO_CAJA = [
     { key: 'totalVentasEfectivo', label: 'Efectivo', icon: 'ti-cash', tone: 'green' },
@@ -397,12 +483,28 @@ export async function initCaja(container) {
     { key: 'totalVentasTarjeta', label: 'Tarjeta', icon: 'ti-credit-card', tone: 'blue' },
     { key: 'totalVentasTransferencia', label: 'Transferencia', icon: 'ti-building-bank', tone: 'cyan' }
   ];
+  let mediosPagoConfigurados = [];
 
   const HISTORIAL_COLS = 13;
   let historialCache = [];
 
+  const getMetodosCaja = (cajaData) => {
+    const base = METODOS_PAGO_CAJA.map((medio) => ({ ...medio, monto: parseFloat(cajaData[medio.key] || 0) }));
+    const idsBase = new Set(['efectivo', 'nequi', 'daviplata', 'tarjeta', 'transferencia']);
+    const extras = mediosPagoConfigurados
+      .filter((medio) => medio?.id && !idsBase.has(medio.id))
+      .map((medio, index) => ({
+        key: medio.id,
+        label: medio.nombre || medio.id,
+        icon: 'ti-wallet',
+        tone: ['indigo', 'orange', 'azure', 'lime'][index % 4],
+        monto: parseFloat(cajaData.totalesPorMetodo?.[medio.id] || 0)
+      }));
+    return [...base, ...extras];
+  };
+
   const calcTotalIngresos = (cajaData) =>
-    METODOS_PAGO_CAJA.reduce((sum, m) => sum + parseFloat(cajaData[m.key] || 0), 0);
+    getMetodosCaja(cajaData).reduce((sum, m) => sum + m.monto, 0);
 
   const buildDesglosePagosHtml = (cajaData, opts = {}) => {
     const {
@@ -412,10 +514,7 @@ export async function initCaja(container) {
       embedded = false
     } = opts;
 
-    const montos = METODOS_PAGO_CAJA.map(m => ({
-      ...m,
-      monto: parseFloat(cajaData[m.key] || 0)
-    }));
+    const montos = getMetodosCaja(cajaData);
     const totalIngresos = montos.reduce((sum, m) => sum + m.monto, 0);
 
     const tarjetas = montos.map(m => {
@@ -490,6 +589,9 @@ export async function initCaja(container) {
     try {
       const sysConfig = await apiFetch('/config/sistema');
       limiteEgresoSinPin = parseFloat(sysConfig.egresoMaximoSinPin || 50000);
+      mediosPagoConfigurados = Array.isArray(sysConfig.mediosPago)
+        ? sysConfig.mediosPago.filter((medio) => medio?.id && medio.activo !== false)
+        : [];
     } catch (e) {
       console.error(e);
     }
@@ -626,6 +728,13 @@ export async function initCaja(container) {
         document.getElementById('cierre-daviplata').value = data.totalVentasDaviplata;
         document.getElementById('cierre-tarjeta').value = data.totalVentasTarjeta;
         document.getElementById('cierre-transferencia').value = data.totalVentasTransferencia;
+        const extrasCierre = getMetodosCaja(data).filter((medio) => !METODOS_PAGO_CAJA.some((base) => base.key === medio.key));
+        document.getElementById('cierre-medios-extra').innerHTML = extrasCierre.map((medio) => `
+          <div class="mb-3">
+            <label class="form-label">Total ${medio.label}</label>
+            <input type="number" class="form-control cierre-medio-extra" data-metodo="${medio.key}" min="0" value="${medio.monto}">
+          </div>
+        `).join('');
         modalCierre.show();
       });
 
@@ -906,6 +1015,8 @@ export async function initCaja(container) {
       totalVentasDaviplata: parseFloat(document.getElementById('cierre-daviplata').value || 0),
       totalVentasTarjeta: parseFloat(document.getElementById('cierre-tarjeta').value || 0),
       totalVentasTransferencia: parseFloat(document.getElementById('cierre-transferencia').value || 0),
+      totalesPorMetodo: Object.fromEntries([...document.querySelectorAll('.cierre-medio-extra')]
+        .map((input) => [input.dataset.metodo, parseFloat(input.value || 0)])),
       observaciones: document.getElementById('cierre-observaciones').value,
       sedeId: currentSedeId
     };
@@ -1037,6 +1148,186 @@ export async function initCaja(container) {
 
   document.querySelector('a[href="#tab-historial-cajas"]')?.addEventListener('shown.bs.tab', () => {
     setDefaultHistorialFechas();
+  });
+
+  // --- TAB 4: MOVIMIENTOS FINANCIEROS ---
+  const movimientosCajaTbody = document.getElementById('movimientos-caja-tbody');
+  const movimientosCajaPagination = document.getElementById('movimientos-caja-pagination');
+  let movimientosCajaPage = 1;
+  let movimientosCajaLoaded = false;
+  let movimientosCajaCache = [];
+  let movimientosCajaMeta = { page: 1, totalPages: 1, total: 0 };
+
+  const setDefaultMovimientosCajaFechas = () => {
+    const hasta = getLocalDateStr();
+    const desdeDate = new Date();
+    desdeDate.setDate(desdeDate.getDate() - 30);
+    const desde = desdeDate.toISOString().split('T')[0];
+    const elDesde = document.getElementById('mov-caja-desde');
+    const elHasta = document.getElementById('mov-caja-hasta');
+    if (elDesde && !elDesde.value) elDesde.value = desde;
+    if (elHasta && !elHasta.value) elHasta.value = hasta;
+  };
+
+  const formatMovimientoFecha = (fecha) => {
+    const date = new Date(fecha);
+    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('es-CO', {
+      dateStyle: 'short', timeStyle: 'short'
+    });
+  };
+
+  const renderMovimientosCaja = (data) => {
+    movimientosCajaCache = data.items || [];
+    movimientosCajaMeta = data.pagination || movimientosCajaMeta;
+    const items = movimientosCajaCache;
+
+    if (!items.length) {
+      movimientosCajaTbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-secondary">No hay movimientos financieros para los filtros seleccionados.</td></tr>';
+      movimientosCajaPagination.hidden = true;
+      return;
+    }
+
+    movimientosCajaTbody.innerHTML = items.map((movimiento) => {
+      const isEntrada = movimiento.direccion === 'entrada';
+      const directionClass = isEntrada ? 'movimiento-direction--in' : 'movimiento-direction--out';
+      const directionIcon = isEntrada ? 'ti-arrow-down-left' : 'ti-arrow-up-right';
+      const directionLabel = isEntrada ? 'Entrada' : 'Salida';
+      const productos = movimiento.origen?.items || [];
+      const productosCompletos = productos.map((item) => `${item.nombre} × ${item.cantidad}`).join(' · ');
+      const productosResumidos = productos.length > 2
+        ? `${productos.slice(0, 2).map((item) => `${item.nombre} × ${item.cantidad}`).join(' · ')} + ${productos.length - 2} más`
+        : productosCompletos;
+      const lineaSecundaria = productosResumidos ? `Productos: ${productosResumidos}` : movimiento.referencia;
+      return `
+        <tr class="movimiento-row" data-id="${escapeHtml(movimiento.id)}">
+          <td class="text-nowrap text-secondary small">${escapeHtml(formatMovimientoFecha(movimiento.fecha))}</td>
+          <td><span class="movimiento-direction ${directionClass}"><i class="ti ${directionIcon}"></i>${directionLabel}</span></td>
+          <td>
+            <div class="fw-semibold">${escapeHtml(movimiento.concepto)}</div>
+            <div class="small text-secondary text-truncate movimiento-reference" title="${escapeHtml(productosCompletos || movimiento.referencia)}">${escapeHtml(lineaSecundaria)}</div>
+          </td>
+          <td>${escapeHtml(movimiento.responsable)}</td>
+          <td><span class="text-secondary small">${escapeHtml(movimiento.medioPago || '—')}</span></td>
+          <td class="text-end text-nowrap fw-bold ${isEntrada ? 'text-success' : 'text-danger'}">${isEntrada ? '+' : '−'}${formatter.format(movimiento.monto)}</td>
+          <td class="text-end erp-td-actions">${erpAction('view', { className: 'btn-ver-movimiento-caja', attrs: { 'data-id': movimiento.id }, label: 'Ver origen y detalle' })}</td>
+        </tr>
+      `;
+    }).join('');
+
+    movimientosCajaPagination.hidden = false;
+    document.getElementById('mov-caja-page-info').textContent = `Página ${movimientosCajaMeta.page} de ${movimientosCajaMeta.totalPages} · ${movimientosCajaMeta.total} movimientos`;
+    document.getElementById('mov-caja-prev').disabled = movimientosCajaMeta.page <= 1;
+    document.getElementById('mov-caja-next').disabled = movimientosCajaMeta.page >= movimientosCajaMeta.totalPages;
+
+    movimientosCajaTbody.querySelectorAll('.btn-ver-movimiento-caja').forEach((button) => {
+      button.addEventListener('click', () => openDetalleMovimientoCaja(button.dataset.id));
+    });
+  };
+
+  const loadMovimientosCaja = async (page = 1) => {
+    movimientosCajaPage = page;
+    setDefaultMovimientosCajaFechas();
+    movimientosCajaTbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><div class="spinner-border spinner-border-sm text-primary" role="status"></div></td></tr>';
+    movimientosCajaPagination.hidden = true;
+
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: '50' });
+      const sede = document.getElementById('mov-caja-sede')?.value;
+      const desde = document.getElementById('mov-caja-desde')?.value;
+      const hasta = document.getElementById('mov-caja-hasta')?.value;
+      const tipo = document.getElementById('mov-caja-tipo')?.value;
+      if (sede) params.set('sede', sede);
+      if (desde) params.set('desde', desde);
+      if (hasta) params.set('hasta', hasta);
+      if (tipo) params.set('tipo', tipo);
+      renderMovimientosCaja(await apiFetch(`/caja/movimientos?${params.toString()}`));
+      movimientosCajaLoaded = true;
+    } catch (error) {
+      movimientosCajaTbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger">Error al cargar movimientos: ${escapeHtml(error.message)}</td></tr>`;
+    }
+  };
+
+  const openDetalleMovimientoCaja = (id) => {
+    const movimiento = movimientosCajaCache.find((item) => item.id === id);
+    if (!movimiento) return;
+    const isEntrada = movimiento.direccion === 'entrada';
+    const origen = movimiento.origen || {};
+    const origenRows = [
+      ['Módulo de origen', origen.modulo],
+      ['Documento', origen.documento],
+      ['Cliente / proveedor', origen.tercero],
+      ['Sede', origen.sede],
+      ['Autorizó', origen.autorizador]
+    ].filter(([, value]) => value);
+    const pagosHtml = origen.pagos?.length ? `
+      <section class="movimiento-origin-section">
+        <h6>Pagos de la operación</h6>
+        <div class="movimiento-origin-list">${origen.pagos.map((pago) =>
+          `<div><span>${escapeHtml(pago.medio)}</span><strong>${formatter.format(pago.monto)}</strong></div>`
+        ).join('')}</div>
+      </section>
+    ` : '';
+    const itemsHtml = origen.items?.length ? `
+      <section class="movimiento-origin-section">
+        <h6>Productos de la venta</h6>
+        <div class="movimiento-origin-list">${origen.items.map((item) =>
+          `<div><span>${escapeHtml(item.nombre)}</span><strong>${escapeHtml(item.cantidad)} und.</strong></div>`
+        ).join('')}</div>
+      </section>
+    ` : '';
+    const content = document.getElementById('detalle-movimiento-caja-content');
+    content.innerHTML = `
+      <div class="modal-header">
+        <div>
+          <p class="text-secondary small mb-1">Movimiento financiero</p>
+          <h5 class="modal-title mb-0">${escapeHtml(movimiento.concepto)}</h5>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="movimiento-detail-amount ${isEntrada ? 'movimiento-detail-amount--in' : 'movimiento-detail-amount--out'}">
+          <span>${isEntrada ? 'Entrada' : 'Salida'}</span>
+          <strong>${isEntrada ? '+' : '−'}${formatter.format(movimiento.monto)}</strong>
+        </div>
+        <dl class="movimiento-detail-grid mb-0">
+          <div><dt>Fecha y hora</dt><dd>${escapeHtml(formatMovimientoFecha(movimiento.fecha))}</dd></div>
+          <div><dt>Medio</dt><dd>${escapeHtml(movimiento.medioPago || '—')}</dd></div>
+          <div><dt>Responsable</dt><dd>${escapeHtml(movimiento.responsable)}</dd></div>
+          <div><dt>Referencia</dt><dd>${escapeHtml(movimiento.referencia)}</dd></div>
+          <div class="movimiento-detail-grid__wide"><dt>Detalle</dt><dd>${escapeHtml(movimiento.detalle || 'Sin detalle')}</dd></div>
+        </dl>
+        ${origenRows.length ? `
+          <section class="movimiento-origin-section">
+            <h6>De dónde proviene</h6>
+            <dl class="movimiento-detail-grid mb-0">
+              ${origenRows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}
+              ${origen.totalOperacion != null ? `<div><dt>Total de la operación</dt><dd class="fw-semibold">${formatter.format(origen.totalOperacion)}</dd></div>` : ''}
+            </dl>
+          </section>
+        ` : ''}
+        ${pagosHtml}
+        ${itemsHtml}
+      </div>
+      <div class="modal-footer d-flex justify-content-between gap-2">
+        ${origen.ruta ? `<a href="${escapeHtml(origen.ruta)}" class="btn btn-outline-primary"><i class="ti ti-external-link me-1"></i>Abrir origen</a>` : '<span></span>'}
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    `;
+    modalDetalleMovimiento.show();
+  };
+
+  document.getElementById('form-filtros-movimientos-caja')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    loadMovimientosCaja(1);
+  });
+  document.getElementById('mov-caja-prev')?.addEventListener('click', () => {
+    if (movimientosCajaMeta.page > 1) loadMovimientosCaja(movimientosCajaMeta.page - 1);
+  });
+  document.getElementById('mov-caja-next')?.addEventListener('click', () => {
+    if (movimientosCajaMeta.page < movimientosCajaMeta.totalPages) loadMovimientosCaja(movimientosCajaMeta.page + 1);
+  });
+  document.querySelector('a[href="#tab-movimientos-caja"]')?.addEventListener('shown.bs.tab', () => {
+    if (!movimientosCajaLoaded) loadMovimientosCaja(1);
   });
 
   async function openPastCajaDetalle(id, historyList) {

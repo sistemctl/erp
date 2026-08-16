@@ -37,7 +37,7 @@ const DevolucionVenta = sequelize.define('DevolucionVenta', {
     defaultValue: 0.00
   },
   metodoReembolso: {
-    type: DataTypes.ENUM('efectivo', 'tarjeta', 'nequi', 'daviplata', 'transferencia', 'credito'),
+    type: DataTypes.STRING,
     allowNull: false,
     defaultValue: 'efectivo'
   }

@@ -204,6 +204,7 @@ Cliente.hasMany(CuentaPorCobrar, { foreignKey: 'clienteId', as: 'cuentasPorCobra
 Abono.belongsTo(CuentaPorCobrar, { foreignKey: 'cuentaPorCobrarId', as: 'cuentaPorCobrar' });
 Abono.belongsTo(Usuario, { foreignKey: 'usuarioId', as: 'usuario' });
 CuentaPorCobrar.hasMany(Abono, { foreignKey: 'cuentaPorCobrarId', as: 'abonos' });
+Usuario.hasMany(Abono, { foreignKey: 'usuarioId', as: 'abonos' });
 
 // Empleado <-> Usuario, Sede
 Empleado.belongsTo(Usuario, { foreignKey: 'usuarioId', as: 'usuario' });

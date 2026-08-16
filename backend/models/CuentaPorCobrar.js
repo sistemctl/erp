@@ -15,6 +15,16 @@ const CuentaPorCobrar = sequelize.define('CuentaPorCobrar', {
     type: DataTypes.UUID,
     allowNull: false
   },
+  /** Financiador que liquida la venta, distinto al cliente final. */
+  pagadorExterno: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  esRecaudoExterno: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
   totalOriginal: {
     type: DataTypes.DECIMAL(15, 2),
     allowNull: false,

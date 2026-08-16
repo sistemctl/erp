@@ -36,10 +36,11 @@ export async function initTradeIn(container) {
               <form id="form-registrar-tradein">
                 <div class="mb-3">
                   <label class="form-label">Cliente que Entrega</label>
-                  <select id="ti-cliente" class="form-select" required>
-                    <option value="">-- Seleccionar Cliente --</option>
-                    ${clientes.map(c => `<option value="${c.id}">${c.nombre} (${c.documento || 'Sin doc'})</option>`).join('')}
-                  </select>
+                  <input type="hidden" id="ti-cliente" value="">
+                  <button type="button" id="btn-buscar-cliente-tradein" class="btn btn-outline-secondary w-100 text-start d-flex align-items-center justify-content-between">
+                    <span id="ti-cliente-nombre">Seleccionar cliente</span>
+                    <i class="ti ti-search"></i>
+                  </button>
                 </div>
 
                 ${needsSedePicker ? `
@@ -144,9 +145,76 @@ export async function initTradeIn(container) {
         </div>
       </div>
     </div>
+
+    <div class="modal modal-blur fade" id="modal-buscar-cliente-tradein" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable pos-client-search-dialog" role="document">
+        <div class="modal-content pos-client-search-modal">
+          <div class="modal-header pos-client-search-header">
+            <div class="d-flex align-items-center gap-2">
+              <span class="avatar avatar-sm bg-primary-lt text-primary"><i class="ti ti-users"></i></span>
+              <div>
+                <h5 class="modal-title">Buscar cliente</h5>
+                <div class="text-secondary small">Selecciona quién entrega el equipo</div>
+              </div>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+          </div>
+          <div class="modal-body pos-client-search-body">
+            <div class="input-icon">
+              <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+              <input type="search" id="ti-cliente-busqueda" class="form-control form-control-lg" placeholder="Nombre, documento o teléfono" autocomplete="off">
+            </div>
+            <div class="d-flex align-items-center justify-content-between mt-4 mb-2">
+              <span class="text-secondary small fw-semibold text-uppercase">Resultados</span>
+              <span id="ti-clientes-contador" class="text-secondary small"></span>
+            </div>
+            <div id="ti-clientes-resultados" class="pos-client-results"></div>
+          </div>
+        </div>
+      </div>
+    </div>
   `;
 
   const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+  const modalBuscarCliente = new bootstrap.Modal(document.getElementById('modal-buscar-cliente-tradein'));
+
+  const seleccionarCliente = (cliente) => {
+    document.getElementById('ti-cliente').value = cliente?.id || '';
+    document.getElementById('ti-cliente-nombre').textContent = cliente?.nombre || 'Seleccionar cliente';
+  };
+  const renderClientesTradeIn = (query = '') => {
+    const term = query.trim().toLowerCase();
+    const results = clientes.filter((cliente) => {
+      const haystack = `${cliente.nombre || ''} ${cliente.documento || ''} ${cliente.telefono || ''}`.toLowerCase();
+      return !term || haystack.includes(term);
+    }).slice(0, 50);
+    document.getElementById('ti-clientes-contador').textContent = results.length === 50 && clientes.length > 50
+      ? '50 resultados'
+      : `${results.length} ${results.length === 1 ? 'cliente' : 'clientes'}`;
+    const list = document.getElementById('ti-clientes-resultados');
+    list.innerHTML = results.length ? results.map((cliente) => `
+      <button type="button" class="checkout-cliente-opcion ti-cliente-opcion" data-id="${cliente.id}">
+        <span class="avatar avatar-sm checkout-cliente-avatar">${(cliente.nombre || '?').trim().charAt(0).toUpperCase()}</span>
+        <span class="checkout-cliente-info">
+          <span class="checkout-cliente-titulo">${cliente.nombre || 'Sin nombre'}</span>
+          <span class="checkout-cliente-meta"><i class="ti ti-id-badge"></i>${cliente.documento || 'Sin documento'}${cliente.telefono ? `<span class="checkout-cliente-separador">·</span><i class="ti ti-phone"></i>${cliente.telefono}` : ''}</span>
+        </span>
+        <i class="ti ti-chevron-right checkout-cliente-arrow"></i>
+      </button>
+    `).join('') : '<div class="pos-client-empty"><i class="ti ti-user-off"></i><span>No se encontraron clientes.</span></div>';
+    list.querySelectorAll('.ti-cliente-opcion').forEach((button) => button.addEventListener('click', () => {
+      seleccionarCliente(clientes.find((cliente) => String(cliente.id) === button.dataset.id));
+      modalBuscarCliente.hide();
+    }));
+  };
+  document.getElementById('btn-buscar-cliente-tradein').addEventListener('click', () => {
+    const input = document.getElementById('ti-cliente-busqueda');
+    input.value = '';
+    renderClientesTradeIn();
+    modalBuscarCliente.show();
+    setTimeout(() => input.focus(), 150);
+  });
+  document.getElementById('ti-cliente-busqueda').addEventListener('input', (event) => renderClientesTradeIn(event.target.value));
 
   const valoracionEl = document.getElementById('ti-valoracion');
   const margenEl = document.getElementById('ti-margen');
@@ -212,6 +280,11 @@ export async function initTradeIn(container) {
   document.getElementById('form-registrar-tradein').addEventListener('submit', async (e) => {
     e.preventDefault();
 
+    if (!document.getElementById('ti-cliente').value) {
+      alert('Seleccione el cliente que entrega el equipo.');
+      return;
+    }
+
     const payload = {
       clienteId: document.getElementById('ti-cliente').value,
       tipoEquipo: document.getElementById('ti-tipo').value.trim(),
@@ -258,6 +331,7 @@ export async function initTradeIn(container) {
       }));
 
       document.getElementById('form-registrar-tradein').reset();
+      seleccionarCliente(null);
       precioVentaManual = false;
       margenEl.value = '30';
       loadTradeIns();

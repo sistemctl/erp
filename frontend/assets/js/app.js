@@ -5,7 +5,7 @@ import { applyDocumentBranding, getCachedBrand, resolveAssetUrl } from './utils/
 import { isPublicSeguimientoLocation } from './modules/seguimiento-reparacion.js';
 
 /** Bump with index.html ?v= so dynamic ES modules are not stuck on CDN/browser cache. */
-const ASSET_V = '3.0.72';
+const ASSET_V = '3.0.94';
 const importModule = (path) => import(`${path}?v=${ASSET_V}`);
 
 // Anular global alert del navegador con una notificación Toast Premium animada
@@ -27,9 +27,19 @@ window.alert = (message) => {
 
 const SIDEBAR_SECTIONS = [
   {
-    id: 'operacion',
-    label: 'Operación',
-    hashes: ['#/dashboard', '#/pos', '#/ventas', '#/clientes', '#/reparaciones', '#/rma', '#/instalaciones', '#/cotizaciones', '#/tradein']
+    id: 'inicio',
+    label: 'Inicio',
+    hashes: ['#/dashboard']
+  },
+  {
+    id: 'comercial',
+    label: 'Comercial',
+    hashes: ['#/pos', '#/ventas', '#/cotizaciones', '#/clientes', '#/tradein']
+  },
+  {
+    id: 'servicio',
+    label: 'Servicio técnico',
+    hashes: ['#/reparaciones', '#/rma', '#/instalaciones']
   },
   {
     id: 'inventario',
@@ -39,7 +49,7 @@ const SIDEBAR_SECTIONS = [
   {
     id: 'finanzas',
     label: 'Finanzas',
-    hashes: ['#/caja', '#/facturacion', '#/compras', '#/proveedores', '#/cartera', '#/nomina', '#/rentabilidad', '#/reportes']
+    hashes: ['#/caja', '#/facturacion', '#/cartera', '#/compras', '#/proveedores', '#/nomina', '#/rentabilidad', '#/reportes']
   },
   {
     id: 'sistema',
@@ -504,6 +514,9 @@ async function renderLoginView(container) {
               <div class="login-panel__input-wrap">
                 <i class="ti ti-lock login-panel__input-icon" aria-hidden="true"></i>
                 <input type="password" id="login-password" class="login-panel__input" placeholder="Tu contraseña" required autocomplete="current-password">
+                <button type="button" id="login-password-toggle" class="login-panel__password-toggle" aria-label="Mostrar contraseña" title="Mostrar contraseña" aria-pressed="false">
+                  <i class="ti ti-eye" aria-hidden="true"></i>
+                </button>
               </div>
             </div>
             <button type="submit" id="login-btn" class="login-panel__submit">
@@ -585,12 +598,24 @@ async function renderLoginView(container) {
 
   const form = document.getElementById('login-form');
   const btn = document.getElementById('login-btn');
+  const passwordInput = document.getElementById('login-password');
+  const passwordToggle = document.getElementById('login-password-toggle');
   const submitDefaultHtml = btn.innerHTML;
+
+  passwordToggle.addEventListener('click', () => {
+    const visible = passwordInput.type === 'text';
+    passwordInput.type = visible ? 'password' : 'text';
+    passwordToggle.setAttribute('aria-pressed', String(!visible));
+    passwordToggle.setAttribute('aria-label', visible ? 'Mostrar contraseña' : 'Ocultar contraseña');
+    passwordToggle.setAttribute('title', visible ? 'Mostrar contraseña' : 'Ocultar contraseña');
+    passwordToggle.innerHTML = `<i class="ti ti-${visible ? 'eye' : 'eye-off'}" aria-hidden="true"></i>`;
+    passwordInput.focus();
+  });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = document.getElementById('login-email').value;
-    const password = document.getElementById('login-password').value;
+    const password = passwordInput.value;
     const errorDiv = document.getElementById('login-error');
 
     errorDiv.classList.add('d-none');

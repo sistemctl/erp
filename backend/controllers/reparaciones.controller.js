@@ -382,14 +382,21 @@ exports.updateEstado = async (req, res, next) => {
         const numeroFactura = `FE-${String(countFacturas + 1).padStart(6, '0')}`;
         const diasPlazo = await getDiasPlazoCredito(ConfiguracionSistema);
         const fechaVencimiento = calcularFechaVencimientoCredito(diasPlazo);
+        const config = await ConfiguracionSistema.findOne({ transaction });
+        const cobrarIvaTaller = config?.cobrarIvaTaller === true;
+        const tasaIva = Math.max(0, parseFloat(config?.ivaDefecto ?? 19)) / 100;
+        const iva = cobrarIvaTaller && tasaIva > 0
+          ? totalNum - (totalNum / (1 + tasaIva))
+          : 0;
+        const subtotal = totalNum - iva;
         
         const factura = await Factura.create({
           numeroFactura,
           ordenReparacionId: id,
           clienteId: orden.clienteId,
           sedeId: orden.sedeId,
-          subtotal: totalNum / 1.19,
-          iva: (totalNum / 1.19) * 0.19,
+          subtotal,
+          iva,
           total: totalNum,
           estado: saldoPendiente > 0 ? 'abono_parcial' : 'pagada',
           fechaVencimiento

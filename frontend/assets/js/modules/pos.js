@@ -15,6 +15,11 @@ let cobrarIva = true;
 let ivaPct = 0.19;
 let currentSedeId = null;
 let sedes = [];
+let mediosPagoActivos = [
+  { id: 'efectivo', nombre: 'Efectivo' }, { id: 'nequi', nombre: 'Nequi' },
+  { id: 'daviplata', nombre: 'Daviplata' }, { id: 'tarjeta', nombre: 'Tarjeta' },
+  { id: 'transferencia', nombre: 'Transferencia' }
+];
 let empresaConfig = {
   empresa: 'TechStore Colombia',
   nit: '',
@@ -119,6 +124,9 @@ export async function initPos(container) {
     cobrarIva = config && config.cobrarIvaPos !== undefined ? !!config.cobrarIvaPos : true;
     ivaPct = config && config.ivaDefecto !== undefined ? parseFloat(config.ivaDefecto) / 100 : 0.19;
     cajaCompartida = !config || config.cajaCompartidaSede !== false;
+    if (Array.isArray(config?.mediosPago)) {
+      mediosPagoActivos = config.mediosPago.filter((medio) => medio?.id && medio.activo !== false);
+    }
     if (config) {
       empresaConfig = {
         empresa: config.empresa || 'TechStore Colombia',
@@ -349,21 +357,16 @@ export async function initPos(container) {
                 <div class="col-md-6 border-end">
                   <div class="mb-3">
                     <label class="form-label">Cliente (Opcional)</label>
-                    <select id="checkout-cliente" class="form-select">
-                      ${(() => {
-                        const isConsumidor = (c) =>
-                          c.nombre === 'Consumidor Final' ||
-                          c.documento === '222222222' ||
-                          c.documento === '222222222-0' ||
-                          c.documento === '222222222222';
-                        const consumidor = clientes.find(isConsumidor);
-                        const otros = clientes.filter((c) => !isConsumidor(c));
-                        return `
-                          <option value="${consumidor ? consumidor.id : ''}">Consumidor Final</option>
-                          ${otros.map((c) => `<option value="${c.id}">${c.nombre} (${c.documento || 's/d'})</option>`).join('')}
-                        `;
-                      })()}
-                    </select>
+                    ${(() => {
+                      const consumidor = clientes.find((c) => c.nombre === 'Consumidor Final' || ['222222222', '222222222-0', '222222222222'].includes(c.documento));
+                      return `
+                        <input type="hidden" id="checkout-cliente" value="${consumidor?.id || ''}">
+                        <button type="button" id="btn-buscar-cliente-checkout" class="btn btn-outline-secondary w-100 text-start d-flex align-items-center justify-content-between">
+                          <span id="checkout-cliente-nombre">${consumidor?.nombre || 'Consumidor Final'}</span>
+                          <i class="ti ti-search"></i>
+                        </button>
+                      `;
+                    })()}
                   </div>
                   <!-- Contenedor Trade-In dinámico -->
                   <div id="checkout-trade-in-select-container" class="mb-3 d-none"></div>
@@ -383,26 +386,7 @@ export async function initPos(container) {
                 <!-- Columna de métodos de pago mixto -->
                 <div class="col-md-6">
                   <h3 class="mb-3 text-secondary">Métodos de Pago combinados</h3>
-                  <div class="mb-3">
-                    <label class="form-label">Efectivo recibido (COP)</label>
-                    <input type="number" id="pay-efectivo" class="form-control" min="0" value="0">
-                  </div>
-                  <div class="mb-3">
-                    <label class="form-label">Nequi (COP)</label>
-                    <input type="number" id="pay-nequi" class="form-control" min="0" value="0">
-                  </div>
-                  <div class="mb-3">
-                    <label class="form-label">Daviplata (COP)</label>
-                    <input type="number" id="pay-daviplata" class="form-control" min="0" value="0">
-                  </div>
-                  <div class="mb-3">
-                    <label class="form-label">Tarjeta (Débito/Crédito COP)</label>
-                    <input type="number" id="pay-tarjeta" class="form-control" min="0" value="0">
-                  </div>
-                  <div class="mb-3">
-                    <label class="form-label">Transferencia Bancaria (COP)</label>
-                    <input type="number" id="pay-transferencia" class="form-control" min="0" value="0">
-                  </div>
+                  <div id="checkout-payment-methods"></div>
                   <div class="mb-3 d-none" id="trade-in-payment-wrapper">
                     <label class="form-label text-success fw-bold">Saldo a favor por Trade-In (COP)</label>
                     <input type="number" id="pay-trade-in" class="form-control text-success fw-bold" readonly value="0">
@@ -434,6 +418,34 @@ export async function initPos(container) {
       </div>
     </div>
 
+    <div class="modal modal-blur fade" id="modal-buscar-cliente-checkout" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable pos-client-search-dialog" role="document">
+        <div class="modal-content pos-client-search-modal">
+          <div class="modal-header pos-client-search-header">
+            <div class="d-flex align-items-center gap-2">
+              <span class="avatar avatar-sm bg-primary-lt text-primary"><i class="ti ti-users"></i></span>
+              <div>
+                <h5 class="modal-title">Buscar cliente</h5>
+                <div class="text-secondary small">Selecciona quién realiza la compra</div>
+              </div>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+          </div>
+          <div class="modal-body pos-client-search-body">
+            <div class="input-icon">
+              <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+              <input type="search" id="checkout-cliente-busqueda" class="form-control form-control-lg" placeholder="Nombre, documento o teléfono" autocomplete="off">
+            </div>
+            <div class="d-flex align-items-center justify-content-between mt-4 mb-2">
+              <span class="text-secondary small fw-semibold text-uppercase">Resultados</span>
+              <span id="checkout-clientes-contador" class="text-secondary small"></span>
+            </div>
+            <div id="checkout-clientes-resultados" class="pos-client-results"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Área de impresión ticket POS (80mm) -->
     <div id="print-receipt-area" class="pos-receipt-print-host d-none d-print-block" aria-hidden="true"></div>
   `;
@@ -441,9 +453,55 @@ export async function initPos(container) {
   // Variables y Modales
   const modalOverride = new bootstrap.Modal(document.getElementById('modal-override'));
   const modalCheckout = new bootstrap.Modal(document.getElementById('modal-checkout'));
+  const modalBuscarCliente = new bootstrap.Modal(document.getElementById('modal-buscar-cliente-checkout'));
 
   const searchInput = document.getElementById('pos-search-input');
   const resultsContainer = document.getElementById('pos-search-results');
+
+  const esConsumidorFinal = (cliente) => cliente?.nombre === 'Consumidor Final' ||
+    ['222222222', '222222222-0', '222222222222'].includes(cliente?.documento);
+  const actualizarClienteCheckout = (cliente) => {
+    const input = document.getElementById('checkout-cliente');
+    input.value = cliente?.id || '';
+    document.getElementById('checkout-cliente-nombre').textContent = cliente?.nombre || 'Consumidor Final';
+    input.dispatchEvent(new Event('change'));
+  };
+  const renderClientesCheckout = (query = '') => {
+    const term = query.trim().toLowerCase();
+    const results = clientes.filter((cliente) => {
+      const haystack = `${cliente.nombre || ''} ${cliente.documento || ''} ${cliente.telefono || ''}`.toLowerCase();
+      return !term || haystack.includes(term);
+    }).slice(0, 50);
+    const list = document.getElementById('checkout-clientes-resultados');
+    document.getElementById('checkout-clientes-contador').textContent = results.length === 50 && clientes.length > 50
+      ? '50 resultados'
+      : `${results.length} ${results.length === 1 ? 'cliente' : 'clientes'}`;
+    list.innerHTML = results.length ? results.map((cliente) => {
+      const initial = (cliente.nombre || '?').trim().charAt(0).toUpperCase();
+      return `
+      <button type="button" class="checkout-cliente-opcion" data-id="${cliente.id}">
+        <span class="avatar avatar-sm checkout-cliente-avatar">${initial}</span>
+        <span class="checkout-cliente-info">
+          <span class="checkout-cliente-titulo">${cliente.nombre || 'Sin nombre'}</span>
+          <span class="checkout-cliente-meta"><i class="ti ti-id-badge"></i>${cliente.documento || 'Sin documento'}${cliente.telefono ? `<span class="checkout-cliente-separador">·</span><i class="ti ti-phone"></i>${cliente.telefono}` : ''}</span>
+        </span>
+        <i class="ti ti-chevron-right checkout-cliente-arrow"></i>
+      </button>
+    `;
+    }).join('') : '<div class="pos-client-empty"><i class="ti ti-user-off"></i><span>No se encontraron clientes.</span></div>';
+    list.querySelectorAll('.checkout-cliente-opcion').forEach((button) => button.addEventListener('click', () => {
+      actualizarClienteCheckout(clientes.find((cliente) => String(cliente.id) === button.dataset.id));
+      modalBuscarCliente.hide();
+    }));
+  };
+  document.getElementById('btn-buscar-cliente-checkout').addEventListener('click', () => {
+    const input = document.getElementById('checkout-cliente-busqueda');
+    input.value = '';
+    renderClientesCheckout();
+    modalBuscarCliente.show();
+    setTimeout(() => input.focus(), 150);
+  });
+  document.getElementById('checkout-cliente-busqueda').addEventListener('input', (event) => renderClientesCheckout(event.target.value));
 
   // Cargar Cotización Pendiente si existe
   const pendingCotId = localStorage.getItem('pendingCotizacionId');
@@ -964,8 +1022,23 @@ export async function initPos(container) {
 
   // --- CHECKOUT Y COBRO ---
 
+  const renderPaymentInputs = () => {
+    const wrapper = document.getElementById('checkout-payment-methods');
+    wrapper.innerHTML = mediosPagoActivos.map((medio) => `
+      <div class="mb-3">
+        <label class="form-label">${medio.nombre}${medio.id === 'efectivo' ? ' recibido' : ''} (COP)</label>
+        <input type="number" id="pay-${medio.id}" class="form-control pay-metodo" data-metodo="${medio.id}" min="0" value="0">
+        ${medio.id === 'sistecredito' || medio.recaudoDiferido ? '<div class="form-hint">Sistecredito liquida este valor después; no entra a Caja hoy.</div>' : ''}
+      </div>
+    `).join('');
+    wrapper.querySelectorAll('.pay-metodo').forEach((input) => {
+      input.addEventListener('input', updateChangeCalculations);
+    });
+  };
+  renderPaymentInputs();
+
   // Botón Abrir checkout
-  document.getElementById('pos-checkout-btn').addEventListener('click', () => {
+  document.getElementById('pos-checkout-btn').addEventListener('click', async () => {
     // Validar si productos con IMEI tienen IMEI ingresado
     const imeis = [];
     for (const item of cart) {
@@ -985,23 +1058,28 @@ export async function initPos(container) {
       return;
     }
 
+    try {
+      const configActual = await apiFetch('/config/sistema');
+      if (Array.isArray(configActual.mediosPago)) {
+        mediosPagoActivos = configActual.mediosPago.filter((medio) => medio?.id && medio.activo !== false);
+      }
+    } catch (error) {
+      console.warn('No se pudo actualizar la lista de medios de pago.', error);
+    }
+    renderPaymentInputs();
+
     // Calcular montos de checkout
     const totalStr = document.getElementById('pos-total').textContent;
     document.getElementById('checkout-monto-total').textContent = totalStr;
 
     // Resetear form de pagos
     document.getElementById('form-checkout').reset();
+    actualizarClienteCheckout(clientes.find(esConsumidorFinal));
     document.getElementById('checkout-cambio').textContent = '$ 0';
     document.getElementById('checkout-cambio').classList.remove('text-danger');
     document.getElementById('checkout-cambio').classList.add('text-success');
 
     modalCheckout.show();
-  });
-
-  // Escuchar cambios en los inputs de pago
-  const paymentInputs = ['pay-efectivo', 'pay-nequi', 'pay-daviplata', 'pay-tarjeta', 'pay-transferencia'];
-  paymentInputs.forEach(id => {
-    document.getElementById(id).addEventListener('input', updateChangeCalculations);
   });
 
   document.getElementById('checkout-credito').addEventListener('change', (e) => {
@@ -1082,14 +1160,11 @@ export async function initPos(container) {
     const totalStr = document.getElementById('pos-total').textContent.replace(/[^\d]/g, '');
     const total = parseFloat(totalStr);
 
-    const efectivo = parseFloat(document.getElementById('pay-efectivo').value || 0);
-    const nequi = parseFloat(document.getElementById('pay-nequi').value || 0);
-    const daviplata = parseFloat(document.getElementById('pay-daviplata').value || 0);
-    const tarjeta = parseFloat(document.getElementById('pay-tarjeta').value || 0);
-    const transferencia = parseFloat(document.getElementById('pay-transferencia').value || 0);
+    const pagosNormales = [...document.querySelectorAll('.pay-metodo')]
+      .reduce((sum, input) => sum + parseFloat(input.value || 0), 0);
     const tradeIn = parseFloat(document.getElementById('pay-trade-in').value || 0);
 
-    const totalPagado = efectivo + nequi + daviplata + tarjeta + transferencia + tradeIn;
+    const totalPagado = pagosNormales + tradeIn;
     const isCredito = document.getElementById('checkout-credito').checked;
     
     const cambioVal = document.getElementById('checkout-cambio');
@@ -1133,29 +1208,24 @@ export async function initPos(container) {
     const isCredito = document.getElementById('checkout-credito').checked;
     const clienteId = document.getElementById('checkout-cliente').value;
     const clienteSel = clientes.find((c) => String(c.id) === String(clienteId));
-    const esConsumidorFinal = !clienteId ||
+    const clienteEsConsumidorFinal = !clienteId ||
       clienteSel?.nombre === 'Consumidor Final' ||
       ['222222222', '222222222-0', '222222222222'].includes(clienteSel?.documento);
 
-    if (isCredito && esConsumidorFinal) {
+    const pagoSistecredito = parseFloat(document.getElementById('pay-sistecredito')?.value || 0);
+    if (isCredito && clienteEsConsumidorFinal && pagoSistecredito <= 0) {
       showToast('Venta a Crédito', 'Debe seleccionar un cliente registrado para realizar ventas a crédito.', 'warning');
       return;
     }
 
     // Pagos
     const pagos = [];
-    const efectivo = parseFloat(document.getElementById('pay-efectivo').value || 0);
-    const nequi = parseFloat(document.getElementById('pay-nequi').value || 0);
-    const daviplata = parseFloat(document.getElementById('pay-daviplata').value || 0);
-    const tarjeta = parseFloat(document.getElementById('pay-tarjeta').value || 0);
-    const transferencia = parseFloat(document.getElementById('pay-transferencia').value || 0);
     const tradeIn = parseFloat(document.getElementById('pay-trade-in').value || 0);
 
-    if (efectivo > 0) pagos.push({ metodo: 'efectivo', monto: efectivo });
-    if (nequi > 0) pagos.push({ metodo: 'nequi', monto: nequi });
-    if (daviplata > 0) pagos.push({ metodo: 'daviplata', monto: daviplata });
-    if (tarjeta > 0) pagos.push({ metodo: 'tarjeta', monto: tarjeta });
-    if (transferencia > 0) pagos.push({ metodo: 'transferencia', monto: transferencia });
+    document.querySelectorAll('.pay-metodo').forEach((input) => {
+      const monto = parseFloat(input.value || 0);
+      if (monto > 0) pagos.push({ metodo: input.dataset.metodo, monto });
+    });
     if (tradeIn > 0) pagos.push({ metodo: 'trade_in', monto: tradeIn });
 
     const totalPagado = pagos.reduce((acc, curr) => acc + curr.monto, 0);

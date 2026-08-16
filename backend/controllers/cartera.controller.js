@@ -126,6 +126,14 @@ exports.registrarAbonoCartera = async (req, res, next) => {
       return res.status(400).json({ error: 'Monto y método de pago requeridos.' });
     }
 
+    const config = await ConfiguracionSistema.findOne({ transaction });
+    const metodosActivos = Array.isArray(config?.mediosPago)
+      ? config.mediosPago.filter((medio) => medio?.id && medio.activo !== false).map((medio) => medio.id)
+      : ['efectivo', 'nequi', 'daviplata', 'tarjeta', 'transferencia'];
+    if (!metodosActivos.includes(metodo)) {
+      return res.status(400).json({ error: 'El medio de pago seleccionado no está habilitado.' });
+    }
+
     // 1. Validar caja abierta para la sede del cajero
     const { caja } = await findCajaAbierta({
       sedeId,
@@ -203,6 +211,10 @@ exports.registrarAbonoCartera = async (req, res, next) => {
       await caja.update({ totalVentasTarjeta: parseFloat(caja.totalVentasTarjeta) + montoAbono }, { transaction });
     } else if (metodo === 'transferencia') {
       await caja.update({ totalVentasTransferencia: parseFloat(caja.totalVentasTransferencia) + montoAbono }, { transaction });
+    } else {
+      const totalesPorMetodo = { ...(caja.totalesPorMetodo || {}) };
+      totalesPorMetodo[metodo] = (parseFloat(totalesPorMetodo[metodo]) || 0) + montoAbono;
+      await caja.update({ totalesPorMetodo }, { transaction });
     }
 
     await transaction.commit();

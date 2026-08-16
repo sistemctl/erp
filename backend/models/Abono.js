@@ -21,7 +21,7 @@ const Abono = sequelize.define('Abono', {
     defaultValue: 0.00
   },
   metodo: {
-    type: DataTypes.ENUM('efectivo', 'tarjeta', 'nequi', 'daviplata', 'transferencia'),
+    type: DataTypes.STRING,
     allowNull: false
   },
   observaciones: {

@@ -1,6 +1,7 @@
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
+import { erpAction, erpActions } from '../utils/action-buttons.js';
 
 export async function initCartera(container) {
   const usuario = getUsuario();
@@ -11,6 +12,16 @@ export async function initCartera(container) {
   let activeCpcId = null;
   let lastCarteraData = [];
   const canRecordatorio = ['admin', 'superadmin', 'gerente_sede', 'contador'].includes(usuario.rol);
+  const mediosPago = await apiFetch('/config/sistema').then((config) => {
+    const porDefecto = [
+      { id: 'efectivo', nombre: 'Efectivo' }, { id: 'nequi', nombre: 'Nequi' },
+      { id: 'daviplata', nombre: 'Daviplata' }, { id: 'tarjeta', nombre: 'Tarjeta' },
+      { id: 'transferencia', nombre: 'Transferencia' }
+    ];
+    return Array.isArray(config.mediosPago)
+      ? config.mediosPago.filter((medio) => medio?.id && medio.activo !== false)
+      : porDefecto;
+  }).catch(() => []);
 
   container.innerHTML = `
     <div class="container-xl erp-module">
@@ -109,11 +120,7 @@ export async function initCartera(container) {
               <div class="mb-3">
                 <label class="form-label">Método de Pago</label>
                 <select id="abono-metodo" class="form-select" required>
-                  <option value="efectivo">Efectivo</option>
-                  <option value="nequi">Nequi</option>
-                  <option value="daviplata">Daviplata</option>
-                  <option value="tarjeta">Tarjeta Crédito/Débito</option>
-                  <option value="transferencia">Transferencia Bancaria</option>
+                  ${mediosPago.map((medio) => `<option value="${medio.id}">${medio.nombre}</option>`).join('')}
                 </select>
               </div>
               <div class="mb-3">
@@ -129,10 +136,75 @@ export async function initCartera(container) {
         </div>
       </div>
     </div>
+
+    <div class="modal modal-blur fade" id="modal-detalle-cartera" tabindex="-1" aria-labelledby="modal-detalle-cartera-title" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <div>
+              <p class="text-secondary text-uppercase small fw-bold mb-1">Cuenta por cobrar</p>
+              <h5 class="modal-title" id="modal-detalle-cartera-title">Detalle de crédito</h5>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+          </div>
+          <div class="modal-body" id="cartera-detalle-content"></div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
   `;
 
   const modalAbono = new bootstrap.Modal(document.getElementById('modal-abono-cartera'));
+  const modalDetalle = new bootstrap.Modal(document.getElementById('modal-detalle-cartera'));
   const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+  const escapeHtml = (value) => String(value ?? '—')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+  const formatDate = (value) => value ? new Date(value).toLocaleDateString('es-CO') : '—';
+
+  const openDetalle = (item) => {
+    const cliente = item.cliente || {};
+    const factura = item.factura || {};
+    const estado = item.estado === 'vencida' ? 'Vencida' : item.estado === 'pagada' ? 'Pagada' : 'Al día';
+    const estadoClass = item.estado === 'vencida' ? 'text-danger' : item.estado === 'pagada' ? 'text-success' : 'text-warning';
+
+    document.getElementById('modal-detalle-cartera-title').textContent = `Crédito ${factura.numeroFactura || 'sin factura'}`;
+    document.getElementById('cartera-detalle-content').innerHTML = `
+      <div class="row g-3">
+        <div class="col-md-7">
+          <div class="border rounded p-3 h-100">
+            <div class="text-secondary text-uppercase small fw-bold mb-2">Cliente</div>
+            <div class="fw-bold fs-3">${escapeHtml(cliente.nombre || 'Cliente general')}</div>
+            <div class="small text-secondary mt-2">Documento: ${escapeHtml(cliente.documento || 'No registrado')}</div>
+            <div class="small text-secondary">Teléfono: ${escapeHtml(cliente.telefono || 'No registrado')}</div>
+            <div class="small text-secondary">Correo: ${escapeHtml(cliente.email || 'No registrado')}</div>
+          </div>
+        </div>
+        <div class="col-md-5">
+          <div class="border rounded p-3 h-100">
+            <div class="text-secondary text-uppercase small fw-bold mb-2">Documento</div>
+            <div class="fw-bold fs-3">${escapeHtml(factura.numeroFactura || '—')}</div>
+            <div class="small text-secondary mt-2">Sede: ${escapeHtml(factura.sede?.nombre || 'No registrada')}</div>
+            <div class="small text-secondary">Vence: ${formatDate(item.fechaVencimiento)}</div>
+            <div class="small ${estadoClass} fw-bold mt-2">${estado}${item.diasVencido > 0 ? ` · ${item.diasVencido} días de mora` : ''}</div>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="row g-2 text-center">
+            <div class="col-md-4"><div class="bg-light border rounded p-3"><div class="small text-secondary">Total original</div><div class="fw-bold">${formatter.format(item.totalOriginal)}</div></div></div>
+            <div class="col-md-4"><div class="bg-light border rounded p-3"><div class="small text-secondary">Abonado</div><div class="fw-bold text-success">${formatter.format(item.totalAbonado)}</div></div></div>
+            <div class="col-md-4"><div class="bg-light border rounded p-3"><div class="small text-secondary">Saldo pendiente</div><div class="fw-bold text-danger">${formatter.format(item.saldoPendiente)}</div></div></div>
+          </div>
+        </div>
+      </div>
+    `;
+    modalDetalle.show();
+  };
 
   const loadResumen = async () => {
     try {
@@ -206,8 +278,8 @@ export async function initCartera(container) {
         return `
           <tr>
             <td>
-              <strong class="text-dark">${item.cliente ? item.cliente.nombre : 'Cliente General'}</strong><br>
-              <span class="text-secondary small">Doc: ${item.cliente ? item.cliente.documento || 'No reg' : 'N/A'}</span>
+              <strong class="text-dark">${item.pagadorExterno || (item.cliente ? item.cliente.nombre : 'Cliente General')}</strong><br>
+              <span class="text-secondary small">${item.pagadorExterno ? `Recaudo de venta · Cliente: ${item.cliente?.nombre || 'Consumidor final'}` : `Doc: ${item.cliente ? item.cliente.documento || 'No reg' : 'N/A'}`}</span>
             </td>
             <td>
               <strong>${item.factura ? item.factura.numeroFactura : 'N/A'}</strong><br>
@@ -225,18 +297,21 @@ export async function initCartera(container) {
             <td class="text-end text-success">${formatter.format(item.totalAbonado)}</td>
             <td class="text-end fw-bold text-danger">${formatter.format(item.saldoPendiente)}</td>
             <td class="text-center"><span class="badge ${statusBadge} px-2 py-1">${item.estado.toUpperCase()}</span></td>
-            <td class="text-end">
+            <td class="text-end erp-td-actions">
+              ${erpActions(`
+                ${erpAction('view', { className: 'btn-ver-cpc', attrs: { 'data-id': item.id }, label: 'Ver detalle' })}
               ${parseFloat(item.saldoPendiente) > 0 ? `
                 <button class="btn btn-primary btn-sm btn-abono-cpc" data-id="${item.id}" data-saldo="${item.saldoPendiente}" data-sede="${item.factura ? item.factura.sedeId || '' : ''}">
                   <i class="ti ti-plus me-1"></i>Abonar
                 </button>
-                ${canRecordatorio ? `
+                ${canRecordatorio && !item.esRecaudoExterno ? `
                 <button class="btn btn-outline-secondary btn-sm btn-recordatorio-cpc ms-1" data-id="${item.id}" title="Enviar recordatorio por correo">
                   <i class="ti ti-mail"></i>
                 </button>` : ''}
               ` : `
                 <span class="text-success small"><i class="ti ti-check me-1"></i>Saldado</span>
               `}
+              `)}
             </td>
           </tr>
         `;
@@ -250,6 +325,13 @@ export async function initCartera(container) {
           document.getElementById('abono-saldo-pendiente').value = formatter.format(btn.dataset.saldo);
           document.getElementById('abono-monto').max = btn.dataset.saldo;
           modalAbono.show();
+        });
+      });
+
+      document.querySelectorAll('.btn-ver-cpc').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const item = lastCarteraData.find((cuenta) => cuenta.id === btn.dataset.id);
+          if (item) openDetalle(item);
         });
       });
 
