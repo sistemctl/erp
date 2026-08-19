@@ -30,6 +30,8 @@ const includeDetalle = [
   {
     model: Factura,
     as: 'factura',
+    where: { estado: { [Op.ne]: 'anulada' } },
+    required: false,
     attributes: ['id', 'numeroFactura', 'subtotal', 'total', 'estado'],
     include: [{
       model: CuentaPorCobrar,
@@ -689,7 +691,12 @@ exports.cerrarOrden = async (req, res, next) => {
     let modo = null;
 
     const yaFacturado = await Factura.findOne({
-      where: { ordenInstalacionId: id },
+      // Una factura anulada se conserva como historial y no bloquea una nueva
+      // entrega con su respectiva elección de cobro.
+      where: {
+        ordenInstalacionId: id,
+        estado: { [Op.ne]: 'anulada' }
+      },
       include: [{ model: CuentaPorCobrar, as: 'cuentaPorCobrar', required: false }],
       transaction
     });

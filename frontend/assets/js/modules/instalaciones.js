@@ -1456,7 +1456,8 @@ export async function initInstalaciones(container) {
 
       document.getElementById('btn-cerrar-inst')?.addEventListener('click', async () => {
         const total = parseFloat(orden.totalCobrado) || 0;
-        if (total <= 0 || orden.factura) {
+        const facturaActiva = orden.factura && orden.factura.estado !== 'anulada';
+        if (total <= 0 || facturaActiva) {
           try {
             await apiFetch(`/instalaciones/${id}/cerrar`, { method: 'POST', body: '{}' });
             showToast('Éxito', 'Instalación entregada.', 'success');
