@@ -25,6 +25,7 @@ let instalacionesKeydownHandler = null;
 export async function initInstalaciones(container) {
   const usuario = getUsuario();
   const canWrite = ['admin', 'superadmin', 'gerente_sede', 'tecnico'].includes(usuario.rol);
+  const canReopen = ['admin', 'superadmin', 'gerente_sede'].includes(usuario.rol);
   const needsSedePicker = !usuario.sedeId || ['admin', 'superadmin'].includes(usuario.rol);
 
   let ordenes = [];
@@ -1086,6 +1087,18 @@ export async function initInstalaciones(container) {
           </section>
           `}
 
+          ${orden.estado === 'en_proceso' && orden.factura ? `
+          <div class="alert alert-info d-flex align-items-start gap-2 mb-3" role="status">
+            <i class="ti ti-file-invoice mt-1" aria-hidden="true"></i>
+            <div>
+              <strong>Instalación reabierta</strong>
+              <div class="small">Está vinculada a ${orden.factura.numeroFactura}. ${orden.precioCerrado
+                ? 'El total ya cobrado permanece fijo; puede completar materiales y datos.'
+                : 'Al volver a entregarla se actualizarán la factura y el saldo pendiente.'}</div>
+            </div>
+          </div>
+          ` : ''}
+
           <section class="inst-detalle__panel inst-detalle__panel--mats" aria-labelledby="inst-det-mats">
             <header class="inst-detalle__panel-head inst-detalle__panel-head--split">
               <div>
@@ -1220,7 +1233,12 @@ export async function initInstalaciones(container) {
             <button type="button" class="btn btn-ghost-secondary" data-bs-dismiss="modal">Cerrar</button>
             ${canWrite && !locked ? `
               <button type="button" class="btn btn-success inst-detalle__cta" id="btn-cerrar-inst">
-                <i class="ti ti-check me-1" aria-hidden="true"></i>Marcar entregada
+                <i class="ti ti-check me-1" aria-hidden="true"></i>${orden.factura ? 'Volver a entregar' : 'Marcar entregada'}
+              </button>
+            ` : ''}
+            ${canReopen && orden.estado === 'entregada' ? `
+              <button type="button" class="btn btn-primary inst-detalle__cta" id="btn-reabrir-inst">
+                <i class="ti ti-lock-open me-1" aria-hidden="true"></i>Reabrir para completar
               </button>
             ` : ''}
           </div>
@@ -1398,7 +1416,7 @@ export async function initInstalaciones(container) {
 
       document.getElementById('btn-cerrar-inst')?.addEventListener('click', async () => {
         const total = parseFloat(orden.totalCobrado) || 0;
-        if (total <= 0) {
+        if (total <= 0 || orden.factura) {
           try {
             await apiFetch(`/instalaciones/${id}/cerrar`, { method: 'POST', body: '{}' });
             showToast('Éxito', 'Instalación entregada.', 'success');
@@ -1411,6 +1429,25 @@ export async function initInstalaciones(container) {
           return;
         }
         openCobroInstalacion(orden);
+      });
+
+      document.getElementById('btn-reabrir-inst')?.addEventListener('click', async () => {
+        if (!confirm('¿Reabrir esta instalación para completar datos o materiales?')) return;
+        const btn = document.getElementById('btn-reabrir-inst');
+        btn.disabled = true;
+        try {
+          const result = await apiFetch(`/instalaciones/${id}/reabrir`, {
+            method: 'POST',
+            body: '{}'
+          });
+          showToast('Instalación reabierta', result.message, 'success');
+          await loadData();
+          renderTabla();
+          await abrirDetalle(id, { silent: true });
+        } catch (err) {
+          showToast('Error', err.message, 'error');
+          btn.disabled = false;
+        }
       });
     } catch (err) {
       content.innerHTML = `<div class="p-4 text-danger">${err.message}</div>`;

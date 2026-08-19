@@ -26,6 +26,18 @@ const includeDetalle = [
     model: MaterialInstalacion,
     as: 'materiales',
     include: [{ model: Producto, as: 'producto', attributes: ['id', 'nombre', 'codigoBarras', 'tieneNumeroSerie', 'esServicio', 'unidadMedida'] }]
+  },
+  {
+    model: Factura,
+    as: 'factura',
+    attributes: ['id', 'numeroFactura', 'subtotal', 'total', 'estado'],
+    include: [{
+      model: CuentaPorCobrar,
+      as: 'cuentaPorCobrar',
+      attributes: ['id', 'totalOriginal', 'totalAbonado', 'saldoPendiente', 'estado'],
+      required: false
+    }],
+    required: false
   }
 ];
 
@@ -565,6 +577,69 @@ exports.removeMaterial = async (req, res, next) => {
   }
 };
 
+exports.reabrirOrden = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const orden = await OrdenInstalacion.findByPk(req.params.id, { transaction });
+    if (!orden) {
+      await transaction.rollback();
+      return res.status(404).json({ error: 'Orden de instalación no encontrada.' });
+    }
+    if (orden.estado === 'cancelada') {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'Una orden cancelada no se puede reabrir.' });
+    }
+    if (orden.estado !== 'entregada') {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'Solo se pueden reabrir instalaciones entregadas.' });
+    }
+
+    const factura = await Factura.findOne({
+      where: { ordenInstalacionId: orden.id },
+      include: [{ model: CuentaPorCobrar, as: 'cuentaPorCobrar', required: false }],
+      transaction
+    });
+    const totalAbonado = parseFloat(factura?.cuentaPorCobrar?.totalAbonado) || 0;
+    const totalBloqueado = Boolean(factura && (factura.estado === 'pagada' || totalAbonado > 0));
+    const patch = { estado: 'en_proceso' };
+
+    // Cuando ya hubo recaudo, los materiales se pueden corregir sin cambiar lo cobrado.
+    if (totalBloqueado) {
+      patch.precioCerrado = true;
+      patch.valorServicio = parseFloat(factura.total) || 0;
+      patch.totalCobrado = parseFloat(factura.total) || 0;
+    }
+
+    await orden.update(patch, { transaction });
+    await transaction.commit();
+
+    if (req.logAudit) {
+      await req.logAudit({
+        accion: 'UPDATE',
+        modulo: 'Instalaciones',
+        registroId: orden.id,
+        valorNuevo: {
+          estado: 'en_proceso',
+          reabierta: true,
+          totalBloqueado,
+          factura: factura?.numeroFactura || null
+        }
+      });
+    }
+
+    const full = await OrdenInstalacion.findByPk(orden.id, { include: includeDetalle });
+    const message = totalBloqueado
+      ? `Orden reabierta. El total queda fijo en ${factura.total} porque la factura ${factura.numeroFactura} ya tiene recaudo.`
+      : factura
+        ? `Orden reabierta. La factura ${factura.numeroFactura} y la cartera se actualizarán al volver a entregarla.`
+        : 'Orden reabierta. Ya puede completar sus datos y materiales.';
+    return res.json({ message, totalBloqueado, orden: full });
+  } catch (error) {
+    await transaction.rollback();
+    next(error);
+  }
+};
+
 exports.cerrarOrden = async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
@@ -593,7 +668,13 @@ exports.cerrarOrden = async (req, res, next) => {
     const totalNum = parseFloat(totales.totalCobrado) || 0;
     let modo = null;
 
-    if (totalNum > 0) {
+    const yaFacturado = await Factura.findOne({
+      where: { ordenInstalacionId: id },
+      include: [{ model: CuentaPorCobrar, as: 'cuentaPorCobrar', required: false }],
+      transaction
+    });
+
+    if (totalNum > 0 && !yaFacturado) {
       modo = modoCobro === 'fiado' ? 'fiado' : modoCobro === 'contado' ? 'contado' : null;
       if (!modo) {
         await transaction.rollback();
@@ -602,21 +683,15 @@ exports.cerrarOrden = async (req, res, next) => {
         });
       }
 
-      const yaFacturado = await Factura.findOne({
-        where: { ordenInstalacionId: id },
-        transaction
-      });
+      const diasPlazo = await getDiasPlazoCredito(ConfiguracionSistema);
+      const fechaVencimiento = calcularFechaVencimientoCredito(diasPlazo);
+      const countFacturas = await Factura.count({ transaction });
+      const numeroFactura = `FE-${String(countFacturas + 1).padStart(6, '0')}`;
+      // Cobro de instalación: el total pactado es el valor final (sin desglose de IVA).
+      const subtotal = totalNum;
+      const iva = 0;
 
-      if (!yaFacturado) {
-        const diasPlazo = await getDiasPlazoCredito(ConfiguracionSistema);
-        const fechaVencimiento = calcularFechaVencimientoCredito(diasPlazo);
-        const countFacturas = await Factura.count({ transaction });
-        const numeroFactura = `FE-${String(countFacturas + 1).padStart(6, '0')}`;
-        // Cobro de instalación: el total pactado es el valor final (sin desglose de IVA).
-        const subtotal = totalNum;
-        const iva = 0;
-
-        if (modo === 'contado') {
+      if (modo === 'contado') {
           const { caja } = await findCajaAbierta({
             sedeId: orden.sedeId,
             usuarioId: req.usuario.userId,
@@ -685,7 +760,7 @@ exports.cerrarOrden = async (req, res, next) => {
             estado: 'pagada',
             fechaVencimiento
           }, { transaction });
-        } else {
+      } else {
           const factura = await Factura.create({
             numeroFactura,
             ordenInstalacionId: id,
@@ -706,6 +781,37 @@ exports.cerrarOrden = async (req, res, next) => {
             saldoPendiente: totalNum,
             fechaVencimiento,
             estado: 'al_dia'
+          }, { transaction });
+      }
+    }
+
+    if (yaFacturado) {
+      const cuenta = yaFacturado.cuentaPorCobrar;
+      const totalAbonado = parseFloat(cuenta?.totalAbonado) || 0;
+      const tieneRecaudo = yaFacturado.estado === 'pagada' || totalAbonado > 0;
+      const totalAnterior = parseFloat(yaFacturado.total) || 0;
+
+      if (tieneRecaudo && Math.abs(totalAnterior - totalNum) > 0.01) {
+        await transaction.rollback();
+        return res.status(400).json({
+          error: `El total no puede cambiar porque la factura ${yaFacturado.numeroFactura} ya tiene recaudo.`
+        });
+      }
+
+      if (!tieneRecaudo) {
+        const facturaCero = totalNum <= 0;
+        await yaFacturado.update({
+          subtotal: totalNum,
+          iva: 0,
+          total: totalNum,
+          estado: facturaCero ? 'anulada' : yaFacturado.estado
+        }, { transaction });
+
+        if (cuenta) {
+          await cuenta.update({
+            totalOriginal: totalNum,
+            saldoPendiente: totalNum,
+            estado: facturaCero ? 'pagada' : cuenta.estado
           }, { transaction });
         }
       }

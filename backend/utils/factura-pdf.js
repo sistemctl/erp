@@ -11,13 +11,8 @@ const {
   INK,
   MUTED,
   fmtDate,
-  fmtDateIso,
   fmtMoneyDecimal,
-  labelValue,
-  loadLogoForPdf,
-  drawItemsTable,
-  drawTotalsBlock,
-  drawPageFooter
+  loadLogoForPdf
 } = require('./pdf-siigo-helpers');
 const { labelUnidadMedida } = require('./unidad-medida');
 
@@ -111,7 +106,7 @@ async function generarFacturaPDF(doc, factura, config = {}) {
   const empresa = config.empresa || 'TechStore Colombia S.A.S.';
   const nit = config.nit || '—';
   const direccion = config.direccion || factura.sede?.direccion || '—';
-  const telefono = config.telefono || factura.sede?.telefono || config.telefono || '—';
+  const telefono = config.telefono || factura.sede?.telefono || '—';
   const ivaPct = config.ivaDefecto ?? 19;
   const cliente = factura.cliente;
   const items = getFacturaItems(factura);
@@ -145,75 +140,122 @@ async function generarFacturaPDF(doc, factura, config = {}) {
   const innerX = MARGIN + 14;
   const innerW = CONTENT_W - 28;
 
-  // —— Encabezado: logo | empresa | QR ——
-  const headerH = 92;
-  const logoW = 78;
-  const qrW = 78;
-  const centerW = innerW - logoW - qrW - 16;
-  const centerX = innerX + logoW + 8;
+  // Misma composición de la factura visual: empresa | QR | documento.
+  const headerH = logoBuffer ? 108 : 88;
+  const companyW = innerW * 0.38;
+  const docW = innerW * 0.28;
+  const qrAreaW = innerW - companyW - docW;
+  let companyY = y + 4;
 
   if (logoBuffer) {
     try {
-      doc.image(logoBuffer, innerX, y + 4, { fit: [logoW, 48], align: 'left', valign: 'top' });
+      doc.image(logoBuffer, innerX, y + 4, { fit: [companyW - 4, 44], align: 'left', valign: 'top' });
+      companyY = y + 56;
     } catch (_) { /* omitir */ }
   }
 
   doc.font('Helvetica-Bold').fontSize(11).fillColor(INK)
-    .text(empresa.toUpperCase(), centerX, y + 4, { width: centerW, align: 'center' });
+    .text(empresa.toUpperCase(), innerX, companyY, { width: companyW });
   doc.font('Helvetica').fontSize(7.5).fillColor(MUTED);
-  let hy = y + 20;
+  let hy = companyY + 16;
   [
-    `NIT : ${nit}`,
-    direccion,
-    `${factura.sede?.nombre || '—'} — COLOMBIA`,
-    telefono ? `Tel: ${telefono}` : null,
-    'Responsable de IVA'
-  ].filter(Boolean).forEach((line) => {
-    doc.text(line, centerX, hy, { width: centerW, align: 'center' });
-    hy += 10;
+    `NIT: ${nit}`,
+    `Dirección: ${direccion}`,
+    `Ciudad: ${factura.sede?.nombre || '—'} — COLOMBIA`,
+    `Tel: ${telefono}`,
+    ...(iva > 0 ? ['Responsable de IVA'] : [])
+  ].forEach((line) => {
+    doc.text(line, innerX, hy, { width: companyW });
+    hy += 11;
   });
 
   if (qrBuffer) {
-    doc.image(qrBuffer, innerX + innerW - qrW, y + 6, { width: 68, height: 68 });
+    const qrSize = 72;
+    doc.image(qrBuffer, innerX + companyW + (qrAreaW - qrSize) / 2, y + 6, { width: qrSize, height: qrSize });
   }
 
-  y += headerH;
+  const boxX = innerX + companyW + qrAreaW;
+  doc.save();
+  doc.fillColor(BLUE).rect(boxX, y, docW, headerH).fill();
+  doc.restore();
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#ffffff')
+    .text('FACTURA DE VENTA', boxX, y + 18, { width: docW, align: 'center' });
+  doc.fontSize(9).text(`N° ${factura.numeroFactura}`, boxX, y + 34, { width: docW, align: 'center' });
+  doc.font('Helvetica').fontSize(7.5)
+    .text((factura.estado || '').toUpperCase(), boxX, y + 52, { width: docW, align: 'center' });
+
+  y += headerH + 10;
   doc.moveTo(innerX, y).lineTo(innerX + innerW, y).strokeColor('#cbd5e1').lineWidth(0.5).stroke();
   y += 8;
 
-  // —— Cliente | adicional | caja factura ——
-  const colW = (innerW - 16) / 3;
-  const c1 = innerX;
-  const c2 = innerX + colW + 8;
-  const c3 = innerX + (colW + 8) * 2;
+  // —— Datos del cliente / documento ——
+  const halfW = innerW / 2 - 6;
+  const documentX = innerX + halfW + 12;
+  const label = (x, top, name, value, width) => {
+    doc.font('Helvetica-Bold').fontSize(6.5).fillColor(MUTED).text(name, x, top, { width });
+    doc.font('Helvetica').fontSize(8).fillColor(INK).text(value || '—', x, top + 8, { width });
+  };
 
-  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(INK).text('CLIENTE', c1, y);
-  labelValue(doc, c1, y + 12, 'Cliente', cliente?.nombre || 'Cliente general', colW);
-  labelValue(doc, c1, y + 32, 'NIT', cliente?.documento || '—', colW);
-  labelValue(doc, c1, y + 52, 'Dirección', cliente?.direccion || '—', colW);
+  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(INK).text('DATOS DEL CLIENTE', innerX, y);
+  label(innerX, y + 12, 'CLIENTE', cliente?.nombre || 'Cliente general', halfW / 2);
+  label(innerX + halfW / 2, y + 12, 'NIT / C.C.', cliente?.documento || '—', halfW / 2);
+  label(innerX, y + 32, 'DIRECCIÓN', cliente?.direccion || '—', halfW / 2);
+  label(innerX + halfW / 2, y + 32, 'TELÉFONO', cliente?.telefono || '—', halfW / 2);
 
-  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(INK).text('INFORMACIÓN ADICIONAL', c2, y);
-  labelValue(doc, c2, y + 12, 'Teléfono', cliente?.telefono || '—', colW);
-  labelValue(doc, c2, y + 32, 'Vendedor', vendedor, colW);
-  labelValue(doc, c2, y + 52, 'Correo', cliente?.email || '—', colW);
+  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(INK).text('DATOS DEL DOCUMENTO', documentX, y);
+  label(documentX, y + 12, 'FECHA FACTURA', fmtDate(factura.createdAt), halfW / 2);
+  label(documentX + halfW / 2, y + 12, 'FECHA VENCIMIENTO', fmtDate(factura.fechaVencimiento), halfW / 2);
+  label(documentX, y + 32, 'VENDEDOR', vendedor, halfW / 2);
+  label(documentX + halfW / 2, y + 32, 'SEDE', factura.sede?.nombre || '—', halfW / 2);
+
+  y += 62;
+
+  // —— Tabla de ítems ——
+  const columns = [
+    { label: 'Código', width: 52, align: 'left' },
+    { label: 'Descripción', width: 227, align: 'left' },
+    { label: 'Unidad', width: 42, align: 'center' },
+    { label: 'Cant.', width: 38, align: 'center' },
+    { label: 'V. Unit', width: 72, align: 'right' },
+    { label: 'Valor Total', width: 72, align: 'right' }
+  ];
+  const headerRowH = 20;
+  const rowH = 20;
+  const tableTop = y;
 
   doc.save();
-  doc.fillColor(BLUE).rect(c3, y, colW, 68).fill();
+  doc.fillColor('#e9ecef').rect(innerX, y, innerW, headerRowH).fill();
   doc.restore();
-  doc.font('Helvetica-Bold').fontSize(9).fillColor('#ffffff')
-    .text('FACTURA DE VENTA', c3, y + 10, { width: colW, align: 'center' });
-  doc.fontSize(8).text(factura.numeroFactura, c3, y + 26, { width: colW, align: 'center' });
-  doc.font('Helvetica').fontSize(7)
-    .text(`Generación: ${fmtDateIso(factura.createdAt)}`, c3, y + 40, { width: colW, align: 'center' })
-    .text(`Vence: ${fmtDateIso(factura.fechaVencimiento)}`, c3, y + 52, { width: colW, align: 'center' });
+  let cellX = innerX;
+  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(INK);
+  columns.forEach((column) => {
+    doc.text(column.label, cellX + 4, y + 6, { width: column.width - 8, align: column.align });
+    cellX += column.width;
+  });
 
-  y += 78;
-
-  const tableResult = drawItemsTable(doc, innerX, innerW, y, items, { minRows: 5, useDecimals: true });
-  y = tableResult.y;
+  y += headerRowH;
+  const rows = Math.max(items.length, 3);
+  doc.font('Helvetica').fontSize(8).fillColor(INK);
+  for (let index = 0; index < rows; index += 1) {
+    const item = items[index];
+    if (index > 0) {
+      doc.moveTo(innerX, y).lineTo(innerX + innerW, y).strokeColor('#e2e8f0').lineWidth(0.4).stroke();
+    }
+    const values = item
+      ? [item.codigo, item.descripcion, item.unidad, String(item.cantidad), fmtMoneyDecimal(item.precioUnitario), fmtMoneyDecimal(item.subtotal)]
+      : ['', '', '', '', '', ''];
+    cellX = innerX;
+    values.forEach((value, indexCell) => {
+      const column = columns[indexCell];
+      doc.text(value, cellX + 4, y + 5, { width: column.width - 8, align: column.align, ellipsis: true });
+      cellX += column.width;
+    });
+    y += rowH;
+  }
+  doc.rect(innerX, tableTop, innerW, headerRowH + rows * rowH).strokeColor('#cbd5e1').lineWidth(0.5).stroke();
 
   doc.font('Helvetica').fontSize(7.5).fillColor(MUTED)
-    .text(`Total ítems: ${tableResult.itemCount}`, innerX, y);
+    .text(`Total ítems: ${items.length}`, innerX, y + 10);
   y += 14;
 
   const footerTop = y;
@@ -224,26 +266,40 @@ async function generarFacturaPDF(doc, factura, config = {}) {
   doc.font('Helvetica').fontSize(8).fillColor(MUTED)
     .text(getCondicionPago(factura), innerX, footerTop + 12, { width: leftW });
 
+  let letrasY = footerTop + 30;
   if (factura.venta?.pagos?.length) {
-    let py = footerTop + 26;
     factura.venta.pagos.forEach((p) => {
-      doc.text(`${p.metodo}: ${fmtMoneyDecimal(p.monto)}`, innerX, py, { width: leftW });
-      py += 10;
+      doc.text(`${String(p.metodo || 'Pago').replace(/_/g, ' ')}: ${fmtMoneyDecimal(p.monto)}`, innerX, letrasY, { width: leftW });
+      letrasY += 10;
     });
+    letrasY += 4;
   }
 
-  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(INK).text('VALOR EN LETRAS', innerX, footerTop + 48);
+  doc.font('Helvetica-Bold').fontSize(7.5).fillColor(INK).text('VALOR EN LETRAS', innerX, letrasY);
   doc.font('Helvetica').fontSize(8).fillColor(INK)
-    .text(numeroALetras(total), innerX, footerTop + 60, { width: leftW });
+    .text(numeroALetras(total), innerX, letrasY + 12, { width: leftW });
 
   const tx = innerX + innerW - totalsW;
-  drawTotalsBlock(doc, tx, footerTop, totalsW, [
+  const totalRows = [
     ['Total bruto', fmtMoneyDecimal(subtotal)],
     [(parseFloat(iva) || 0) > 0 ? `IVA (${ivaPct}%)` : 'IVA (Exento)', fmtMoneyDecimal(iva)],
     ['Total a pagar', fmtMoneyDecimal(total)]
-  ]);
+  ];
+  let totalY = footerTop;
+  totalRows.forEach(([name, value], index) => {
+    const isFinal = index === totalRows.length - 1;
+    if (isFinal) {
+      doc.save();
+      doc.fillColor('#e9ecef').rect(tx, totalY, totalsW, 20).fill();
+      doc.restore();
+    }
+    doc.font(isFinal ? 'Helvetica-Bold' : 'Helvetica').fontSize(8).fillColor(INK);
+    doc.text(name, tx + 6, totalY + 6, { width: totalsW / 2 });
+    doc.text(value, tx + totalsW / 2, totalY + 6, { width: totalsW / 2 - 6, align: 'right' });
+    totalY += 20;
+  });
 
-  y = footerTop + 88;
+  y = Math.max(totalY, letrasY + 42) + 14;
   doc.font('Helvetica').fontSize(6.5).fillColor(MUTED)
     .text(
       'Esta factura se asimila en todos sus efectos legales a una letra de cambio según el artículo 774 del Código de Comercio. ' +
@@ -251,7 +307,20 @@ async function generarFacturaPDF(doc, factura, config = {}) {
       innerX, y, { width: innerW * 0.72, align: 'justify' }
     );
 
-  drawPageFooter(doc, empresa, innerX, innerW);
+  const signatureY = PAGE_H - MARGIN - 52;
+  doc.moveTo(innerX, signatureY).lineTo(innerX + 150, signatureY).strokeColor(INK).lineWidth(0.5).stroke();
+  doc.moveTo(innerX + innerW - 150, signatureY).lineTo(innerX + innerW, signatureY).stroke();
+  doc.fontSize(7.5).fillColor(MUTED)
+    .text('Elaborado por', innerX, signatureY + 4, { width: 150, align: 'center' })
+    .text('Firma recibido', innerX + innerW - 150, signatureY + 4, { width: 150, align: 'center' });
+
+  const barY = PAGE_H - MARGIN - 18;
+  doc.save();
+  doc.fillColor('#e9ecef').rect(MARGIN, barY, CONTENT_W, 18).fill();
+  doc.restore();
+  doc.font('Helvetica-Bold').fontSize(7).fillColor(MUTED)
+    .text('ORIGINAL', MARGIN + 14, barY + 5)
+    .text('Página 1 de 1', MARGIN, barY + 5, { width: CONTENT_W - 14, align: 'right' });
 }
 
 function buildFacturaPdfBuffer(factura, config = {}) {
