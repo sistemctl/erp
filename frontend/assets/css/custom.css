@@ -11366,6 +11366,13 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   border-radius: 8px;
 }
 
+#modal-detalle-instalacion .inst-detalle__price {
+  max-width: 7.25rem;
+  border-radius: 8px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
 #modal-detalle-instalacion .inst-detalle__add {
   margin-bottom: 0.25rem;
   padding: 1rem 1.05rem 1.05rem;

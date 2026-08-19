@@ -385,16 +385,17 @@ exports.addMaterial = async (req, res, next) => {
   }
 };
 
-/** Ajusta la cantidad de un material (delta de stock) sin borrar la línea. */
+/** Ajusta cantidad y/o precio de venta de un material sin borrar la línea. */
 exports.updateMaterial = async (req, res, next) => {
   const transaction = await sequelize.transaction();
   try {
     const { id, mid } = req.params;
-    const newQty = parseInt(req.body.cantidad, 10);
+    const hasCantidad = Object.prototype.hasOwnProperty.call(req.body, 'cantidad');
+    const hasPrecio = Object.prototype.hasOwnProperty.call(req.body, 'precioUnitario');
 
-    if (!newQty || newQty <= 0) {
+    if (!hasCantidad && !hasPrecio) {
       await transaction.rollback();
-      return res.status(400).json({ error: 'La cantidad debe ser un entero mayor a 0.' });
+      return res.status(400).json({ error: 'Indique la cantidad o el precio de venta a actualizar.' });
     }
 
     const orden = await OrdenInstalacion.findByPk(id, { transaction });
@@ -418,60 +419,75 @@ exports.updateMaterial = async (req, res, next) => {
       return res.status(404).json({ error: 'Material no encontrado.' });
     }
 
-    if (material.producto?.tieneNumeroSerie) {
+    const oldQty = parseInt(material.cantidad, 10);
+    const oldPrecio = parseFloat(material.precioUnitario) || 0;
+    const newQty = hasCantidad ? parseInt(req.body.cantidad, 10) : oldQty;
+    const newPrecio = hasPrecio ? parseFloat(req.body.precioUnitario) : oldPrecio;
+
+    if (!Number.isInteger(newQty) || newQty <= 0) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'La cantidad debe ser un entero mayor a 0.' });
+    }
+    if (!Number.isFinite(newPrecio) || newPrecio < 0) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'El precio de venta debe ser un valor igual o mayor a cero.' });
+    }
+
+    if (material.producto?.tieneNumeroSerie && newQty !== oldQty) {
       await transaction.rollback();
       return res.status(400).json({
         error: 'Los productos con serial no se pueden ajustar. Revierta la línea y vuelva a agregarlos.'
       });
     }
 
-    const oldQty = parseInt(material.cantidad, 10);
-    if (oldQty === newQty) {
+    if (oldQty === newQty && oldPrecio === newPrecio) {
       await transaction.rollback();
       return res.json(material);
     }
 
     const delta = newQty - oldQty;
-    const stock = await StockSede.findOne({
-      where: { productoId: material.productoId, sedeId: orden.sedeId },
-      transaction,
-      lock: transaction.LOCK.UPDATE
-    });
+    if (delta !== 0) {
+      const stock = await StockSede.findOne({
+        where: { productoId: material.productoId, sedeId: orden.sedeId },
+        transaction,
+        lock: transaction.LOCK.UPDATE
+      });
 
-    if (delta > 0) {
-      if (!stock || stock.cantidad < delta) {
-        await transaction.rollback();
-        return res.status(400).json({
-          error: `Stock insuficiente de ${material.producto?.nombre || 'producto'} en esta sede.`
+      if (delta > 0) {
+        if (!stock || stock.cantidad < delta) {
+          await transaction.rollback();
+          return res.status(400).json({
+            error: `Stock insuficiente de ${material.producto?.nombre || 'producto'} en esta sede.`
+          });
+        }
+        await stock.update({ cantidad: stock.cantidad - delta }, { transaction });
+        await MovimientoInventario.create({
+          productoId: material.productoId,
+          sedeId: orden.sedeId,
+          tipo: 'salida',
+          cantidad: -delta,
+          motivo: `Ajuste material instalación #${orden.numeroOrden} (${oldQty} → ${newQty})`,
+          referenciaId: orden.id,
+          usuarioId: req.usuario.userId
+        }, { transaction });
+      } else {
+        const volver = Math.abs(delta);
+        if (stock) {
+          await stock.update({ cantidad: stock.cantidad + volver }, { transaction });
+        }
+        await MovimientoInventario.create({
+          productoId: material.productoId,
+          sedeId: orden.sedeId,
+          tipo: 'entrada',
+          cantidad: volver,
+          motivo: `Ajuste material instalación #${orden.numeroOrden} (${oldQty} → ${newQty})`,
+          referenciaId: orden.id,
+          usuarioId: req.usuario.userId
         });
       }
-      await stock.update({ cantidad: stock.cantidad - delta }, { transaction });
-      await MovimientoInventario.create({
-        productoId: material.productoId,
-        sedeId: orden.sedeId,
-        tipo: 'salida',
-        cantidad: -delta,
-        motivo: `Ajuste material instalación #${orden.numeroOrden} (${oldQty} → ${newQty})`,
-        referenciaId: orden.id,
-        usuarioId: req.usuario.userId
-      }, { transaction });
-    } else {
-      const volver = Math.abs(delta);
-      if (stock) {
-        await stock.update({ cantidad: stock.cantidad + volver }, { transaction });
-      }
-      await MovimientoInventario.create({
-        productoId: material.productoId,
-        sedeId: orden.sedeId,
-        tipo: 'entrada',
-        cantidad: volver,
-        motivo: `Ajuste material instalación #${orden.numeroOrden} (${oldQty} → ${newQty})`,
-        referenciaId: orden.id,
-        usuarioId: req.usuario.userId
-      }, { transaction });
     }
 
-    await material.update({ cantidad: newQty }, { transaction });
+    await material.update({ cantidad: newQty, precioUnitario: newPrecio }, { transaction });
 
     const materiales = await MaterialInstalacion.findAll({ where: { ordenId: id }, transaction });
     const totales = recalcTotales(orden, materiales);
@@ -488,7 +504,9 @@ exports.updateMaterial = async (req, res, next) => {
           materialId: mid,
           producto: material.producto?.nombre,
           cantidadAnterior: oldQty,
-          cantidadNueva: newQty
+          cantidadNueva: newQty,
+          precioAnterior: oldPrecio,
+          precioNuevo: newPrecio
         }
       });
     }

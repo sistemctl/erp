@@ -1135,7 +1135,13 @@ export async function initInstalaciones(container) {
                       </td>
                       <td class="text-center text-secondary">${ud}</td>
                       <td class="small">${Array.isArray(m.series) && m.series.length ? m.series.join(', ') : '—'}</td>
-                      <td class="text-end">${fmt.format(parseFloat(m.precioUnitario) || 0)}</td>
+                      <td class="text-end">
+                        ${canWrite && !locked ? `
+                          <label class="visually-hidden" for="mat-precio-${m.id}">Precio de venta de ${m.producto?.nombre || 'material'}</label>
+                          <input type="number" id="mat-precio-${m.id}" class="form-control form-control-sm text-end mx-auto mat-price-input inst-detalle__price"
+                            data-mid="${m.id}" data-prev="${parseFloat(m.precioUnitario) || 0}" min="0" step="1" value="${parseFloat(m.precioUnitario) || 0}" inputmode="decimal" title="Cambie el precio de venta y presione Enter">
+                        ` : fmt.format(parseFloat(m.precioUnitario) || 0)}
+                      </td>
                       <td class="text-end">${fmt.format(parseFloat(m.costoUnitario) || 0)}</td>
                       <td>
                         ${canWrite && !locked ? `
@@ -1406,6 +1412,40 @@ export async function initInstalaciones(container) {
           }
         };
         input.addEventListener('change', commitQty);
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            input.blur();
+          }
+        });
+      });
+
+      content.querySelectorAll('.mat-price-input').forEach((input) => {
+        const commitPrice = async () => {
+          const mid = input.dataset.mid;
+          const prev = parseFloat(input.dataset.prev);
+          const next = parseFloat(input.value);
+          if (!mid || !Number.isFinite(next) || next < 0) {
+            input.value = String(prev);
+            showToast('Aviso', 'El precio de venta debe ser igual o mayor a cero.', 'warning');
+            return;
+          }
+          if (next === prev) return;
+          input.disabled = true;
+          try {
+            await apiFetch(`/instalaciones/${id}/materiales/${mid}`, {
+              method: 'PUT',
+              body: JSON.stringify({ precioUnitario: next })
+            });
+            showToast('Precio actualizado', `${fmt.format(prev)} → ${fmt.format(next)}.`, 'success');
+            await refreshAfterChange();
+          } catch (err) {
+            input.value = String(prev);
+            showToast('Error', err.message, 'error');
+            input.disabled = false;
+          }
+        };
+        input.addEventListener('change', commitPrice);
         input.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
