@@ -412,7 +412,9 @@ exports.updateMaterial = async (req, res, next) => {
       where: { id: mid, ordenId: id },
       include: [{ model: Producto, as: 'producto' }],
       transaction,
-      lock: transaction.LOCK.UPDATE
+      // Bloquear únicamente la línea de material. PostgreSQL no permite FOR UPDATE
+      // sobre el lado opcional del JOIN que trae el producto.
+      lock: { level: transaction.LOCK.UPDATE, of: MaterialInstalacion }
     });
     if (!material) {
       await transaction.rollback();
