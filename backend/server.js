@@ -115,8 +115,7 @@ const startServer = async () => {
   try {
     console.log('Conectando y sincronizando base de datos PostgreSQL...');
     const isProd = process.env.NODE_ENV === 'production';
-    // Producción: sync sin alter salvo DB_SYNC_ALTER=true (una vez al desplegar modelos nuevos).
-    const allowAlter = !isProd || process.env.DB_SYNC_ALTER === 'true';
+    const allowAlter = process.env.DB_SYNC_ALTER === 'true';
     await sequelize.sync(allowAlter ? { alter: true } : {});
     console.log(allowAlter
       ? 'Base de datos sincronizada (con alter).'

@@ -19,6 +19,7 @@
 
 services:
   postgres:
+    container_name: startsystem-postgres
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -38,6 +39,7 @@ services:
       start_period: 20s
 
   erp:
+    container_name: startsystem-app
     build:
       context: .
       dockerfile: Dockerfile
@@ -74,6 +76,8 @@ services:
 
 volumes:
   pgdata:
+    external: true
+    name: startsystem_pgdata
   erp_uploads:
 
 networks:

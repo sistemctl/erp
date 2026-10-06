@@ -116,10 +116,12 @@ exports.createOrden = async (req, res, next) => {
 
     const sedeId = await resolveActionSede(bodySedeId, req.usuario, Sede, transaction);
     if (!sedeId) {
+      await transaction.rollback();
       return res.status(400).json({ error: 'Debe seleccionar la sede de ingreso para la orden de reparación.' });
     }
 
     if (!clienteId || !tipoEquipo || !marca || !modelo || !problemaReportado) {
+      await transaction.rollback();
       return res.status(400).json({ error: 'Faltan campos obligatorios para registrar la orden.' });
     }
 
@@ -198,6 +200,7 @@ exports.updateOrden = async (req, res, next) => {
     const orden = await OrdenReparacion.findByPk(id, { transaction });
 
     if (!orden) {
+      await transaction.rollback();
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
     }
 
@@ -286,11 +289,13 @@ exports.updateEstado = async (req, res, next) => {
     const { estado, metodoPago, pagos, esCredito } = req.body;
 
     if (!['recibido', 'diagnostico', 'en_reparacion', 'listo', 'entregado', 'cancelado'].includes(estado)) {
+      await transaction.rollback();
       return res.status(400).json({ error: 'Estado de reparación inválido.' });
     }
 
     const orden = await OrdenReparacion.findByPk(id, { transaction });
     if (!orden) {
+      await transaction.rollback();
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
     }
 
@@ -456,11 +461,13 @@ exports.addRepuestos = async (req, res, next) => {
     const { productoId, cantidad } = req.body;
 
     if (!productoId || !cantidad || parseInt(cantidad) <= 0) {
+      await transaction.rollback();
       return res.status(400).json({ error: 'Parámetros de repuesto incompletos o cantidad inválida.' });
     }
 
     const orden = await OrdenReparacion.findByPk(id, { transaction });
     if (!orden) {
+      await transaction.rollback();
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
     }
 
@@ -468,6 +475,7 @@ exports.addRepuestos = async (req, res, next) => {
 
     const producto = await Producto.findByPk(productoId, { transaction });
     if (!producto) {
+      await transaction.rollback();
       return res.status(404).json({ error: 'Producto repuesto no encontrado.' });
     }
 
@@ -479,6 +487,7 @@ exports.addRepuestos = async (req, res, next) => {
     });
 
     if (!stock || stock.cantidad < parseInt(cantidad)) {
+      await transaction.rollback();
       return res.status(400).json({ error: 'Stock insuficiente del repuesto en esta sede.' });
     }
 

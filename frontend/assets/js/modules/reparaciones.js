@@ -858,23 +858,14 @@ export async function initReparaciones(container) {
               </div>
 
               ${isAdminOrGerente || esTecnico ? `
-                <form id="form-add-repuesto" class="row g-2 mb-4 border p-2 bg-light rounded">
-                  <div class="col-md-7">
-                    <div class="position-relative" id="repuesto-dropdown-container">
-                      <input type="hidden" id="repuesto-select" value="" required>
-                      <input type="text" id="repuesto-search" class="form-control form-control-sm" placeholder="🔍 Seleccionar o buscar repuesto…" autocomplete="off" spellcheck="false">
-                      <div id="repuesto-dropdown-menu" class="dropdown-menu w-100 shadow-sm" style="max-height: 200px; overflow-y: auto; display: none; position: absolute; top: 100%; left: 0; z-index: 1050; background: var(--tblr-bg-surface, #fff); border: 1px solid var(--tblr-border-color, #e6e8eb); border-radius: 4px;">
-                        <!-- Opciones dinámicas -->
-                      </div>
-                    </div>
+                <div class="row g-2 mb-4 border p-2 bg-light rounded">
+                  <div class="col-md-9">
+                    <input type="text" id="repuesto-search" class="form-control form-control-sm" placeholder="🔍 Seleccionar o buscar repuesto…" autocomplete="off" spellcheck="false" readonly role="button" aria-haspopup="dialog" aria-label="Buscar y seleccionar repuesto">
                   </div>
                   <div class="col-md-3">
-                    <input type="number" id="repuesto-cantidad" class="form-control form-control-sm" value="1" min="1" required>
+                    <button type="button" id="btn-open-repuesto-picker" class="btn btn-primary btn-sm w-100"><i class="ti ti-search me-1"></i>Buscar</button>
                   </div>
-                  <div class="col-md-2">
-                    <button type="submit" class="btn btn-primary btn-sm w-100">Agregar</button>
-                  </div>
-                </form>
+                </div>
               ` : ''}
 
               <!-- Galería de Fotos -->
@@ -964,96 +955,112 @@ export async function initReparaciones(container) {
         }
       });
 
-      // 3. Add Repuesto
-      const formRepuesto = document.getElementById('form-add-repuesto');
-      if (formRepuesto) {
-        formRepuesto.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          try {
-            const payload = {
-              productoId: document.getElementById('repuesto-select').value,
-              cantidad: document.getElementById('repuesto-cantidad').value
-            };
-
-            await apiFetch(`/reparaciones/${id}/repuestos`, {
-              method: 'POST',
-              body: JSON.stringify(payload)
-            });
-            await loadData();
-            fillKanban(document.getElementById('kanban-search').value);
-            openDetalle(id);
-          } catch (err) {
-            alert('Error al agregar repuesto: ' + err.message);
-          }
-        });
-      }
-
-      // Buscador unificado y dropdown dinámico de repuestos
-      const container = document.getElementById('repuesto-dropdown-container');
+      // 3. Selector de repuestos: reutiliza el patrón de búsqueda de Compras.
       const searchInput = document.getElementById('repuesto-search');
-      const hiddenInput = document.getElementById('repuesto-select');
-      const dropdownMenu = document.getElementById('repuesto-dropdown-menu');
+      const openPickerBtn = document.getElementById('btn-open-repuesto-picker');
 
-      if (container && searchInput && hiddenInput && dropdownMenu) {
-        // Filtrar productos seriales
-        const repuestosDisponibles = productos.filter(p => p.tieneNumeroSerie === false).map(p => ({
-          id: p.id,
-          nombre: p.nombre,
-          texto: `${p.nombre} (Costo: ${formatter.format(p.precioCosto)})`
-        }));
+      if (searchInput && openPickerBtn) {
+        const repuestosDisponibles = productos.filter((p) => p.tieneNumeroSerie === false);
+        const escapeHtml = (value) => String(value ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+        const normalizar = (value) => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+        const categoriaNombre = (p) => p?.categoria?.nombre || p?.categoriaNombre || '';
+        const categoriaId = (p) => String(p?.categoriaId || p?.categoria?.id || '');
+        const categoriaCorta = (name) => String(name || '').split('/').map((part) => part.trim()).filter(Boolean).pop() || '';
 
-        // Renderizar opciones en el menú dropdown
-        const renderDropdownOptions = (filterText = '') => {
-          const query = filterText.toLowerCase().trim();
-          const filtered = repuestosDisponibles.filter(item => 
-            item.nombre.toLowerCase().includes(query)
-          );
+        const openRepuestoPicker = () => {
+          document.getElementById('modal-repuesto-picker')?.remove();
+          let categoriaActiva = '';
+          let seleccionado = null;
+          const pickerEl = document.createElement('div');
+          pickerEl.className = 'modal modal-blur fade';
+          pickerEl.id = 'modal-repuesto-picker';
+          pickerEl.tabIndex = -1;
+          pickerEl.setAttribute('aria-labelledby', 'modal-repuesto-picker-title');
+          pickerEl.setAttribute('aria-hidden', 'true');
+          pickerEl.innerHTML = `
+            <div class="modal-dialog modal-xl modal-dialog-centered" role="document">
+              <div class="modal-content oc-product-modal">
+                <div class="modal-header oc-product-modal__header">
+                  <div>
+                    <h5 class="modal-title" id="modal-repuesto-picker-title">Buscar repuesto</h5>
+                    <p class="oc-product-modal__lede mb-0">Busque el repuesto, indique la cantidad y agréguelo a esta reparación.</p>
+                  </div>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body oc-product-modal__body p-0">
+                  <aside class="oc-product-modal__cats" aria-label="Categorías"><p class="oc-product-modal__rail-label">Categorías</p><div id="rep-picker-categories" class="oc-product-modal__cat-list" role="list"></div></aside>
+                  <div class="oc-product-modal__main">
+                    <div class="oc-product-modal__search input-group"><span class="input-group-text"><i class="ti ti-search"></i></span><input id="rep-picker-search" class="form-control" placeholder="Nombre o código…" autocomplete="off" spellcheck="false" aria-label="Buscar repuesto"></div>
+                    <div id="rep-picker-list" class="oc-product-modal__list" role="listbox"></div>
+                  </div>
+                  <aside class="oc-product-modal__added" aria-label="Repuestos en esta reparación">
+                    <div class="oc-product-modal__ticket-head"><p class="oc-product-modal__rail-label mb-0">En esta reparación</p><span class="oc-product-modal__ticket-hint">${(orden.repuestos || []).length || 'Vacía'}</span></div>
+                    <div id="rep-picker-compose"></div>
+                    <div id="rep-picker-assigned" class="oc-product-modal__added-list"></div>
+                  </aside>
+                </div>
+                <div class="modal-footer oc-product-modal__footer"><div class="oc-product-modal__cart-summary">${(orden.repuestos || []).length} repuesto${(orden.repuestos || []).length === 1 ? '' : 's'} asignado${(orden.repuestos || []).length === 1 ? '' : 's'} · ${formatter.format(orden.costoRepuestos || 0)}</div><button type="button" class="btn btn-primary" data-bs-dismiss="modal">Listo</button></div>
+              </div>
+            </div>`;
+          document.body.appendChild(pickerEl);
+          const pickerModal = bootstrap.Modal.getOrCreateInstance(pickerEl);
+          const categoriesEl = pickerEl.querySelector('#rep-picker-categories');
+          const listEl = pickerEl.querySelector('#rep-picker-list');
+          const searchEl = pickerEl.querySelector('#rep-picker-search');
+          const composeEl = pickerEl.querySelector('#rep-picker-compose');
+          const assignedEl = pickerEl.querySelector('#rep-picker-assigned');
 
-          if (filtered.length === 0) {
-            dropdownMenu.innerHTML = `<div class="dropdown-item text-secondary disabled py-2 px-3 small">No se encontraron resultados</div>`;
-            return;
-          }
-
-          dropdownMenu.innerHTML = filtered.map(item => `
-            <button type="button" class="dropdown-item py-2 px-3 text-start btn-select-repuesto w-100 border-0 bg-transparent" data-id="${item.id}" data-text="${item.nombre}">
-              ${item.texto}
-            </button>
-          `).join('');
-
-          // Click en una opción
-          dropdownMenu.querySelectorAll('.btn-select-repuesto').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-              e.preventDefault();
-              const id = btn.getAttribute('data-id');
-              const text = btn.getAttribute('data-text');
-              hiddenInput.value = id;
-              searchInput.value = text;
-              dropdownMenu.style.display = 'none';
+          const renderAssigned = () => {
+            const assigned = orden.repuestos || [];
+            assignedEl.innerHTML = assigned.length ? assigned.map((row) => `
+              <div class="oc-product-modal__added-item"><div class="oc-product-modal__added-top"><strong class="oc-product-modal__added-name">${escapeHtml(row.producto?.nombre || 'Repuesto')}</strong></div><div class="oc-product-modal__added-meta"><span>× ${row.cantidad}</span><span>${formatter.format(row.costoUnitario || 0)}</span><span class="oc-product-modal__added-sub">${formatter.format((row.costoUnitario || 0) * row.cantidad)}</span></div></div>`).join('') : `<div class="oc-product-modal__added-empty"><span class="oc-product-modal__added-empty-title">Sin repuestos aún</span><span class="oc-product-modal__added-empty-hint">Elija un repuesto de la lista para agregarlo.</span></div>`;
+          };
+          const renderCategories = () => {
+            const categories = Array.from(new Map(repuestosDisponibles.map((p) => [categoriaId(p), categoriaNombre(p)]).filter(([key, name]) => key && name)).entries()).map(([key, name]) => ({ key, name })).sort((a, b) => a.name.localeCompare(b.name, 'es'));
+            categoriesEl.innerHTML = `<button type="button" class="oc-product-modal__cat${!categoriaActiva ? ' is-active' : ''}" data-category="">Todas</button>${categories.map((category) => `<button type="button" class="oc-product-modal__cat${categoriaActiva === category.key ? ' is-active' : ''}" data-category="${escapeHtml(category.key)}" title="${escapeHtml(category.name)}">${escapeHtml(categoriaCorta(category.name))}</button>`).join('')}`;
+          };
+          const renderCompose = () => {
+            if (!seleccionado) { composeEl.innerHTML = ''; return; }
+            composeEl.innerHTML = `<div class="oc-product-modal__compose"><div class="oc-product-modal__compose-head"><div class="oc-product-modal__compose-name"><span class="oc-product-modal__compose-label">Para agregar</span><strong>${escapeHtml(seleccionado.nombre)}</strong></div><button type="button" class="btn btn-ghost-secondary btn-icon btn-sm" id="rep-picker-cancel" aria-label="Cancelar selección"><i class="ti ti-x"></i></button></div><div class="oc-product-modal__compose-fields"><div><label class="form-label">Costo</label><div class="form-control-plaintext py-1 fw-semibold">${formatter.format(seleccionado.precioCosto || 0)}</div></div><div><label class="form-label" for="rep-picker-quantity">Cant.</label><input type="number" id="rep-picker-quantity" class="form-control" value="1" min="1" inputmode="numeric"></div><div class="d-flex align-items-end"><button type="button" id="rep-picker-add" class="btn btn-primary w-100"><i class="ti ti-plus me-1"></i>Agregar</button></div></div></div>`;
+            composeEl.querySelector('#rep-picker-cancel').addEventListener('click', () => { seleccionado = null; renderCompose(); });
+            composeEl.querySelector('#rep-picker-add').addEventListener('click', async () => {
+              const quantity = parseInt(composeEl.querySelector('#rep-picker-quantity').value, 10);
+              if (!Number.isInteger(quantity) || quantity < 1) return;
+              const addButton = composeEl.querySelector('#rep-picker-add');
+              addButton.disabled = true;
+              try {
+                await apiFetch(`/reparaciones/${id}/repuestos`, { method: 'POST', body: JSON.stringify({ productoId: seleccionado.id, cantidad: quantity }) });
+                pickerModal.hide();
+                await loadData();
+                fillKanban(document.getElementById('kanban-search').value);
+                openDetalle(id);
+              } catch (err) {
+                addButton.disabled = false;
+                alert('Error al agregar repuesto: ' + err.message);
+              }
             });
-          });
+          };
+          const renderList = () => {
+            const query = normalizar(searchEl.value);
+            const matches = repuestosDisponibles.filter((p) => (!categoriaActiva || categoriaId(p) === categoriaActiva) && normalizar(`${p.nombre || ''} ${p.codigoBarras || ''} ${categoriaNombre(p)}`).includes(query)).sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es')).slice(0, 80);
+            listEl.innerHTML = matches.length ? `<div class="oc-product-picker__count">${matches.length}${matches.length === 80 ? ' · filtre para acotar' : ''} repuesto${matches.length === 1 ? '' : 's'}</div>${matches.map((p) => `<button type="button" class="oc-product-picker__item" role="option" data-product-id="${escapeHtml(p.id)}"><span class="oc-product-picker__main"><span class="oc-product-picker__name">${escapeHtml(p.nombre || 'Repuesto')}</span><span class="oc-product-picker__meta"><span class="oc-product-picker__sku">${escapeHtml(p.codigoBarras || 's/c')}</span>${categoriaNombre(p) ? `<span class="oc-product-picker__dot">·</span><span class="oc-product-picker__cat">${escapeHtml(categoriaCorta(categoriaNombre(p)))}</span>` : ''}</span></span><span class="oc-product-picker__cost">${formatter.format(p.precioCosto || 0)}</span></button>`).join('')}` : `<div class="oc-product-picker__empty">Sin coincidencias. Pruebe otro término o categoría.</div>`;
+          };
+          renderAssigned(); renderCategories(); renderList();
+          searchEl.addEventListener('input', renderList);
+          categoriesEl.addEventListener('click', (event) => { const chip = event.target.closest('[data-category]'); if (!chip) return; categoriaActiva = chip.dataset.category || ''; renderCategories(); renderList(); });
+          listEl.addEventListener('click', (event) => { const item = event.target.closest('[data-product-id]'); if (!item) return; seleccionado = repuestosDisponibles.find((p) => String(p.id) === item.dataset.productId) || null; renderCompose(); });
+          pickerEl.addEventListener('shown.bs.modal', () => { pickerEl.style.zIndex = '1065'; const backdrops = document.querySelectorAll('.modal-backdrop'); backdrops[backdrops.length - 1]?.style.setProperty('z-index', '1060'); searchEl.focus(); });
+          pickerEl.addEventListener('hidden.bs.modal', () => pickerEl.remove());
+          pickerModal.show();
         };
 
-        // Mostrar menú al hacer focus o click
-        searchInput.addEventListener('focus', () => {
-          renderDropdownOptions(searchInput.value);
-          dropdownMenu.style.display = 'block';
-        });
-
-        // Filtrar al escribir
-        searchInput.addEventListener('input', (e) => {
-          if (e.target.value.trim() === '') {
-            hiddenInput.value = '';
-          }
-          renderDropdownOptions(e.target.value);
-          dropdownMenu.style.display = 'block';
-        });
-
-        // Cerrar al hacer click fuera
-        document.addEventListener('click', (e) => {
-          if (!container.contains(e.target)) {
-            dropdownMenu.style.display = 'none';
-          }
-        });
+        searchInput.addEventListener('click', openRepuestoPicker);
+        searchInput.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openRepuestoPicker(); } });
+        openPickerBtn.addEventListener('click', openRepuestoPicker);
       }
 
       // El catálogo de repuestos usa la misma superficie de trabajo que Compras.
