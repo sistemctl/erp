@@ -472,11 +472,13 @@ exports.importarCSV = async (req, res, next) => {
         }, { transaction });
       }
 
-      // Evitar duplicados de código de barras
-      const existe = await Producto.findOne({ where: { codigoBarras: codigoFila, activo: true }, transaction });
+      // Evitar duplicados de código de barras (tanto activos como inactivos)
+      const existe = await Producto.findOne({ where: { codigoBarras: codigoFila }, transaction });
       if (existe) {
         continue; // Saltar duplicados
       }
+
+      const esServicioBool = row.esServicio === 'true' || row.esServicio === '1';
 
       const producto = await Producto.create({
         nombre: row.nombre,
@@ -486,19 +488,21 @@ exports.importarCSV = async (req, res, next) => {
         precioCosto: parseFloat(row.precioCosto),
         tieneIVA: row.tieneIVA === 'true' || row.tieneIVA === '1',
         stockMinimo: parseInt(row.stockMinimo || 0),
-        tieneNumeroSerie: row.tieneNumeroSerie === 'true' || row.tieneNumeroSerie === '1',
+        tieneNumeroSerie: esServicioBool ? false : (row.tieneNumeroSerie === 'true' || row.tieneNumeroSerie === '1'),
         esReacondicionado: row.esReacondicionado === 'true' || row.esReacondicionado === '1',
+        esServicio: esServicioBool,
         unidadMedida: normalizeUnidadMedida(row.unidadMedida),
         categoriaId: categoria.id,
         imagenUrl: row.imagenUrl || null
       }, { transaction });
 
-      // Inicializar Stock en 0 para todas las sedes
+      // Inicializar Stock para todas las sedes (soportando stock / stockInicial del CSV)
+      const stockInicial = parseInt(row.stock || row.stockInicial || row.cantidadInicial || 0);
       for (const sede of sedes) {
         await StockSede.create({
           productoId: producto.id,
           sedeId: sede.id,
-          cantidad: 0
+          cantidad: stockInicial
         }, { transaction });
       }
 

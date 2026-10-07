@@ -180,7 +180,8 @@ async function generarCotizacionPDF(doc, cotizacion, config = {}) {
   ];
 
   const tableX = innerX;
-  const rowH = 18;
+  const tableTop = y;
+  const minRowH = 18;
   const headerRowH = 20;
 
   doc.save();
@@ -216,6 +217,15 @@ async function generarCotizacionPDF(doc, cotizacion, config = {}) {
     cx = tableX;
     const unidad = item ? labelUnidadMedida(item.producto?.unidadMedida) : '';
     const cells = [codigo, desc, unidad, cant, unit, sub];
+    const rowH = item
+      ? Math.max(
+        minRowH,
+        ...cells.map((val, idx) => doc.heightOfString(String(val || ''), {
+          width: cols[idx].w - 8,
+          align: cols[idx].align
+        }) + 10)
+      )
+      : minRowH;
     cells.forEach((val, idx) => {
       doc.text(val, cx + 4, y + 5, { width: cols[idx].w - 8, align: cols[idx].align, ellipsis: true });
       cx += cols[idx].w;
@@ -223,7 +233,7 @@ async function generarCotizacionPDF(doc, cotizacion, config = {}) {
     y += rowH;
   }
 
-  doc.rect(tableX, y - rows * rowH - headerRowH, innerW, rows * rowH + headerRowH).strokeColor('#cbd5e1').lineWidth(0.5).stroke();
+  doc.rect(tableX, tableTop, innerW, y - tableTop).strokeColor('#cbd5e1').lineWidth(0.5).stroke();
 
   y += 10;
 
