@@ -5,7 +5,7 @@ import { applyDocumentBranding, getCachedBrand, resolveAssetUrl } from './utils/
 import { isPublicSeguimientoLocation } from './modules/seguimiento-reparacion.js';
 
 /** Bump with index.html ?v= so dynamic ES modules are not stuck on CDN/browser cache. */
-const ASSET_V = '3.0.97';
+const ASSET_V = '3.0.103';
 const importModule = (path) => import(`${path}?v=${ASSET_V}`);
 
 // Anular global alert del navegador con una notificación Toast Premium animada
@@ -246,7 +246,25 @@ function updateTopbarContext(rawHash) {
 }
 
 // Router principal
+let routerRunning = false;
+let routerPending = false;
 async function router() {
+  routerPending = true;
+  if (routerRunning) return;
+  routerRunning = true;
+  try {
+    // Los módulos usan elementos del documento: no pueden montarse simultáneamente.
+    // Los cambios intermedios se agrupan y la siguiente carga lee la última ruta.
+    while (routerPending) {
+      routerPending = false;
+      await renderRoute();
+    }
+  } finally {
+    routerRunning = false;
+  }
+}
+
+async function renderRoute() {
   const rawHash = window.location.hash || '#/dashboard';
   const hash = rawHash.split('?')[0] || '#/dashboard';
   const appContainer = document.getElementById('app');
@@ -682,7 +700,7 @@ async function renderBaseShell(container) {
     <!-- Sidebar -->
     <aside id="sidebar-container" class="navbar navbar-vertical navbar-expand-lg d-print-none">
       <div class="container-fluid">
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu">
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu" aria-controls="sidebar-menu" aria-expanded="false" aria-label="Abrir menú de navegación">
           <span class="navbar-toggler-icon"></span>
         </button>
         <h1 class="navbar-brand navbar-brand-autodark">
@@ -761,6 +779,13 @@ async function renderBaseShell(container) {
   document.getElementById('logout-btn').addEventListener('click', (e) => {
     e.preventDefault();
     logout();
+  });
+  document.querySelectorAll('#sidebar-menu .nav-link').forEach(link => {
+    link.addEventListener('click', () => {
+      if (window.matchMedia('(max-width: 991.98px)').matches) {
+        bootstrap.Collapse.getOrCreateInstance(document.getElementById('sidebar-menu'), { toggle: false }).hide();
+      }
+    });
   });
 
   // Dark/Light Theme Switcher nativo de Tabler

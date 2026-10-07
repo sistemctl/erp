@@ -1,3 +1,5 @@
+const { nextDocumentNumber } = require('../utils/document-number');
+const { assertSedeAccess } = require('../utils/sede');
 const {
   OrdenReparacion,
   FotoReparacion,
@@ -26,6 +28,16 @@ const emailService = require('../services/email.service');
 const { resolveQuerySede, resolveActionSede } = require('../utils/sede');
 const { calcularFechaVencimientoCredito, getDiasPlazoCredito } = require('../utils/credito');
 const { findCajaAbierta } = require('../utils/caja-abierta');
+const { pagosServicio } = require('../utils/caja-cobros');
+const { httpError } = require('../utils/http-error');
+
+async function assertRepuestosEditables(orden, transaction) {
+  if (['entregado', 'cancelado'].includes(orden.estado)) {
+    throw httpError(409, 'No se pueden modificar repuestos de una reparación entregada o cancelada.');
+  }
+  const factura = await Factura.findOne({ where: { ordenReparacionId: orden.id, estado: { [Op.ne]: 'anulada' } }, transaction });
+  if (factura) throw httpError(409, 'La reparación ya está facturada. No se pueden modificar sus repuestos.');
+}
 
 // --- CRUD ÓRDENES ---
 
@@ -83,6 +95,7 @@ exports.getOrdenById = async (req, res, next) => {
         { model: RentabilidadReparacion, as: 'rentabilidad' }
       ]
     });
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
 
     if (!orden) {
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
@@ -96,6 +109,7 @@ exports.getOrdenById = async (req, res, next) => {
 
 exports.createOrden = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const {
       clienteId,
@@ -130,8 +144,7 @@ exports.createOrden = async (req, res, next) => {
     }
 
     // Secuencia de ordenes
-    const countOrdenes = await OrdenReparacion.count({ transaction });
-    const numeroOrden = `OR-${String(countOrdenes + 1).padStart(6, '0')}`;
+    const numeroOrden = await nextDocumentNumber(sequelize, 'OR', transaction);
 
     const manoObraNum = parseFloat(costoManoObra || 0);
 
@@ -186,16 +199,20 @@ exports.createOrden = async (req, res, next) => {
 
     return res.status(201).json(orden);
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
 exports.updateOrden = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id } = req.params;
-    const orden = await OrdenReparacion.findByPk(id, { transaction });
+    const orden = await OrdenReparacion.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
 
     if (!orden) {
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
@@ -272,8 +289,10 @@ exports.updateOrden = async (req, res, next) => {
 
     return res.json(orden);
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
@@ -281,6 +300,7 @@ exports.updateOrden = async (req, res, next) => {
 
 exports.updateEstado = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id } = req.params;
     const { estado, metodoPago, pagos, esCredito } = req.body;
@@ -289,12 +309,23 @@ exports.updateEstado = async (req, res, next) => {
       return res.status(400).json({ error: 'Estado de reparación inválido.' });
     }
 
-    const orden = await OrdenReparacion.findByPk(id, { transaction });
+    const orden = await OrdenReparacion.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
     if (!orden) {
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
     }
 
+    if (orden.estado === estado) {
+      await transaction.commit();
+      return res.json({ message: 'La orden ya tiene este estado.', estado });
+    }
+    if (['entregado', 'cancelado'].includes(orden.estado)) {
+      return res.status(409).json({ error: 'Una reparación entregada o cancelada no puede volver a cobrarse.' });
+    }
+
     if (estado === 'entregado') {
+      const facturaExistente = await Factura.findOne({ where: { ordenReparacionId: id }, transaction });
+      if (facturaExistente) return res.status(409).json({ error: 'Esta reparación ya fue facturada. Revise su factura antes de cobrar nuevamente.' });
       const { caja } = await findCajaAbierta({
         sedeId: orden.sedeId,
         usuarioId: req.usuario.userId,
@@ -306,6 +337,7 @@ exports.updateEstado = async (req, res, next) => {
       }
 
       const totalNum = parseFloat(orden.totalCobrado || 0);
+      const pagosCaja = pagosServicio(totalNum, pagos, metodoPago || 'efectivo', esCredito === true);
       let totalPagado = totalNum;
       let saldoPendiente = 0;
 
@@ -378,9 +410,8 @@ exports.updateEstado = async (req, res, next) => {
       // Crear factura si no existe
       const yaFacturado = await Factura.findOne({ where: { ordenReparacionId: id }, transaction });
       if (!yaFacturado) {
-        const countFacturas = await Factura.count({ transaction });
-        const numeroFactura = `FE-${String(countFacturas + 1).padStart(6, '0')}`;
-        const diasPlazo = await getDiasPlazoCredito(ConfiguracionSistema);
+        const numeroFactura = await nextDocumentNumber(sequelize, 'FE', transaction);
+        const diasPlazo = await getDiasPlazoCredito(ConfiguracionSistema, transaction);
         const fechaVencimiento = calcularFechaVencimientoCredito(diasPlazo);
         const config = await ConfiguracionSistema.findOne({ transaction });
         const cobrarIvaTaller = config?.cobrarIvaTaller === true;
@@ -392,6 +423,8 @@ exports.updateEstado = async (req, res, next) => {
         
         const factura = await Factura.create({
           numeroFactura,
+          cajaId: caja.id,
+          pagosCaja,
           ordenReparacionId: id,
           clienteId: orden.clienteId,
           sedeId: orden.sedeId,
@@ -442,8 +475,10 @@ exports.updateEstado = async (req, res, next) => {
 
     return res.json({ message: 'Estado actualizado correctamente.', estado: orden.estado });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
@@ -451,6 +486,7 @@ exports.updateEstado = async (req, res, next) => {
 
 exports.addRepuestos = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id } = req.params; // ID de OrdenReparacion
     const { productoId, cantidad } = req.body;
@@ -459,11 +495,13 @@ exports.addRepuestos = async (req, res, next) => {
       return res.status(400).json({ error: 'Parámetros de repuesto incompletos o cantidad inválida.' });
     }
 
-    const orden = await OrdenReparacion.findByPk(id, { transaction });
+    const orden = await OrdenReparacion.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
     if (!orden) {
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
     }
 
+    await assertRepuestosEditables(orden, transaction);
     const sedeId = orden.sedeId;
 
     const producto = await Producto.findByPk(productoId, { transaction });
@@ -538,8 +576,106 @@ exports.addRepuestos = async (req, res, next) => {
 
     return res.status(201).json(repuestoOrden);
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
+  }
+};
+
+exports.updateRepuesto = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
+  try {
+    const { id, repuestoId } = req.params;
+    const raw = req.body.costoUnitario;
+    const round = value => Math.round(value * 100) / 100;
+    const maxImporte = 9999999999999.99;
+    if (!['number', 'string'].includes(typeof raw) || String(raw).trim() === '' ||
+      !Number.isFinite(Number(raw)) || Number(raw) < 0 || Number(raw) > maxImporte) {
+      throw httpError(400, 'Ingrese un costo unitario válido, mayor o igual a cero.');
+    }
+    const costoUnitario = round(Number(raw));
+    const orden = await OrdenReparacion.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!orden) throw httpError(404, 'Orden de reparación no encontrada.');
+    assertSedeAccess(req.usuario, orden.sedeId);
+    await assertRepuestosEditables(orden, transaction);
+    const repuesto = await RepuestoOrden.findOne({ where: { id: repuestoId, ordenId: id }, transaction, lock: transaction.LOCK.UPDATE });
+    if (!repuesto) throw httpError(404, 'El repuesto no está asignado a esta reparación.');
+    const cantidad = Number(repuesto.cantidad);
+    const costoAnterior = Number(repuesto.costoUnitario);
+    const diferencia = round(costoUnitario * cantidad) - round(costoAnterior * cantidad);
+    const costoRepuestos = round(Number(orden.costoRepuestos) + diferencia);
+    const totalCobrado = round(Number(orden.totalCobrado) + diferencia);
+    const validImporte = value => Number.isFinite(value) && value >= 0 && value <= maxImporte;
+    if (!Number.isSafeInteger(cantidad) || cantidad <= 0 || !validImporte(costoAnterior) ||
+      !validImporte(costoUnitario * cantidad) || !validImporte(costoRepuestos) || !validImporte(totalCobrado)) {
+      throw httpError(409, 'Los importes del repuesto no concilian con la reparación.');
+    }
+    const rentabilidad = await RentabilidadReparacion.findOne({ where: { ordenId: id }, transaction, lock: transaction.LOCK.UPDATE });
+    if (rentabilidad) {
+      const costoReal = round(Number(rentabilidad.costoReal) + diferencia);
+      if (!validImporte(costoReal)) throw httpError(409, 'El costo registrado no concilia con el repuesto.');
+      await rentabilidad.update({ costoReal, totalCobrado, margen: round(totalCobrado - costoReal) }, { transaction });
+    }
+    const valorAnterior = { repuestoId, costoUnitario: costoAnterior, costoRepuestos: orden.costoRepuestos, totalCobrado: orden.totalCobrado };
+    await repuesto.update({ costoUnitario }, { transaction });
+    await orden.update({ costoRepuestos, totalCobrado }, { transaction });
+    await transaction.commit();
+    if (req.logAudit) await req.logAudit({ accion: 'UPDATE', modulo: 'Reparaciones', registroId: id, valorAnterior,
+      valorNuevo: { repuestoId, costoUnitario, costoRepuestos, totalCobrado } });
+    return res.json({ message: 'Costo del repuesto actualizado.', costoUnitario, costoRepuestos, totalCobrado });
+  } catch (error) {
+    if (!transaction.finished) await transaction.rollback();
+    next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
+  }
+};
+
+exports.removeRepuesto = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
+  try {
+    const { id, repuestoId } = req.params;
+    const orden = await OrdenReparacion.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!orden) throw httpError(404, 'Orden de reparación no encontrada.');
+    assertSedeAccess(req.usuario, orden.sedeId);
+    await assertRepuestosEditables(orden, transaction);
+    const repuesto = await RepuestoOrden.findOne({ where: { id: repuestoId, ordenId: id }, transaction, lock: transaction.LOCK.UPDATE });
+    if (!repuesto) throw httpError(404, 'El repuesto no está asignado a esta reparación.');
+    const stock = await StockSede.findOne({ where: { productoId: repuesto.productoId, sedeId: orden.sedeId }, transaction, lock: transaction.LOCK.UPDATE });
+    if (!stock) throw httpError(409, 'No se encontró el registro de inventario de este repuesto en la sede.');
+    const cantidad = Number(repuesto.cantidad);
+    const round = value => Math.round(value * 100) / 100;
+    const costo = round(Number(repuesto.costoUnitario) * cantidad);
+    const costoRepuestos = round(Number(orden.costoRepuestos) - costo);
+    const totalCobrado = round(Number(orden.totalCobrado) - costo);
+    if (!Number.isSafeInteger(cantidad) || cantidad <= 0 || !Number.isFinite(costo) || costo < 0 ||
+      !Number.isFinite(costoRepuestos) || !Number.isFinite(totalCobrado) || costoRepuestos < 0 || totalCobrado < 0) {
+      throw httpError(409, 'Los importes del repuesto no concilian con la reparación. Revise sus totales antes de retirarlo.');
+    }
+    const rentabilidad = await RentabilidadReparacion.findOne({ where: { ordenId: id }, transaction, lock: transaction.LOCK.UPDATE });
+    if (rentabilidad) {
+      const costoReal = round(Number(rentabilidad.costoReal) - costo);
+      if (!Number.isFinite(costoReal) || costoReal < 0) throw httpError(409, 'El costo registrado no concilia con el repuesto.');
+      await rentabilidad.update({ costoReal, totalCobrado, margen: round(totalCobrado - costoReal) }, { transaction });
+    }
+    const valorAnterior = repuesto.toJSON();
+    await stock.update({ cantidad: Number(stock.cantidad) + cantidad }, { transaction });
+    await MovimientoInventario.create({ productoId: repuesto.productoId, sedeId: orden.sedeId, tipo: 'entrada', cantidad,
+      motivo: `Repuesto retirado de Orden #${orden.numeroOrden}`, referenciaId: orden.id, usuarioId: req.usuario.userId }, { transaction });
+    await repuesto.destroy({ transaction });
+    await orden.update({ costoRepuestos, totalCobrado }, { transaction });
+    await transaction.commit();
+    if (req.logAudit) await req.logAudit({ accion: 'UPDATE', modulo: 'Reparaciones', registroId: id, valorAnterior,
+      valorNuevo: { repuestoRetiradoId: repuestoId, productoId: repuesto.productoId, cantidadDevuelta: cantidad, costoRepuestos, totalCobrado } });
+    return res.json({ message: 'Repuesto retirado y devuelto al inventario.', costoRepuestos, totalCobrado });
+  } catch (error) {
+    if (!transaction.finished) await transaction.rollback();
+    next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
@@ -559,6 +695,7 @@ exports.uploadFotos = async (req, res, next) => {
     }
 
     const orden = await OrdenReparacion.findByPk(id);
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
     if (!orden) {
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
     }
@@ -593,6 +730,7 @@ exports.getOrdenPdf = async (req, res, next) => {
         { model: Usuario, as: 'tecnico', attributes: ['nombre'] }
       ]
     });
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
 
     if (!orden) {
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
@@ -676,6 +814,7 @@ exports.getEtiquetaQr = async (req, res, next) => {
   try {
     const { id } = req.params;
     const orden = await OrdenReparacion.findByPk(id);
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
 
     if (!orden) {
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
@@ -705,6 +844,8 @@ exports.getRentabilidadReport = async (req, res, next) => {
       // Solo órdenes ya cobradas (el cobro ocurre al entregar)
       estado: 'entregado'
     };
+    const scopedSedeId = resolveQuerySede(req.query.sede || req.query.sedeId, req.usuario);
+    if (scopedSedeId) where.sedeId = scopedSedeId;
 
     if (tecnico) {
       where.tecnicoId = tecnico;

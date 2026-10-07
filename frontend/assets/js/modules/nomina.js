@@ -1,3 +1,4 @@
+import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { showConfirm } from '../utils/toast.js';
@@ -746,4 +747,8 @@ export async function initNomina(container) {
       alert('Error: ' + e.message);
     }
   }
+  watchDataChanges(container, ["nomina","empleados"], async () => {
+    await loadInitialData(); renderNominasTable();
+  });
+
 }

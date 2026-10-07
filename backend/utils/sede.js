@@ -2,6 +2,14 @@ const GLOBAL_ROLES = ['admin', 'superadmin'];
 
 const isGlobalRole = (rol) => GLOBAL_ROLES.includes(rol);
 
+function assertSedeAccess(usuario, sedeId) {
+  if (!isGlobalRole(usuario?.rol) && (!usuario?.sedeId || String(usuario.sedeId) !== String(sedeId))) {
+    const error = new Error('No tiene acceso a registros de esta sede.');
+    error.status = 403;
+    throw error;
+  }
+}
+
 const isValidSedeParam = (sede) => {
   if (!sede || sede === 'undefined' || sede === 'null') return false;
   return true;
@@ -10,7 +18,8 @@ const isValidSedeParam = (sede) => {
 /** Filtro de listados: null = todas las sedes (admin/superadmin) */
 const resolveQuerySede = (sedeParam, usuario) => {
   if (!isGlobalRole(usuario.rol)) {
-    return usuario.sedeId || null;
+    assertSedeAccess(usuario, usuario.sedeId);
+    return usuario.sedeId;
   }
   return isValidSedeParam(sedeParam) ? sedeParam : null;
 };
@@ -44,6 +53,7 @@ const textoSedeNotificacion = (sede) => {
 
 module.exports = {
   GLOBAL_ROLES,
+  assertSedeAccess,
   isGlobalRole,
   resolveQuerySede,
   resolveActionSede,

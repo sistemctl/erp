@@ -186,17 +186,6 @@ function toOpsConfig(configJson) {
   return out;
 }
 
-function sanitizeBackupRow(modelName, row) {
-  const copy = { ...row };
-  if (modelName === 'Usuario') {
-    delete copy.password;
-  }
-  if (modelName === 'ConfiguracionSistema') {
-    delete copy.smtpPass;
-    delete copy.twilioAuthToken;
-  }
-  return copy;
-}
 
 function attachServidorMeta(configJson, req) {
   const data = configJson?.toJSON ? configJson.toJSON() : { ...configJson };
@@ -293,6 +282,7 @@ exports.deleteSede = async (req, res, next) => {
 
     if (force) {
       const transaction = await sequelize.transaction();
+      req.auditTransaction = transaction;
       try {
         await forceDeleteSede(sede, transaction);
         await transaction.commit();
@@ -681,80 +671,43 @@ exports.probarSmtp = async (req, res, next) => {
 exports.exportarBackup = async (req, res, next) => {
   try {
     const models = require('../models');
-    const backupData = {};
-    
-    const orderedModels = [
-      'Sede', 'Usuario', 'Empleado', 'Categoria', 'Producto', 'StockSede', 
-      'Cliente', 'NumeroSerie', 'Venta', 'ItemVenta', 'PagoVenta', 'Factura', 
-      'CuentaPorCobrar', 'Abono', 'Cotizacion', 'ItemCotizacion', 'OrdenReparacion', 
-      'FotoReparacion', 'RepuestoOrden', 'RentabilidadReparacion', 'OrdenInstalacion',
-      'MaterialInstalacion', 'TradeIn', 'ReclamoGarantia',
-      'CategoriaEgreso', 'Caja', 'EgresoCaja', 'Nomina', 'Proveedor', 
-      'OrdenCompra', 'ItemOrdenCompra', 'PagoCompra', 'MovimientoInventario', 'Notificacion', 
-      'AuditLog', 'ConfiguracionSistema'
-    ];
-
-    for (const modelName of orderedModels) {
-      if (models[modelName]) {
-        const rows = await models[modelName].findAll({ raw: true });
-        backupData[modelName] = rows.map((row) => sanitizeBackupRow(modelName, row));
-      }
-    }
-
+    const { encryptBackup, orderedBackupModels } = require('../utils/backup');
+    const ordered = orderedBackupModels(models);
+    const backup = await sequelize.transaction({ isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.REPEATABLE_READ }, async (transaction) => {
+      const data = {};
+      for (const name of ordered) data[name] = await models[name].findAll({ raw: true, transaction });
+      return encryptBackup(data, req.body?.password);
+    });
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename=backup_erp_${new Date().toISOString().split('T')[0]}.json`);
-    return res.json(backupData);
-  } catch (error) {
-    next(error);
-  }
+    res.setHeader('Content-Disposition', 'attachment; filename=backup_erp_' + new Date().toISOString().split('T')[0] + '.json');
+    return res.json(backup);
+  } catch (error) { next(error); }
 };
 
 exports.importarBackup = async (req, res, next) => {
-  const { sequelize } = require('../models');
-  const transaction = await sequelize.transaction();
   try {
-    const backupData = req.body;
-    
-    const orderedModels = [
-      'Sede', 'Usuario', 'Empleado', 'Categoria', 'Producto', 'StockSede', 
-      'Cliente', 'NumeroSerie', 'Venta', 'ItemVenta', 'PagoVenta', 'Factura', 
-      'CuentaPorCobrar', 'Abono', 'Cotizacion', 'ItemCotizacion', 'OrdenReparacion', 
-      'FotoReparacion', 'RepuestoOrden', 'RentabilidadReparacion', 'OrdenInstalacion',
-      'MaterialInstalacion', 'TradeIn', 
-      'CategoriaEgreso', 'Caja', 'EgresoCaja', 'Nomina', 'Proveedor', 
-      'OrdenCompra', 'ItemOrdenCompra', 'PagoCompra', 'MovimientoInventario', 'Notificacion', 
-      'AuditLog', 'ConfiguracionSistema'
-    ];
-
-    // Eliminar datos en orden inverso para evitar restricciones
-    for (let i = orderedModels.length - 1; i >= 0; i--) {
-      const modelName = orderedModels[i];
-      if (sequelize.models[modelName]) {
-        await sequelize.models[modelName].destroy({ where: {}, force: true, transaction });
+    const models = require('../models');
+    const { decryptBackup, orderedBackupModels, validateBackup } = require('../utils/backup');
+    const { initializeDocumentSequences } = require('../utils/document-number');
+    const ordered = orderedBackupModels(models);
+    const data = decryptBackup(req.body.backup, req.body.password);
+    await validateBackup(data, models, ordered);
+    await sequelize.transaction(async (transaction) => {
+      const tables = ordered.map((name) => sequelize.getQueryInterface().queryGenerator.quoteTable(models[name].getTableName())).join(', ');
+      await sequelize.query('LOCK TABLE ' + tables + ' IN ACCESS EXCLUSIVE MODE', { transaction });
+      const versions = new Map((await Usuario.findAll({ attributes: ['id', 'sessionVersion'], raw: true, transaction }))
+        .map((row) => [row.id, Number(row.sessionVersion) || 0]));
+      await sequelize.query('TRUNCATE TABLE ' + tables + ' RESTART IDENTITY', { transaction });
+      for (const name of ordered) {
+        const rows = data[name].map((row) => name === 'Usuario'
+          ? { ...row, sessionVersion: Math.max(Number(row.sessionVersion) || 0, versions.get(row.id) || 0) + 1 }
+          : row);
+        if (rows.length) await models[name].bulkCreate(rows, { validate: true, hooks: false, transaction });
       }
-    }
-
-    // Insertar datos en orden directo
-    for (const modelName of orderedModels) {
-      if (sequelize.models[modelName] && backupData[modelName] && backupData[modelName].length > 0) {
-        await sequelize.models[modelName].bulkCreate(backupData[modelName], { transaction });
-      }
-    }
-
-    await transaction.commit();
-
-    if (req.logAudit) {
-      await req.logAudit({
-        accion: 'UPDATE',
-        modulo: 'Sistema',
-        registroId: 'backup_restore',
-        valorNuevo: { info: 'Restauración completa de base de datos realizada.' }
-      });
-    }
-
-    return res.json({ message: 'Base de datos restaurada correctamente.' });
-  } catch (error) {
-    await transaction.rollback();
-    next(error);
-  }
+      await initializeDocumentSequences(sequelize, transaction);
+    });
+    if (req.logAudit) await req.logAudit({ accion: 'UPDATE', modulo: 'Sistema', registroId: 'backup_restore',
+      valorNuevo: { info: 'Respaldo completo restaurado.' } });
+    return res.json({ message: 'Base de datos restaurada. Inicie sesión nuevamente.' });
+  } catch (error) { next(error); }
 };

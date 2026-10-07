@@ -1,3 +1,4 @@
+import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
@@ -286,4 +287,8 @@ export async function initReportes(container) {
   });
 
   await refreshAll();
+  watchDataChanges(container, ["ventas","compras","cartera","facturas","inventario","series","caja","instalaciones","reparaciones"], async () => {
+    await refreshAll();
+  });
+
 }

@@ -1,7 +1,8 @@
+import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { getLocalDateStr } from '../utils/date.js';
-import { showToast, showConfirm } from '../utils/toast.js';
+import { showToast } from '../utils/toast.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { erpAction } from '../utils/action-buttons.js';
 import { printCierreTicket } from '../utils/cierre-ticket-print.js';
@@ -12,6 +13,8 @@ export async function initCaja(container) {
   const isAdminOrContador = ['admin', 'superadmin', 'contador'].includes(usuario.rol);
 
   let activeCaja = null;
+  let cierreAdministrativo = false;
+  let efectivoEsperadoCierre = 0;
   let limiteEgresoSinPin = 50000;
   let sedes = [];
 
@@ -19,6 +22,10 @@ export async function initCaja(container) {
     sedes = await apiFetch('/config/sedes').catch(() => []);
     if (!currentSedeId && sedes.length > 0) {
       currentSedeId = sedes[0].id;
+    }
+    const sedeSolicitada = new URLSearchParams(window.location.hash.split('?')[1] || '').get('sede');
+    if (['admin', 'superadmin'].includes(usuario.rol) && sedes.some((s) => String(s.id) === sedeSolicitada)) {
+      currentSedeId = sedeSolicitada;
     }
   } catch (e) {
     console.error('Error precargando sedes:', e);
@@ -384,14 +391,23 @@ export async function initCaja(container) {
           <form id="form-cierre">
             <div class="modal-body">
               <div class="alert alert-info">
-                Por favor, realice el conteo de dinero físico e ingrese los totales por cada método de pago.
+                Cuenta el efectivo y confirma si coincide. Los otros medios de pago ya están completados para que los revises.
+              </div>
+              <div class="mb-4">
+                <div class="text-secondary small">Efectivo esperado en caja</div>
+                <div id="cierre-efectivo-esperado" class="h2 mb-3"></div>
+                <div class="d-flex flex-wrap gap-2">
+                  <button type="button" id="btn-cierre-confirmar-efectivo" class="btn btn-primary">Conté y tengo ese monto</button>
+                  <button type="button" id="btn-cierre-otro-efectivo" class="btn btn-outline-secondary">Tengo otro monto</button>
+                </div>
               </div>
               <div class="row">
                 <div class="col-md-6">
                   <h4 class="mb-3">Valores en Caja</h4>
                   <div class="mb-3">
-                    <label class="form-label">Efectivo Físico Contado</label>
-                    <input type="number" id="cierre-efectivo" class="form-control" required min="0">
+                    <label class="form-label" for="cierre-efectivo">Efectivo Físico Contado</label>
+                    <input type="number" id="cierre-efectivo" class="form-control" required min="0" step="0.01" aria-describedby="cierre-efectivo-diferencia">
+                    <div id="cierre-efectivo-diferencia" class="small text-secondary mt-2" role="status" aria-live="polite"></div>
                   </div>
                   <div class="mb-3">
                     <label class="form-label">Total Nequi</label>
@@ -472,6 +488,31 @@ export async function initCaja(container) {
   }
 
   const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+  const mostrarDiferenciaEfectivo = () => {
+    const input = document.getElementById('cierre-efectivo');
+    const hint = document.getElementById('cierre-efectivo-diferencia');
+    const contado = Number(input.value);
+    if (!input.value || !Number.isFinite(contado) || contado < 0) {
+      hint.className = 'small text-secondary mt-2';
+      hint.textContent = 'Confirma el monto esperado o ingresa lo que contaste.';
+      return;
+    }
+    const diferencia = Math.round((contado - efectivoEsperadoCierre) * 100) / 100;
+    hint.className = `small mt-2 ${diferencia < 0 ? 'text-danger' : diferencia > 0 ? 'text-warning' : 'text-success'}`;
+    hint.textContent = diferencia === 0 ? 'El efectivo contado coincide con el esperado.'
+      : `${diferencia < 0 ? 'Faltante' : 'Sobrante'}: ${formatter.format(Math.abs(diferencia))}`;
+  };
+  document.getElementById('btn-cierre-confirmar-efectivo').addEventListener('click', () => {
+    document.getElementById('cierre-efectivo').value = efectivoEsperadoCierre;
+    mostrarDiferenciaEfectivo();
+  });
+  document.getElementById('btn-cierre-otro-efectivo').addEventListener('click', () => {
+    const input = document.getElementById('cierre-efectivo');
+    input.value = '';
+    mostrarDiferenciaEfectivo();
+    input.focus();
+  });
+  document.getElementById('cierre-efectivo').addEventListener('input', mostrarDiferenciaEfectivo);
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
   })[char]);
@@ -603,8 +644,7 @@ export async function initCaja(container) {
     body.innerHTML = `<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>`;
 
     try {
-      const hoyStr = getLocalDateStr();
-      const data = await apiFetch(`/caja/reporte?fecha=${hoyStr}&sede=${currentSedeId}`, { silent: true }).catch(() => null);
+      const data = await apiFetch(`/caja/reporte?sede=${currentSedeId}&recuperarPendiente=true`, { silent: true }).catch(() => null);
 
       if (!data?.id || data.estado === 'cerrada' || data.estado === 'sin_registro') {
         activeCaja = null;
@@ -633,6 +673,12 @@ export async function initCaja(container) {
       const saldoEfectivoTeorico = parseFloat(data.montoApertura) + parseFloat(data.totalVentasEfectivo) - parseFloat(data.totalEgresos);
 
       body.innerHTML = `
+        ${data.cierrePendiente ? `
+          <div class="alert alert-warning mb-3" role="alert">
+            <div><strong>Cierre pendiente del ${escapeHtml(data.fecha)}</strong><br>
+            Abrió: ${escapeHtml(data.usuarioApertura?.nombre || 'Sin nombre')}. Las ventas están bloqueadas hasta cerrar esta caja y abrir la de hoy. Cuenta el efectivo y registra el motivo del cierre tardío.</div>
+          </div>
+        ` : ''}
         <div class="row row-cards mb-4">
           <div class="col-md-4">
             <div class="card card-sm">
@@ -680,7 +726,7 @@ export async function initCaja(container) {
         ${buildDesglosePagosHtml(data)}
 
         <div class="mb-4 btn-list text-start">
-          <button id="btn-pos-egreso" class="btn btn-danger">
+          <button id="btn-pos-egreso" class="btn btn-danger" ${data.cierrePendiente ? 'disabled' : ''}>
             <i class="ti ti-plus me-2"></i> Registrar Egreso / Retiro
           </button>
           <button id="btn-pos-cierre" class="btn btn-primary">
@@ -688,7 +734,7 @@ export async function initCaja(container) {
           </button>
           ${['admin', 'superadmin'].includes(usuario.rol) ? `
             <button id="btn-pos-liberar" class="btn btn-warning">
-              <i class="ti ti-key me-2"></i> Liberar Caja (Admin)
+              <i class="ti ti-key me-2"></i> Cierre administrativo
             </button>
           ` : ''}
         </div>
@@ -721,9 +767,17 @@ export async function initCaja(container) {
         abrirModalEgreso();
       });
 
-      document.getElementById('btn-pos-cierre').addEventListener('click', () => {
+      const abrirCierre = (administrativo = false) => {
+        cierreAdministrativo = administrativo;
         document.getElementById('form-cierre').reset();
-        document.getElementById('cierre-efectivo').value = saldoEfectivoTeorico;
+        document.querySelector('#modal-cierre .modal-title').textContent = administrativo ? 'Cierre administrativo con arqueo' : 'Cierre y Cuadre de Caja Diaria';
+        document.getElementById('cierre-efectivo').value = '';
+        efectivoEsperadoCierre = Math.round(saldoEfectivoTeorico * 100) / 100;
+        document.getElementById('cierre-efectivo-esperado').textContent = formatter.format(efectivoEsperadoCierre);
+        document.getElementById('btn-cierre-confirmar-efectivo').disabled = !Number.isFinite(efectivoEsperadoCierre) || efectivoEsperadoCierre < 0;
+        mostrarDiferenciaEfectivo();
+        document.getElementById('cierre-observaciones').required = administrativo || data.cierrePendiente;
+        document.getElementById('cierre-observaciones').placeholder = administrativo || data.cierrePendiente ? 'Motivo del cierre (obligatorio)' : 'Describa diferencias si las hay…';
         document.getElementById('cierre-nequi').value = data.totalVentasNequi;
         document.getElementById('cierre-daviplata').value = data.totalVentasDaviplata;
         document.getElementById('cierre-tarjeta').value = data.totalVentasTarjeta;
@@ -736,27 +790,11 @@ export async function initCaja(container) {
           </div>
         `).join('');
         modalCierre.show();
-      });
+      };
+      document.getElementById('btn-pos-cierre').addEventListener('click', () => abrirCierre());
 
       if (['admin', 'superadmin'].includes(usuario.rol)) {
-        document.getElementById('btn-pos-liberar').addEventListener('click', async () => {
-          const confirmed = await showConfirm(
-            '¿Liberar Caja?',
-            'Se cerrará administrativamente esta caja abierta utilizando los saldos teóricos actuales del sistema (diferencia cero). Esta acción se registrará en la auditoría.'
-          );
-          if (confirmed) {
-            try {
-              const res = await apiFetch('/caja/liberar', {
-                method: 'POST',
-                body: JSON.stringify({ sedeId: currentSedeId })
-              });
-              showToast('Éxito', res.message, 'success');
-              loadCajaStatus();
-            } catch (err) {
-              showToast('Error', err.message, 'error');
-            }
-          }
-        });
+        document.getElementById('btn-pos-liberar').addEventListener('click', () => abrirCierre(true));
       }
 
 
@@ -1018,11 +1056,12 @@ export async function initCaja(container) {
       totalesPorMetodo: Object.fromEntries([...document.querySelectorAll('.cierre-medio-extra')]
         .map((input) => [input.dataset.metodo, parseFloat(input.value || 0)])),
       observaciones: document.getElementById('cierre-observaciones').value,
+      cajaId: activeCaja?.id,
       sedeId: currentSedeId
     };
 
     try {
-      const res = await apiFetch('/caja/cierre', {
+      const res = await apiFetch(cierreAdministrativo ? '/caja/liberar' : '/caja/cierre', {
         method: 'POST',
         body: JSON.stringify(data)
       });
@@ -1335,7 +1374,7 @@ export async function initCaja(container) {
     if (!c) return;
 
     const totalCobrado = calcTotalIngresos(c);
-    const saldoEfectivoTeorico = parseFloat(c.montoApertura) + parseFloat(c.totalVentasEfectivo) - parseFloat(c.totalEgresos);
+    const saldoEfectivoTeorico = parseFloat(c.montoApertura) + Number(c.ingresosAlCierre?.efectivo ?? c.totalVentasEfectivo) - parseFloat(c.totalEgresos);
     const cierreHora = c.horaCierre ? new Date(c.horaCierre).toLocaleString('es-CO') : '—';
 
     const content = document.getElementById('detalle-past-caja-content');
@@ -1378,6 +1417,7 @@ export async function initCaja(container) {
               <tbody>
                 <tr><th class="ps-3">Base de apertura</th><td class="text-end pe-3 fw-semibold">${formatter.format(c.montoApertura)}</td></tr>
                 <tr><th class="ps-3">Efectivo físico teórico al cierre</th><td class="text-end pe-3">${formatter.format(saldoEfectivoTeorico)}</td></tr>
+                ${c.arqueoDeclarado ? `<tr><th class="ps-3">Efectivo contado al cierre</th><td class="text-end pe-3">${formatter.format(c.arqueoDeclarado.efectivo)}</td></tr>` : ''}
                 <tr><th class="ps-3">Total ingresos (todos los métodos)</th><td class="text-end pe-3 fw-bold text-primary">${formatter.format(totalCobrado)}</td></tr>
                 <tr><th class="ps-3 text-danger">Egresos / retiros</th><td class="text-end pe-3 text-danger">-${formatter.format(c.totalEgresos)}</td></tr>
                 <tr class="table-light"><th class="ps-3">Diferencia de arqueo</th><td class="text-end pe-3 fw-bold ${parseFloat(c.diferencia) >= 0 ? 'text-success' : 'text-danger'}">${formatter.format(c.diferencia)}</td></tr>
@@ -1527,4 +1567,8 @@ export async function initCaja(container) {
   if (hashParams.get('accion') === 'egreso' && activeCaja) {
     abrirModalEgreso();
   }
+  watchDataChanges(container, ["caja","ventas","compras","cartera","facturas","reparaciones","instalaciones"], async () => {
+    await loadCajaStatus();
+  });
+
 }

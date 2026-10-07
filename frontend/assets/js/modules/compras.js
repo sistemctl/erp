@@ -1,3 +1,4 @@
+import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
@@ -23,7 +24,7 @@ export async function initCompras(container) {
     try {
       compras = await apiFetch('/compras');
       proveedores = await apiFetch('/proveedores');
-      productos = await apiFetch('/productos').then(prods => prods.filter(p => p.activo !== false));
+      productos = await apiFetch('/productos').then(prods => prods.filter(p => p.activo !== false && !p.esCombo));
       sedes = await apiFetch('/config/sedes').catch(() => []);
     } catch (e) {
       console.error('Error al precargar datos de compras:', e);
@@ -566,7 +567,10 @@ export async function initCompras(container) {
         modalBuscarProveedor.hide();
       }));
     };
-    document.getElementById('btn-buscar-proveedor-oc').addEventListener('click', () => {
+    document.getElementById('btn-buscar-proveedor-oc').addEventListener('click', async () => {
+      try { proveedores = await apiFetch('/proveedores'); }
+      catch (error) { showToast('No se pudieron actualizar los proveedores', error.message, 'error'); return; }
+      if (!container.isConnected || window.location.hash.split('?')[0] !== '#/compras') return;
       const input = document.getElementById('oc-proveedor-busqueda'); input.value = ''; renderProveedores(); modalBuscarProveedor.show(); setTimeout(() => input.focus(), 150);
     });
     document.getElementById('oc-proveedor-busqueda').addEventListener('input', (event) => renderProveedores(event.target.value));
@@ -1026,7 +1030,10 @@ export async function initCompras(container) {
     `;
   }
 
-  function openProductoPickerModal() {
+  async function openProductoPickerModal() {
+    try { productos = (await apiFetch('/productos')).filter(p => p.activo !== false && !p.esCombo); }
+    catch (error) { showToast('No se pudo actualizar el catálogo', error.message, 'error'); return; }
+    if (!container.isConnected) return;
     if (!modalProducto) return;
     pickerCategoriaId = '';
     if (searchProd) searchProd.value = '';
@@ -2045,6 +2052,10 @@ export async function initCompras(container) {
     pagoFuenteSelect.addEventListener('change', updatePagoHints);
     updatePagoHints();
   }
+  watchDataChanges(container, ["productos","proveedores","compras"], async () => {
+    await loadInitialData(); renderComprasTable(); renderCppTable(); if (modalProductoEl?.classList.contains('show')) renderProductoPicker(searchProd?.value || '');
+  }, { allowDuringModal: true });
+
 }
 
 export function destroyCompras() {

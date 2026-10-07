@@ -21,6 +21,7 @@ async function actualizarEstadosVencidos() {
   const cuentas = await CuentaPorCobrar.findAll({
     where: {
       estado: { [Op.in]: ['al_dia', 'vencida'] },
+      anuladaAt: null,
       saldoPendiente: { [Op.gt]: 0 },
       fechaVencimiento: { [Op.lt]: hoy }
     }
@@ -60,6 +61,7 @@ async function enviarRecordatoriosCartera() {
   const cuentas = await CuentaPorCobrar.findAll({
     where: {
       estado: 'vencida',
+      anuladaAt: null,
       saldoPendiente: { [Op.gt]: 0 },
       fechaVencimiento: { [Op.lte]: limite },
       esRecaudoExterno: false

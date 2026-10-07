@@ -1,9 +1,12 @@
 const { NumeroSerie, Producto, Sede, Cliente, Venta, OrdenReparacion, StockSede, sequelize } = require('../models');
+const { assertSedeAccess, resolveQuerySede } = require('../utils/sede');
 
 exports.getSeries = async (req, res, next) => {
   try {
     const { producto } = req.query;
     const where = {};
+    const sedeId = resolveQuerySede(req.query.sedeId || req.query.sede, req.usuario);
+    if (sedeId) where.sedeId = sedeId;
     if (producto) {
       where.productoId = producto;
     }
@@ -26,11 +29,21 @@ exports.getSeries = async (req, res, next) => {
 
 exports.createSerie = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { serie, productoId, sedeId } = req.body;
 
     if (!serie || !productoId || !sedeId) {
       return res.status(400).json({ error: 'Faltan parámetros obligatorios.' });
+    }
+    assertSedeAccess(req.usuario, sedeId);
+
+    const producto = await Producto.findByPk(productoId, { transaction });
+    if (!producto || producto.esCombo) {
+      await transaction.rollback();
+      return res.status(400).json({ error: producto?.esCombo
+        ? 'Los combos no tienen seriales propios; los seriales pertenecen a sus componentes.'
+        : 'Producto no encontrado.' });
     }
 
     // Verificar unicidad
@@ -86,8 +99,10 @@ exports.createSerie = async (req, res, next) => {
 
     return res.status(201).json(numeroSerie);
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
@@ -107,6 +122,7 @@ exports.getHistorialImei = async (req, res, next) => {
     if (!serieInfo) {
       return res.status(404).json({ error: 'Número de serie/IMEI no encontrado en el sistema.' });
     }
+    assertSedeAccess(req.usuario, serieInfo.sedeId);
 
     // Obtener órdenes de reparación vinculadas
     const reparaciones = await OrdenReparacion.findAll({
@@ -126,11 +142,21 @@ exports.getHistorialImei = async (req, res, next) => {
 
 exports.createSeriesBulk = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { series, productoId, sedeId } = req.body;
 
     if (!series || !Array.isArray(series) || series.length === 0 || !productoId || !sedeId) {
       return res.status(400).json({ error: 'Faltan parámetros obligatorios o formato inválido.' });
+    }
+    assertSedeAccess(req.usuario, sedeId);
+
+    const producto = await Producto.findByPk(productoId, { transaction });
+    if (!producto || producto.esCombo) {
+      await transaction.rollback();
+      return res.status(400).json({ error: producto?.esCombo
+        ? 'Los combos no tienen seriales propios; los seriales pertenecen a sus componentes.'
+        : 'Producto no encontrado.' });
     }
 
     // Limpiar seriales (remover duplicados y espacios en blanco)
@@ -195,7 +221,7 @@ exports.createSeriesBulk = async (req, res, next) => {
 
     if (req.logAudit) {
       await req.logAudit({
-        accion: 'CREATE_BULK',
+        accion: 'CREATE',
         modulo: 'Series',
         valorNuevo: { cantidad: creados.length, series: serialesLimpios }
       });
@@ -206,13 +232,16 @@ exports.createSeriesBulk = async (req, res, next) => {
       cantidad: creados.length
     });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
 exports.deleteSerie = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id } = req.params;
 
@@ -222,6 +251,10 @@ exports.deleteSerie = async (req, res, next) => {
     }
 
     const { productoId, sedeId, estado, serie } = serieReg;
+    assertSedeAccess(req.usuario, sedeId);
+    if (!['en_stock', 'reacondicionado'].includes(estado)) {
+      return res.status(409).json({ error: 'No se puede borrar un serial vendido, instalado o en reparación.' });
+    }
 
     // Solo descontar stock si el serial estaba en stock
     if (estado === 'en_stock') {
@@ -263,8 +296,9 @@ exports.deleteSerie = async (req, res, next) => {
 
     return res.json({ message: 'Número de serie/IMEI eliminado exitosamente.' });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
-

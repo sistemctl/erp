@@ -40,6 +40,8 @@ const ConfiguracionSistema = require('./ConfiguracionSistema');
 const DevolucionVenta = require('./DevolucionVenta');
 const ItemDevolucion = require('./ItemDevolucion');
 const ReclamoGarantia = require('./ReclamoGarantia');
+const ComboComponente = require('./ComboComponente');
+const ItemVentaComponente = require('./ItemVentaComponente');
 
 // --- Relaciones ---
 
@@ -80,8 +82,20 @@ Sede.hasMany(Venta, { foreignKey: 'sedeId', as: 'ventas' });
 // ItemVenta <-> Venta, Producto
 ItemVenta.belongsTo(Venta, { foreignKey: 'ventaId', as: 'venta' });
 ItemVenta.belongsTo(Producto, { foreignKey: 'productoId', as: 'producto' });
+ItemVenta.belongsTo(NumeroSerie, { foreignKey: 'numeroSerieId', as: 'numeroSerie' });
 Venta.hasMany(ItemVenta, { foreignKey: 'ventaId', as: 'items' });
 Producto.hasMany(ItemVenta, { foreignKey: 'productoId', as: 'itemsVenta' });
+
+// Producto combo <-> componentes físicos
+ComboComponente.belongsTo(Producto, { foreignKey: 'comboId', as: 'combo' });
+ComboComponente.belongsTo(Producto, { foreignKey: 'productoId', as: 'producto' });
+Producto.hasMany(ComboComponente, { foreignKey: 'comboId', as: 'componentes', onDelete: 'CASCADE' });
+
+// Snapshot de componentes descontados por cada línea de combo vendida
+ItemVentaComponente.belongsTo(ItemVenta, { foreignKey: 'itemVentaId', as: 'itemVenta' });
+ItemVentaComponente.belongsTo(Producto, { foreignKey: 'productoId', as: 'producto' });
+ItemVentaComponente.belongsTo(NumeroSerie, { foreignKey: 'numeroSerieId', as: 'numeroSerie' });
+ItemVenta.hasMany(ItemVentaComponente, { foreignKey: 'itemVentaId', as: 'componentesVendidos', onDelete: 'CASCADE' });
 
 // PagoVenta <-> Venta
 PagoVenta.belongsTo(Venta, { foreignKey: 'ventaId', as: 'venta' });
@@ -304,5 +318,7 @@ module.exports = {
   ConfiguracionSistema,
   DevolucionVenta,
   ItemDevolucion,
-  ReclamoGarantia
+  ReclamoGarantia,
+  ComboComponente,
+  ItemVentaComponente
 };

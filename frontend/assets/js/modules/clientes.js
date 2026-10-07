@@ -1,7 +1,12 @@
+import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
+
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[char]));
 
 export async function initClientes(container) {
   const usuario = getUsuario();
@@ -135,12 +140,12 @@ export async function initClientes(container) {
     tbody.innerHTML = data.map(c => `
       <tr>
         <td>
-          <div class="font-weight-medium text-dark">${c.nombre}</div>
+          <div class="font-weight-medium text-dark">${escapeHtml(c.nombre)}</div>
         </td>
-        <td>${c.documento || '<span class="text-secondary small">No registrado</span>'}</td>
-        <td>${c.telefono || '<span class="text-secondary small">No registrado</span>'}</td>
-        <td>${c.email || '<span class="text-secondary small">No registrado</span>'}</td>
-        <td class="small text-secondary">${c.direccion || 'N/A'}</td>
+        <td>${c.documento ? escapeHtml(c.documento) : '<span class="text-secondary small">No registrado</span>'}</td>
+        <td>${c.telefono ? escapeHtml(c.telefono) : '<span class="text-secondary small">No registrado</span>'}</td>
+        <td>${c.email ? escapeHtml(c.email) : '<span class="text-secondary small">No registrado</span>'}</td>
+        <td class="small text-secondary">${escapeHtml(c.direccion || 'N/A')}</td>
         <td class="text-end erp-td-actions">
           ${erpActions(`
             ${erpAction('view', { className: 'btn-ficha-cli', attrs: { 'data-id': c.id }, label: 'Ver' })}
@@ -251,10 +256,10 @@ export async function initClientes(container) {
       // Compras List HTML
       const comprasHtml = compras.length > 0 ? compras.map(com => `
         <tr>
-          <td><span class="badge bg-blue text-white">${com.numeroVenta}</span></td>
+          <td><span class="badge bg-blue text-white">${escapeHtml(com.numeroVenta)}</span></td>
           <td>${new Date(com.createdAt).toLocaleDateString()}</td>
           <td class="text-end fw-bold">${formatter.format(com.total)}</td>
-          <td>${com.pagos.map(p => p.metodo.toUpperCase()).join('/')}</td>
+          <td>${escapeHtml(com.pagos.map(p => p.metodo.toUpperCase()).join('/'))}</td>
         </tr>
       `).join('') : '<tr><td colspan="4" class="text-center py-3 text-secondary">Este cliente no ha realizado compras de catálogo.</td></tr>';
 
@@ -267,10 +272,10 @@ export async function initClientes(container) {
 
         return `
           <tr>
-            <td><span class="badge bg-purple text-white">${rep.numeroOrden}</span></td>
+            <td><span class="badge bg-purple text-white">${escapeHtml(rep.numeroOrden)}</span></td>
             <td>${new Date(rep.createdAt).toLocaleDateString()}</td>
-            <td>${rep.tipoEquipo} ${rep.marca} ${rep.modelo}</td>
-            <td><span class="badge ${badgeClass}">${rep.estado.toUpperCase()}</span></td>
+            <td>${escapeHtml(rep.tipoEquipo)} ${escapeHtml(rep.marca)} ${escapeHtml(rep.modelo)}</td>
+            <td><span class="badge ${badgeClass}">${escapeHtml(rep.estado.toUpperCase())}</span></td>
             <td class="text-end fw-bold">${formatter.format(rep.totalCobrado)}</td>
           </tr>
         `;
@@ -278,7 +283,7 @@ export async function initClientes(container) {
 
       content.innerHTML = `
         <div class="modal-header">
-          <h5 class="modal-title"><i class="ti ti-user-check me-1"></i>Ficha del Cliente CRM: <strong>${c.nombre}</strong></h5>
+          <h5 class="modal-title"><i class="ti ti-user-check me-1"></i>Ficha del Cliente CRM: <strong>${escapeHtml(c.nombre)}</strong></h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
@@ -288,10 +293,10 @@ export async function initClientes(container) {
               <h4 class="text-primary mb-3">Información de Contacto</h4>
               <table class="table table-sm table-striped">
                 <tbody>
-                  <tr><th style="width: 140px;">Cédula / NIT</th><td>${c.documento || 'No registrado'}</td></tr>
-                  <tr><th>Teléfono</th><td>${c.telefono || 'No registrado'}</td></tr>
-                  <tr><th>Correo Electrónico</th><td>${c.email || 'No registrado'}</td></tr>
-                  <tr><th>Dirección</th><td>${c.direccion || 'No registrada'}</td></tr>
+                  <tr><th style="width: 140px;">Cédula / NIT</th><td>${escapeHtml(c.documento || 'No registrado')}</td></tr>
+                  <tr><th>Teléfono</th><td>${escapeHtml(c.telefono || 'No registrado')}</td></tr>
+                  <tr><th>Correo Electrónico</th><td>${escapeHtml(c.email || 'No registrado')}</td></tr>
+                  <tr><th>Dirección</th><td>${escapeHtml(c.direccion || 'No registrada')}</td></tr>
                   <tr><th>Fecha Registro</th><td>${new Date(c.createdAt).toLocaleDateString()}</td></tr>
                 </tbody>
               </table>
@@ -369,7 +374,11 @@ export async function initClientes(container) {
       `;
 
     } catch (err) {
-      content.innerHTML = `<div class="alert alert-danger m-3">${err.message}</div>`;
+      content.innerHTML = `<div class="alert alert-danger m-3">${escapeHtml(err.message)}</div>`;
     }
   }
+  watchDataChanges(container, ["clientes","ventas","cartera","facturas"], async () => {
+    await loadClientes(); document.getElementById('crm-search-input')?.dispatchEvent(new Event('input'));
+  });
+
 }

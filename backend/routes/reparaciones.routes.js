@@ -50,6 +50,8 @@ router.get('/:id', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gere
 router.put('/:id', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'tecnico']), reparacionesController.updateOrden);
 router.put('/:id/estado', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'tecnico']), reparacionesController.updateEstado);
 router.post('/:id/repuestos', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'tecnico']), reparacionesController.addRepuestos);
+router.delete('/:id/repuestos/:repuestoId', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'tecnico']), reparacionesController.removeRepuesto);
+router.put('/:id/repuestos/:repuestoId', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'tecnico']), reparacionesController.updateRepuesto);
 router.post('/:id/fotos', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'tecnico']), upload.array('fotos', 10), reparacionesController.uploadFotos);
 
 router.get('/:id/orden-pdf', authMiddleware, rolesMiddleware(['admin', 'superadmin', 'gerente_sede', 'tecnico', 'cajero']), reparacionesController.getOrdenPdf);

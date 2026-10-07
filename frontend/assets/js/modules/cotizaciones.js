@@ -1,3 +1,4 @@
+import { watchDataChanges, syncSelectOptions } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
@@ -589,7 +590,10 @@ export async function initCotizaciones(container) {
     }).join('');
   }
 
-  function openProductoPickerModal() {
+  async function openProductoPickerModal() {
+    try { productos = (await apiFetch('/productos')).filter(p => p.activo !== false); }
+    catch (error) { showToast('No se pudo actualizar el catálogo', error.message, 'error'); return; }
+    if (!container.isConnected || window.location.hash.split('?')[0] !== '#/cotizaciones') return;
     if (!modalProd) return;
     pickerCategoriaId = '';
     if (searchProd) searchProd.value = '';
@@ -1038,4 +1042,13 @@ export async function initCotizaciones(container) {
 
   // Carga inicial
   await loadCotizaciones();
+  watchDataChanges(container, ["productos","clientes","cotizaciones"], async () => {
+    const [list, clients] = await Promise.all([apiFetch('/productos'), apiFetch('/clientes')]);
+    productos = list.filter(p => p.activo !== false);
+    clientes = clients;
+    syncSelectOptions(document.getElementById('cot-cliente'), clientes, c => `${c.nombre}${c.documento ? ` (${c.documento})` : ''}`);
+    if (modalProdEl?.classList.contains('show')) renderProductoPicker(searchProd?.value || '');
+    await loadCotizaciones();
+  }, { allowDuringModal: true });
+
 }

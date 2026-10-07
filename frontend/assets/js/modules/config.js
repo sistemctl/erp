@@ -444,7 +444,9 @@ export async function initConfig(container) {
                 <div class="col-md-6">
                   <div class="card bg-light border-0 p-4">
                     <h3 class="fw-bold mb-2 text-primary"><i class="ti ti-download me-1"></i> Exportar Respaldo</h3>
-                    <p class="text-secondary small mb-3">Genera y descarga una copia completa del ERP en formato JSON. Incluye inventarios, ventas, historial de reparaciones, clientes y nóminas.</p>
+                    <p class="text-secondary small mb-3">Descarga un respaldo completo y cifrado. Guarda su contraseña para poder restaurarlo.</p>
+                    <label class="form-label" for="backup-password">Contraseña del respaldo</label>
+                    <input type="password" id="backup-password" class="form-control mb-3" minlength="12" autocomplete="new-password" placeholder="Mínimo 12 caracteres">
                     <button id="btn-download-backup" class="btn btn-primary w-100">
                       <i class="ti ti-cloud-download me-1"></i> Descargar Respaldo JSON
                     </button>
@@ -459,6 +461,8 @@ export async function initConfig(container) {
                       <div class="mb-3">
                         <input type="file" id="restore-file" class="form-control" accept=".json" required>
                       </div>
+                      <label class="form-label" for="restore-password">Contraseña del respaldo</label>
+                      <input type="password" id="restore-password" class="form-control mb-3" minlength="12" required autocomplete="off">
                       <button type="submit" class="btn btn-danger w-100">
                         <i class="ti ti-refresh-alert me-1"></i> Subir y Restaurar Base de Datos
                       </button>
@@ -1267,9 +1271,14 @@ export async function initConfig(container) {
       btn.innerHTML = '<i class="ti ti-loader-2 me-1"></i> Generando respaldo…';
       const token = localStorage.getItem('token');
       const response = await fetch('/api/config/backup', {
-        headers: { 'Authorization': `Bearer ${token}` }
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: document.getElementById('backup-password').value })
       });
-      if (!response.ok) throw new Error('No se pudo descargar el respaldo.');
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'No se pudo descargar el respaldo.');
+      }
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -1305,9 +1314,12 @@ export async function initConfig(container) {
         if (verificado) {
           const res = await apiFetch('/config/restore', {
             method: 'POST',
-            body: JSON.stringify(backupData)
+            body: JSON.stringify({ backup: backupData, password: document.getElementById('restore-password').value })
           });
           alert(res.message || 'Base de datos restaurada correctamente.');
+          localStorage.removeItem('token');
+          localStorage.removeItem('usuario');
+          window.location.hash = '#/login';
           window.location.reload(); // Recargar SPA para reflejar cambios
         }
       } catch (err) {

@@ -1,3 +1,4 @@
+import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
@@ -1146,4 +1147,8 @@ export async function initDashboard(container) {
       }
     });
   }
+  watchDataChanges(container, ["ventas","compras","cartera","facturas","instalaciones","reparaciones","caja","rma"], async () => {
+    await loadDashboardData();
+  });
+
 }

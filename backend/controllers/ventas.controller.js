@@ -1,3 +1,4 @@
+const { devolverComponentesCombo } = require('../utils/venta-inventario');
 const {
   Venta,
   ItemVenta,
@@ -16,6 +17,8 @@ const {
   Sede,
   DevolucionVenta,
   ItemDevolucion,
+  ComboComponente,
+  ItemVentaComponente,
   EgresoCaja,
   CategoriaEgreso,
   sequelize
@@ -26,6 +29,10 @@ const { calcularFechaVencimientoCredito, getDiasPlazoCredito } = require('../uti
 const { findCajaAbierta } = require('../utils/caja-abierta');
 const { ensureConsumidorFinal } = require('../utils/consumidor-final');
 const emailService = require('../services/email.service');
+const { calculateSale, normalizePayments, money } = require('../utils/venta-totales');
+const { nextDocumentNumber } = require('../utils/document-number');
+const { assertSedeAccess } = require('../utils/sede');
+const { httpError } = require('../utils/http-error');
 
 const METODOS_CAJA = {
   efectivo: 'totalVentasEfectivo',
@@ -38,7 +45,7 @@ const METODOS_CAJA = {
 function montoUnitarioItem(item) {
   const qty = Math.max(1, parseInt(item.cantidad, 10) || 1);
   const sub = parseFloat(item.subtotal) || 0;
-  const ivaUnit = parseFloat(item.iva) || 0;
+  const ivaUnit = item.ivaTotal != null ? Number(item.ivaTotal) / qty : (parseFloat(item.iva) || 0);
   return (sub / qty) + ivaUnit;
 }
 
@@ -57,10 +64,103 @@ async function ensureCategoriaDevolucion(transaction) {
   return cat;
 }
 
+async function descontarComponentesCombo({
+  producto,
+  item,
+  itemVenta,
+  venta,
+  sedeId,
+  usuarioId,
+  clienteId,
+  numeroVenta,
+  transaction
+}) {
+  const componentes = await ComboComponente.findAll({
+    where: { comboId: producto.id },
+    include: [{ model: Producto, as: 'producto', where: { activo: true } }],
+    order: [['productoId', 'ASC']],
+    transaction
+  });
+  if (componentes.length < 2) {
+    const error = new Error(`El combo ${producto.nombre} no tiene una composición válida.`);
+    error.status = 400;
+    throw error;
+  }
+
+  const cantidadCombos = Number.parseInt(item.cantidad, 10);
+  for (const componente of componentes) {
+    const cantidadPorCombo = Number.parseInt(componente.cantidad, 10);
+    const cantidadTotal = cantidadPorCombo * cantidadCombos;
+    const stock = await StockSede.findOne({
+      where: { productoId: componente.productoId, sedeId },
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
+    if (!stock || Number.parseInt(stock.cantidad, 10) < cantidadTotal) {
+      const error = new Error(`No hay suficiente stock de ${componente.producto.nombre} para vender ${producto.nombre}.`);
+      error.status = 400;
+      throw error;
+    }
+
+    let seriales = [];
+    if (componente.producto.tieneNumeroSerie) {
+      seriales = await NumeroSerie.findAll({
+        where: { productoId: componente.productoId, sedeId, estado: 'en_stock' },
+        order: [['createdAt', 'ASC'], ['id', 'ASC']],
+        limit: cantidadTotal,
+        transaction,
+        lock: transaction.LOCK.UPDATE
+      });
+      if (seriales.length !== cantidadTotal) {
+        const error = new Error(`No hay suficientes seriales disponibles de ${componente.producto.nombre} para vender ${producto.nombre}.`);
+        error.status = 400;
+        throw error;
+      }
+    }
+
+    await stock.update({ cantidad: Number.parseInt(stock.cantidad, 10) - cantidadTotal }, { transaction });
+    await MovimientoInventario.create({
+      productoId: componente.productoId,
+      sedeId,
+      tipo: 'salida',
+      cantidad: -cantidadTotal,
+      motivo: `Venta POS #${numeroVenta} · Combo ${producto.nombre}`,
+      referenciaId: venta.id,
+      usuarioId
+    }, { transaction });
+
+    let serialIndex = 0;
+    for (let unidadCombo = 1; unidadCombo <= cantidadCombos; unidadCombo += 1) {
+      if (componente.producto.tieneNumeroSerie) {
+        for (let unidad = 0; unidad < cantidadPorCombo; unidad += 1) {
+          const serie = seriales[serialIndex++];
+          await serie.update({ estado: 'vendido', clienteId, fechaVenta: new Date() }, { transaction });
+          await ItemVentaComponente.create({
+            itemVentaId: itemVenta.id,
+            productoId: componente.productoId,
+            cantidad: 1,
+            unidadCombo,
+            numeroSerieId: serie.id
+          }, { transaction });
+        }
+      } else {
+        await ItemVentaComponente.create({
+          itemVentaId: itemVenta.id,
+          productoId: componente.productoId,
+          cantidad: cantidadPorCombo,
+          unidadCombo
+        }, { transaction });
+      }
+    }
+  }
+}
+
+
 exports.procesarVenta = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
-    const {
+    let {
       clienteId,
       subtotal,
       descuentoTotal,
@@ -76,10 +176,24 @@ exports.procesarVenta = async (req, res, next) => {
 
     const idempotencyKey = rawIdemKey ? String(rawIdemKey).slice(0, 64) : null;
     if (idempotencyKey) {
+      await sequelize.query('SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))', {
+        replacements: { key: `venta:${idempotencyKey}` }, transaction
+      });
       const existing = await Venta.findOne({ where: { idempotencyKey }, transaction });
       if (existing) {
+        assertSedeAccess(req.usuario, existing.sedeId);
+        const factura = await Factura.findOne({ where: { ventaId: existing.id }, transaction });
+        const recordedPayments = await PagoVenta.findAll({ where: { ventaId: existing.id }, transaction });
+        const recordedItems = await ItemVenta.findAll({ where: { ventaId: existing.id }, transaction });
+        const replayChange = Array.isArray(pagos) ? normalizePayments(pagos, Number(existing.total), !!existing.esCredito).change : 0;
         await transaction.commit();
-        return res.status(200).json(existing);
+        return res.status(200).json({ ventaId: existing.id, numeroVenta: existing.numeroVenta,
+          facturaId: factura?.id, numeroFactura: factura?.numeroFactura,
+          subtotal: Number(existing.subtotal), descuentoTotal: Number(existing.descuentoTotal),
+          iva: Number(existing.iva), total: Number(existing.total), esCredito: existing.esCredito,
+          cambio: replayChange,
+          pagos: recordedPayments.map((p) => ({ metodo: p.metodo, monto: Number(p.monto) })),
+          items: recordedItems });
       }
     }
 
@@ -93,10 +207,12 @@ exports.procesarVenta = async (req, res, next) => {
 
     const usuarioId = req.usuario.userId;
 
-    if (!items || items.length === 0) {
+    if (!Array.isArray(items) || items.length === 0 || items.some((item) => !item || typeof item !== 'object') ||
+      !Array.isArray(pagos) || pagos.some((pago) => !pago || typeof pago !== 'object')) {
       await transaction.rollback();
       return res.status(400).json({ error: 'No se puede procesar una venta sin artículos.' });
     }
+    if (esCredito != null && typeof esCredito !== 'boolean') throw httpError(400, 'El indicador de crédito debe ser verdadero o falso.');
 
     // Cliente: crédito exige registrado real; resto usa Consumidor Final (créalo si no existe)
     let resolvedClienteId = clienteId || null;
@@ -125,6 +241,16 @@ exports.procesarVenta = async (req, res, next) => {
 
     // 2. Cargar configuración del sistema para límites de descuento
     const config = await ConfiguracionSistema.findOne({ transaction });
+    const products = new Map();
+    for (const item of items) {
+      const product = await Producto.findOne({ where: { id: item.productoId, activo: true }, transaction });
+      if (!product) throw httpError(404, 'Uno de los productos no existe o está inactivo.');
+      products.set(String(item.productoId), product);
+    }
+    const calculated = calculateSale(items, products, config || {});
+    ({ items, subtotal, descuentoTotal, iva, total } = calculated);
+    const payment = normalizePayments(pagos, total, !!esCredito);
+    pagos = payment.pagos;
     const maxDescuento = config ? parseFloat(config.descuentoMaximoPct) : 15.00;
     const metodosActivos = Array.isArray(config?.mediosPago)
       ? config.mediosPago.filter((medio) => medio?.id && medio.activo !== false).map((medio) => medio.id)
@@ -160,8 +286,14 @@ exports.procesarVenta = async (req, res, next) => {
 
     // Verificar si algún ítem requiere Price Override
     for (const item of items) {
-      const producto = await Producto.findByPk(item.productoId, { transaction });
+      const cantidadItem = Number(item.cantidad);
+      if (!Number.isInteger(cantidadItem) || cantidadItem <= 0) {
+        await transaction.rollback();
+        return res.status(400).json({ error: 'La cantidad de cada artículo debe ser mayor que cero.' });
+      }
+      const producto = await Producto.findOne({ where: { id: item.productoId, activo: true }, transaction });
       if (!producto) {
+        await transaction.rollback();
         return res.status(404).json({ error: `Producto con ID ${item.productoId} no encontrado.` });
       }
 
@@ -179,7 +311,8 @@ exports.procesarVenta = async (req, res, next) => {
     // Validar PIN de administrador si se requiere
     if (requierePin) {
       if (!pinAdmin) {
-        return res.status(401).json({ error: 'La transacción contiene un descuento alto o precio bajo costo. Requiere PIN del Administrador.' });
+        await transaction.rollback();
+        return res.status(403).json({ error: 'La transacción contiene un descuento alto o precio bajo costo. Requiere PIN del Administrador.', code: 'ADMIN_PIN_REQUIRED' });
       }
 
       const admins = await Usuario.findAll({
@@ -197,13 +330,13 @@ exports.procesarVenta = async (req, res, next) => {
       }
 
       if (!pinValido) {
-        return res.status(401).json({ error: 'PIN de Administrador incorrecto.' });
+        await transaction.rollback();
+        return res.status(403).json({ error: 'PIN de Administrador incorrecto.', code: 'ADMIN_PIN_INVALID' });
       }
     }
 
     // Generar secuencia de venta
-    const countVentas = await Venta.count({ transaction });
-    const numeroVenta = `VT-${String(countVentas + 1).padStart(6, '0')}`;
+    const numeroVenta = await nextDocumentNumber(sequelize, 'VT', transaction);
 
     // Calcular abonos
     const totalPagado = pagos.reduce((acc, curr) => acc + parseFloat(curr.monto), 0);
@@ -233,15 +366,16 @@ exports.procesarVenta = async (req, res, next) => {
       const producto = await Producto.findByPk(item.productoId, { transaction });
       
       // Registrar Item
-      await ItemVenta.create({
+      const itemVenta = await ItemVenta.create({
         ventaId: venta.id,
         productoId: item.productoId,
         cantidad: item.cantidad,
         precioBase: parseFloat(item.precioBase),
         precioModificado: parseFloat(item.precioModificado),
         descuentoPct: parseFloat(item.descuentoPct),
-        iva: parseFloat(item.precioModificado) * 0.19, // IVA del 19%
-        subtotal: parseFloat(item.precioModificado) * item.cantidad,
+        iva: item.iva,
+        ivaTotal: money(item.iva * item.cantidad),
+        subtotal: item.subtotal,
         autorizadoPorAdmin: requierePin
       }, { transaction });
 
@@ -258,8 +392,20 @@ exports.procesarVenta = async (req, res, next) => {
         }
       }
 
+      if (producto.esCombo) {
+        await descontarComponentesCombo({
+          producto,
+          item,
+          itemVenta,
+          venta,
+          sedeId,
+          usuarioId,
+          clienteId: resolvedClienteId,
+          numeroVenta,
+          transaction
+        });
       // Servicios (mano de obra / instalación): no descuentan inventario ni series
-      if (!producto.esServicio) {
+      } else if (!producto.esServicio) {
         const stock = await StockSede.findOne({
           where: { productoId: item.productoId, sedeId },
           transaction,
@@ -267,7 +413,7 @@ exports.procesarVenta = async (req, res, next) => {
         });
 
         if (!stock || stock.cantidad < item.cantidad) {
-          throw new Error(`Stock insuficiente para el producto: ${producto.nombre}`);
+          throw httpError(400, `Stock insuficiente para el producto: ${producto.nombre}`);
         }
 
         await stock.update({ cantidad: stock.cantidad - item.cantidad }, { transaction });
@@ -289,7 +435,8 @@ exports.procesarVenta = async (req, res, next) => {
 
           const serieReg = await NumeroSerie.findOne({
             where: { serie: item.imei, productoId: item.productoId, sedeId, estado: 'en_stock' },
-            transaction
+            transaction,
+            lock: transaction.LOCK.UPDATE
           });
 
           if (!serieReg) {
@@ -301,6 +448,7 @@ exports.procesarVenta = async (req, res, next) => {
             clienteId: resolvedClienteId,
             fechaVenta: new Date()
           }, { transaction });
+          await itemVenta.update({ numeroSerieId: serieReg.id }, { transaction });
         }
       }
     }
@@ -333,13 +481,15 @@ exports.procesarVenta = async (req, res, next) => {
       }
       else if (pago.metodo === 'trade_in') {
         const tradeIn = await TradeIn.findOne({
-          where: { clienteId: resolvedClienteId, ventaId: null },
+          where: { clienteId: resolvedClienteId, sedeId, ventaId: null },
           order: [['createdAt', 'DESC']],
-          transaction
+          transaction,
+          lock: transaction.LOCK.UPDATE
         });
-        if (tradeIn) {
-          await tradeIn.update({ ventaId: venta.id }, { transaction });
+        if (!tradeIn || Math.abs(Number(tradeIn.valoracion) - montoNum) > 0.01) {
+          throw httpError(400, 'El pago trade-in debe corresponder a un equipo recibido y a su valoración.');
         }
+        await tradeIn.update({ ventaId: venta.id }, { transaction });
       }
     }
 
@@ -354,15 +504,18 @@ exports.procesarVenta = async (req, res, next) => {
     }, { transaction });
 
     // 6. Generar Factura
-    const countFacturas = await Factura.count({ transaction });
-    const numeroFactura = `FE-${String(countFacturas + 1).padStart(6, '0')}`;
+    const numeroFactura = await nextDocumentNumber(sequelize, 'FE', transaction);
     const diasPlazo = esRecaudoExterno
       ? Math.max(1, parseInt(medioDiferido?.plazoDias, 10) || 60)
-      : await getDiasPlazoCredito(ConfiguracionSistema);
+      : await getDiasPlazoCredito(ConfiguracionSistema, transaction);
     const fechaVencimiento = calcularFechaVencimientoCredito(diasPlazo);
 
     const factura = await Factura.create({
       numeroFactura,
+      cajaId: caja.id,
+      pagosCaja: pagos.filter((pago) => pago.metodo !== 'trade_in' &&
+        !mediosDiferidos.some((medio) => medio.id === pago.metodo))
+        .map((pago) => ({ metodo: pago.metodo, monto: Number(pago.monto) })),
       ventaId: venta.id,
       clienteId: resolvedClienteId,
       sedeId,
@@ -406,11 +559,15 @@ exports.procesarVenta = async (req, res, next) => {
       ventaId: venta.id,
       numeroVenta,
       facturaId: factura.id,
-      numeroFactura
+      numeroFactura,
+      subtotal, descuentoTotal, iva, total, pagos, cambio: payment.change,
+      esCredito: ventaACredito, items
     });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
@@ -429,8 +586,9 @@ exports.getDescuentos = async (req, res, next) => {
   try {
     const { sedeId } = req.query;
     const where = {};
-    if (sedeId) {
-      where.sedeId = sedeId;
+    const scopedSedeId = resolveQuerySede(sedeId, req.usuario);
+    if (scopedSedeId) {
+      where.sedeId = scopedSedeId;
     }
 
     const itemsConDescuento = await ItemVenta.findAll({
@@ -465,6 +623,8 @@ exports.getComisiones = async (req, res, next) => {
     const where = {
       estado: { [Op.in]: ['completada', 'credito'] }
     };
+    const scopedSedeId = resolveQuerySede(req.query.sedeId || req.query.sede, req.usuario);
+    if (scopedSedeId) where.sedeId = scopedSedeId;
 
     if (desde && hasta) {
       where.createdAt = { [Op.between]: [new Date(desde), new Date(hasta)] };
@@ -540,7 +700,21 @@ exports.getVentas = async (req, res, next) => {
         { model: Usuario, as: 'usuario', attributes: ['nombre'] },
         { model: Sede, as: 'sede', attributes: ['nombre'] },
         { model: PagoVenta, as: 'pagos' },
-        { model: ItemVenta, as: 'items', include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'precioCosto', 'tieneNumeroSerie', 'esServicio'] }] },
+        {
+          model: ItemVenta,
+          as: 'items',
+          include: [
+            { model: Producto, as: 'producto', attributes: ['nombre', 'precioCosto', 'tieneNumeroSerie', 'esServicio', 'esCombo'] },
+            {
+              model: ItemVentaComponente,
+              as: 'componentesVendidos',
+              include: [
+                { model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras'] },
+                { model: NumeroSerie, as: 'numeroSerie', attributes: ['serie'] }
+              ]
+            }
+          ]
+        },
         { model: Factura, as: 'factura', attributes: ['id', 'numeroFactura', 'estado'] }
       ],
       order: [['createdAt', 'DESC']]
@@ -588,6 +762,7 @@ exports.getDevolucionesVenta = async (req, res, next) => {
 
 exports.crearDevolucionVenta = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id } = req.params;
     const { items: itemsBody, motivo, metodoReembolso } = req.body;
@@ -597,14 +772,22 @@ exports.crearDevolucionVenta = async (req, res, next) => {
       return res.status(400).json({ error: 'Debe indicar el motivo de la devolución.' });
     }
 
-    if (!Array.isArray(itemsBody) || itemsBody.length === 0) {
+    if (!Array.isArray(itemsBody) || itemsBody.length === 0 || itemsBody.some((row) => !row || typeof row !== 'object')) {
       await transaction.rollback();
       return res.status(400).json({ error: 'Seleccione al menos un ítem a devolver.' });
     }
 
+    await Venta.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
     const venta = await Venta.findByPk(id, {
       include: [
-        { model: ItemVenta, as: 'items', include: [{ model: Producto, as: 'producto' }] },
+        {
+          model: ItemVenta,
+          as: 'items',
+          include: [
+            { model: Producto, as: 'producto' },
+            { model: ItemVentaComponente, as: 'componentesVendidos' }
+          ]
+        },
         { model: PagoVenta, as: 'pagos' },
         { model: Cliente, as: 'cliente', attributes: ['id', 'nombre', 'documento'] },
         { model: Factura, as: 'factura' },
@@ -646,13 +829,22 @@ exports.crearDevolucionVenta = async (req, res, next) => {
     }
 
     const itemsById = new Map(venta.items.map((i) => [i.id, i]));
+    const recordedTotal = money(venta.items.reduce((sum, item) => sum + Number(item.subtotal) +
+      (item.ivaTotal != null ? Number(item.ivaTotal) : Number(item.iva) * Number(item.cantidad)), 0));
+    if (Math.abs(recordedTotal - Number(venta.total)) > 0.01) {
+      throw httpError(409, 'Esta venta histórica tiene importes de artículos que no coinciden con su total. Debe conciliarse antes de reembolsar.');
+    }
+    const requestedIds = itemsBody.map((row) => String(row.itemVentaId || row.id || ''));
+    if (new Set(requestedIds).size !== requestedIds.length) {
+      throw httpError(400, 'No se puede repetir un artículo en la devolución.');
+    }
     const lineas = [];
     let totalDev = 0;
 
     for (const row of itemsBody) {
       const itemVentaId = row.itemVentaId || row.id;
-      const cantidad = parseInt(row.cantidad, 10);
-      if (!itemVentaId || !cantidad || cantidad <= 0) {
+      const cantidad = Number(row.cantidad);
+      if (!itemVentaId || !Number.isSafeInteger(cantidad) || cantidad <= 0) {
         await transaction.rollback();
         return res.status(400).json({ error: 'Cantidad de devolución inválida.' });
       }
@@ -672,12 +864,16 @@ exports.crearDevolucionVenta = async (req, res, next) => {
         });
       }
 
-      const montoLinea = Math.round(montoUnitarioItem(item) * cantidad * 100) / 100;
+      const montoLinea = money(montoUnitarioItem(item) * (yaDev + cantidad)) - money(montoUnitarioItem(item) * yaDev);
       totalDev += montoLinea;
       lineas.push({ item, cantidad, montoLinea });
     }
 
     totalDev = Math.round(totalDev * 100) / 100;
+    const refunded = Number(await DevolucionVenta.sum('total', { where: { ventaId: venta.id }, transaction })) || 0;
+    if (money(refunded + totalDev) > money(venta.total)) {
+      throw httpError(409, 'La devolución excede el importe original de la venta.');
+    }
 
     let metodo = String(metodoReembolso || '').toLowerCase();
     if (!metodo || metodo === 'mismo') {
@@ -696,8 +892,7 @@ exports.crearDevolucionVenta = async (req, res, next) => {
       return res.status(400).json({ error: 'Método de reembolso inválido.' });
     }
 
-    const countDev = await DevolucionVenta.count({ transaction });
-    const numero = `DEV-${String(countDev + 1).padStart(6, '0')}`;
+    const numero = await nextDocumentNumber(sequelize, 'DEV', transaction);
 
     const devolucion = await DevolucionVenta.create({
       numero,
@@ -722,8 +917,21 @@ exports.crearDevolucionVenta = async (req, res, next) => {
       const nuevaDevuelta = (parseInt(item.cantidadDevuelta, 10) || 0) + cantidad;
       await item.update({ cantidadDevuelta: nuevaDevuelta }, { transaction });
 
+      const esComboVendido = Array.isArray(item.componentesVendidos) && item.componentesVendidos.length > 0;
+      if (esComboVendido) {
+        await devolverComponentesCombo({
+          item,
+          cantidad,
+          yaDev: nuevaDevuelta - cantidad,
+          venta,
+          devolucion,
+          numero,
+          usuarioId: req.usuario.userId,
+          transaction
+        });
       // Servicios no tocaron inventario al vender: no devolver stock
-      if (!item.producto?.esServicio) {
+      } else if (!item.producto?.esServicio) {
+        if (item.producto?.esCombo) throw httpError(409, 'Esta venta antigua no conserva los componentes originales del combo. Debe regularizarse antes de devolver.');
         const stock = await StockSede.findOne({
           where: { productoId: item.productoId, sedeId: venta.sedeId },
           transaction,
@@ -750,25 +958,12 @@ exports.crearDevolucionVenta = async (req, res, next) => {
         }, { transaction });
 
         if (item.producto?.tieneNumeroSerie) {
-          const series = await NumeroSerie.findAll({
-            where: {
-              productoId: item.productoId,
-              sedeId: venta.sedeId,
-              estado: 'vendido',
-              ...(venta.clienteId ? { clienteId: venta.clienteId } : {})
-            },
-            order: [['updatedAt', 'DESC']],
-            limit: cantidad,
-            transaction
-          });
-
-          for (const s of series) {
-            await s.update({
-              estado: 'en_stock',
-              clienteId: null,
-              fechaVenta: null
-            }, { transaction });
+          if (!item.numeroSerieId) throw httpError(409, 'Esta venta antigua no tiene su IMEI vinculado. Debe regularizarse antes de devolver el equipo.');
+          const serie = await NumeroSerie.findByPk(item.numeroSerieId, { transaction, lock: transaction.LOCK.UPDATE });
+          if (!serie || serie.estado !== 'vendido' || String(serie.productoId) !== String(item.productoId)) {
+            throw httpError(409, 'El IMEI original de esta venta no está disponible para devolución.');
           }
+          await serie.update({ estado: 'en_stock', clienteId: null, fechaVenta: null }, { transaction });
         }
       }
     }
@@ -871,7 +1066,9 @@ exports.crearDevolucionVenta = async (req, res, next) => {
       devolucion: completa
     });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };

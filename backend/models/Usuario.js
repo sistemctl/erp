@@ -29,6 +29,11 @@ const Usuario = sequelize.define('Usuario', {
     type: DataTypes.UUID,
     allowNull: true // admin puede no pertenecer a una sede específica
   },
+  sessionVersion: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
+  },
   activo: {
     type: DataTypes.BOOLEAN,
     defaultValue: true
@@ -37,6 +42,9 @@ const Usuario = sequelize.define('Usuario', {
   tableName: 'Usuarios',
   hooks: {
     beforeSave: async (usuario) => {
+      if (!usuario.isNewRecord && ['password', 'rol', 'sedeId', 'activo'].some((field) => usuario.changed(field))) {
+        usuario.sessionVersion = (Number(usuario.sessionVersion) || 0) + 1;
+      }
       if (usuario.changed('password')) {
         const salt = await bcrypt.genSalt(10);
         usuario.password = await bcrypt.hash(usuario.password, salt);

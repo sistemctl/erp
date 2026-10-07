@@ -1,7 +1,7 @@
+import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { initBarcodeScanner, destroyBarcodeScanner } from '../utils/barcode.js';
-import { getLocalDateStr } from '../utils/date.js';
 import { showToast } from '../utils/toast.js';
 import { renderPosReceipt } from '../utils/pos-receipt.js';
 import { formatStockUnidad, labelUnidadMedida } from '../utils/unidad-medida.js';
@@ -13,6 +13,12 @@ let clientes = [];
 let selectedCategoryId = null;
 let cobrarIva = true;
 let ivaPct = 0.19;
+let saleTotals = { subtotal: 0, descuentoTotal: 0, iva: 0, total: 0 };
+let pendingSale = null;
+const roundMoney = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[char]));
 let currentSedeId = null;
 let sedes = [];
 let mediosPagoActivos = [
@@ -35,8 +41,8 @@ function getSedeNombre(sedes, sedeId, fallback = 'Sede') {
 
 function renderPosSessionBar({ usuario, isAdmin, sedes, currentSedeId, cajaAbierta, sedeFallback }) {
   const sedeNombre = getSedeNombre(sedes, currentSedeId, sedeFallback || usuario.sedeNombre || 'Sede');
-  const cajaOk = cajaAbierta && cajaAbierta.estado !== 'cerrada';
-  const abiertaPor = cajaOk && cajaAbierta.usuarioApertura?.nombre
+  const cajaOk = cajaAbierta?.estado === 'abierta' && !cajaAbierta.cierrePendiente;
+  const abiertaPor = cajaAbierta?.estado === 'abierta' && cajaAbierta.usuarioApertura?.nombre
     ? cajaAbierta.usuarioApertura.nombre
     : null;
 
@@ -45,7 +51,7 @@ function renderPosSessionBar({ usuario, isAdmin, sedes, currentSedeId, cajaAbier
       <div class="pos-session-bar__primary">
         <span class="pos-session-chip ${cajaOk ? 'pos-session-chip--live' : 'pos-session-chip--warn'}">
           <i class="ti ${cajaOk ? 'ti-lock-open' : 'ti-lock'}" aria-hidden="true"></i>
-          ${cajaOk ? 'Caja abierta' : 'Caja cerrada'}
+          ${cajaAbierta?.cierrePendiente ? 'Cierre pendiente' : cajaOk ? 'Caja abierta' : 'Caja cerrada'}
         </span>
         ${cajaOk ? `
           <span class="pos-session-chip pos-session-chip--scan">
@@ -56,24 +62,24 @@ function renderPosSessionBar({ usuario, isAdmin, sedes, currentSedeId, cajaAbier
         ${abiertaPor ? `
           <span class="pos-session-chip" title="Quién abrió la caja de esta sede">
             <i class="ti ti-user-check" aria-hidden="true"></i>
-            Abrió: ${abiertaPor}
+            Abrió: ${escapeHtml(abiertaPor)}
           </span>
         ` : ''}
       </div>
       <div class="pos-session-bar__meta">
         <span class="pos-session-chip" title="Sede">
           <i class="ti ti-building-store" aria-hidden="true"></i>
-          ${sedeNombre}
+          ${escapeHtml(sedeNombre)}
         </span>
         <span class="pos-session-chip" title="Cajero">
           <i class="ti ti-user" aria-hidden="true"></i>
-          ${usuario.nombre}
+          ${escapeHtml(usuario.nombre)}
         </span>
         ${isAdmin ? `
           <div class="pos-session-bar__admin">
             <label class="pos-session-bar__label" for="select-pos-sede">Sede</label>
             <select id="select-pos-sede" class="form-select form-select-sm pos-session-sede-select" aria-label="Sede para ventas">
-              ${sedes.map((s) => `<option value="${s.id}" ${String(s.id) === String(currentSedeId) ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+              ${sedes.map((s) => `<option value="${s.id}" ${String(s.id) === String(currentSedeId) ? 'selected' : ''}>${escapeHtml(s.nombre)}</option>`).join('')}
             </select>
           </div>
         ` : ''}
@@ -105,13 +111,16 @@ export async function initPos(container) {
 
   async function loadAndRenderPOS() {
     destroyBarcodeScanner();
+    if (posKeydownHandler) {
+      document.removeEventListener('keydown', posKeydownHandler);
+      posKeydownHandler = null;
+    }
     
     // 1. Cargar datos básicos y verificar si la caja está abierta
     let cajaAbierta = null;
     let cajaCompartida = true;
     try {
-      const hoyStr = getLocalDateStr();
-      cajaAbierta = await apiFetch(`/caja/reporte?fecha=${hoyStr}&sede=${currentSedeId}`, { silent: true }).catch(() => null);
+      cajaAbierta = await apiFetch(`/caja/reporte?sede=${currentSedeId}`, { silent: true }).catch(() => null);
     
     // Obtener configuración del sistema para el descuento máximo e IVA
     let config = null;
@@ -160,18 +169,22 @@ export async function initPos(container) {
   }
 
 
-    if (!cajaAbierta?.id || cajaAbierta.estado === 'cerrada' || cajaAbierta.estado === 'sin_registro') {
-      const gateText = cajaCompartida
+    if (!container.isConnected || window.location.hash.split('?')[0] !== '#/pos') return;
+    if (!cajaAbierta?.id || cajaAbierta.estado !== 'abierta' || cajaAbierta.cierrePendiente) {
+      const pendiente = cajaAbierta?.cierrePendiente;
+      const gateText = pendiente
+        ? `La caja del ${escapeHtml(cajaAbierta.fecha)} sigue abierta. La abrió ${escapeHtml(cajaAbierta.usuarioApertura?.nombre || 'un cajero')}. Realiza el conteo del efectivo, cierra esa caja y abre la de hoy para vender.`
+        : cajaCompartida
         ? 'La caja es por sede: si otro cajero ya la abrió en esta misma sede, deberías poder vender aquí. Revisa el selector de sede arriba o ve a Caja para abrirla.'
         : 'Con “Caja compartida” desactivada, cada usuario debe abrir su propia caja. Ve a Caja, haz la apertura con tu usuario y vuelve al POS.';
       container.innerHTML = `
         <div class="container-xl erp-module pos-module">
-          ${renderPosSessionBar({ usuario, isAdmin, sedes, currentSedeId, cajaAbierta: null, sedeFallback: usuario.sedeNombre })}
-          <div class="pos-gate-card">
+          ${renderPosSessionBar({ usuario, isAdmin, sedes, currentSedeId, cajaAbierta, sedeFallback: usuario.sedeNombre })}
+          <div class="pos-gate-card" role="status">
             <div class="pos-gate-card__icon" aria-hidden="true"><i class="ti ti-lock"></i></div>
-            <h2 class="pos-gate-card__title">Abre la caja para vender</h2>
+            <h2 class="pos-gate-card__title">${pendiente ? 'Tienes un cierre pendiente del día anterior' : 'Abre la caja para vender'}</h2>
             <p class="pos-gate-card__text">${gateText}</p>
-            <a href="#/caja" class="btn btn-primary">Ir a apertura de caja</a>
+            <a href="#/caja?sede=${encodeURIComponent(currentSedeId)}" class="btn btn-primary">${pendiente ? 'Ir al cierre pendiente' : 'Ir a apertura de caja'}</a>
           </div>
         </div>
       `;
@@ -185,6 +198,7 @@ export async function initPos(container) {
           });
         }
       }
+      watchDataChanges(container, ['caja'], loadAndRenderPOS);
       return;
     }
 
@@ -362,7 +376,7 @@ export async function initPos(container) {
                       return `
                         <input type="hidden" id="checkout-cliente" value="${consumidor?.id || ''}">
                         <button type="button" id="btn-buscar-cliente-checkout" class="btn btn-outline-secondary w-100 text-start d-flex align-items-center justify-content-between">
-                          <span id="checkout-cliente-nombre">${consumidor?.nombre || 'Consumidor Final'}</span>
+                          <span id="checkout-cliente-nombre">${escapeHtml(consumidor?.nombre || 'Consumidor Final')}</span>
                           <i class="ti ti-search"></i>
                         </button>
                       `;
@@ -480,10 +494,10 @@ export async function initPos(container) {
       const initial = (cliente.nombre || '?').trim().charAt(0).toUpperCase();
       return `
       <button type="button" class="checkout-cliente-opcion" data-id="${cliente.id}">
-        <span class="avatar avatar-sm checkout-cliente-avatar">${initial}</span>
+        <span class="avatar avatar-sm checkout-cliente-avatar">${escapeHtml(initial)}</span>
         <span class="checkout-cliente-info">
-          <span class="checkout-cliente-titulo">${cliente.nombre || 'Sin nombre'}</span>
-          <span class="checkout-cliente-meta"><i class="ti ti-id-badge"></i>${cliente.documento || 'Sin documento'}${cliente.telefono ? `<span class="checkout-cliente-separador">·</span><i class="ti ti-phone"></i>${cliente.telefono}` : ''}</span>
+          <span class="checkout-cliente-titulo">${escapeHtml(cliente.nombre || 'Sin nombre')}</span>
+          <span class="checkout-cliente-meta"><i class="ti ti-id-badge"></i>${escapeHtml(cliente.documento || 'Sin documento')}${cliente.telefono ? `<span class="checkout-cliente-separador">·</span><i class="ti ti-phone"></i>${escapeHtml(cliente.telefono)}` : ''}</span>
         </span>
         <i class="ti ti-chevron-right checkout-cliente-arrow"></i>
       </button>
@@ -535,6 +549,7 @@ export async function initPos(container) {
             descuentoPct: 0,
             cantidad: item.cantidad,
             tieneNumeroSerie: item.producto ? item.producto.tieneNumeroSerie : false,
+            tieneIVA: item.producto?.tieneIVA !== false,
             imei: '',
             imagenUrl: item.producto ? item.producto.imagenUrl : null,
             subtotal: parseFloat(item.precioUnitario) * item.cantidad
@@ -601,21 +616,27 @@ export async function initPos(container) {
         <div class="pos-product-grid">
           ${filtered.map(item => {
             const brandName = item.producto.categoria ? item.producto.categoria.nombre : 'GENÉRICO';
+            const comboSummary = item.producto.esCombo
+              ? (item.producto.componentes || []).map((row) => `${row.cantidad}× ${row.nombre || row.producto?.nombre || 'Producto'}`).join(' · ')
+              : '';
             const imgHtml = item.producto.imagenUrl 
-              ? `<img src="${item.producto.imagenUrl}" class="pos-product-card-img" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'24\\' height=\\'24\\' fill=\\'none\\' stroke=\\'%23ccc\\' stroke-width=\\'2\\'><rect width=\\'20\\' height=\\'20\\' x=\\'2\\' y=\\'2\\' rx=\\'2\\'/><circle cx=\\'9\\' cy=\\'9\\' r=\\'2\\'/><path d=\\'m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\\'/></svg>';">` 
-              : `<div class="pos-product-card-fallback">${item.producto.nombre.charAt(0).toUpperCase()}</div>`;
+              ? `<img src="${escapeHtml(item.producto.imagenUrl)}" class="pos-product-card-img" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'24\\' height=\\'24\\' fill=\\'none\\' stroke=\\'%23ccc\\' stroke-width=\\'2\\'><rect width=\\'20\\' height=\\'20\\' x=\\'2\\' y=\\'2\\' rx=\\'2\\'/><circle cx=\\'9\\' cy=\\'9\\' r=\\'2\\'/><path d=\\'m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\\'/></svg>';">`
+              : `<div class="pos-product-card-fallback">${escapeHtml(item.producto.nombre.charAt(0).toUpperCase())}</div>`;
 
             return `
               <button type="button" class="pos-product-card btn-add-prod" data-id="${item.productoId}">
                 ${imgHtml}
                 <div class="pos-product-card-body">
-                  <span class="pos-product-card-brand">${brandName}</span>
-                  <div class="pos-product-card-title" title="${item.producto.nombre}">${item.producto.nombre}</div>
+                  <span class="pos-product-card-brand">${escapeHtml(brandName)}${item.producto.esCombo ? ' <span class="pos-combo-badge">Combo</span>' : ''}</span>
+                  <div class="pos-product-card-title" title="${escapeHtml(item.producto.nombre)}">${escapeHtml(item.producto.nombre)}</div>
+                  ${comboSummary ? `<div class="pos-product-card-combo" title="${escapeHtml(comboSummary)}">${escapeHtml(comboSummary)}</div>` : ''}
                   <div class="pos-product-card-footer">
                     <span class="pos-product-card-price">$ ${new Intl.NumberFormat('es-CO').format(item.producto.precioVenta)}</span>
                     <span class="pos-product-card-stock">${item.producto.esServicio
                       ? '<strong class="text-azure">Servicio</strong>'
-                      : `Stock <strong class="${item.cantidad <= item.producto.stockMinimo ? 'text-danger' : 'text-success'}">${formatStockUnidad(item.cantidad, item.producto.unidadMedida)}</strong>`}</span>
+                      : item.producto.esCombo
+                        ? `Armables <strong class="${item.cantidad <= 0 ? 'text-danger' : 'text-success'}">${item.cantidad}</strong>`
+                        : `Stock <strong class="${item.cantidad <= item.producto.stockMinimo ? 'text-danger' : 'text-success'}">${formatStockUnidad(item.cantidad, item.producto.unidadMedida)}</strong>`}</span>
                   </div>
                 </div>
               </button>
@@ -639,7 +660,7 @@ export async function initPos(container) {
               return;
             }
 
-            addToCart(item.producto);
+            addToCart({ ...item.producto, disponibilidadCombo: item.cantidad });
             searchInput.value = '';
             searchInput.focus();
             searchProducts();
@@ -648,11 +669,18 @@ export async function initPos(container) {
       });
 
     } catch (e) {
-      resultsContainer.innerHTML = `<div class="text-center py-5 text-danger">${e.message}</div>`;
+      resultsContainer.innerHTML = `<div class="text-center py-5 text-danger">${escapeHtml(e.message)}</div>`;
     }
   };
 
   searchInput.addEventListener('input', searchProducts);
+  watchDataChanges(container, ['productos', 'inventario', 'series', 'compras', 'ventas', 'clientes'], async () => {
+    await searchProducts();
+    clientes = await apiFetch('/clientes');
+    if (document.getElementById('modal-buscar-cliente-checkout')?.classList.contains('show')) {
+      renderClientesCheckout(document.getElementById('checkout-cliente-busqueda')?.value || '');
+    }
+  });
 
   if (posKeydownHandler) {
     document.removeEventListener('keydown', posKeydownHandler);
@@ -676,7 +704,7 @@ export async function initPos(container) {
 
     categories.forEach(c => {
       const btnClass = selectedCategoryId === c.id ? 'pos-cat-pill is-active' : 'pos-cat-pill';
-      buttonsHtml += `<button type="button" class="${btnClass} btn-cat-filter" data-id="${c.id}">${c.nombre}</button>`;
+      buttonsHtml += `<button type="button" class="${btnClass} btn-cat-filter" data-id="${c.id}">${escapeHtml(c.nombre)}</button>`;
     });
 
     catsContainer.innerHTML = buttonsHtml;
@@ -697,6 +725,14 @@ export async function initPos(container) {
 
   // Funciones del Carrito
   function addToCart(producto) {
+    const disponibilidadCombo = Number.parseInt(
+      producto.disponibilidadCombo ?? producto.stocks?.[0]?.cantidad,
+      10
+    );
+    if (producto.esCombo && Number.isFinite(disponibilidadCombo) && disponibilidadCombo < 1) {
+      showToast('Combo agotado', 'No hay suficientes componentes para armar este combo en la sede.', 'warning');
+      return;
+    }
     if (producto.autoDetectedImei) {
       const isAlreadyInCart = cart.some(item => item.imei === producto.autoDetectedImei);
       if (isAlreadyInCart) {
@@ -708,6 +744,10 @@ export async function initPos(container) {
     // Si tiene número de serie, no agruparlos para poder registrar cada IMEI individualmente en el carrito
     const existing = producto.tieneNumeroSerie ? null : cart.find(item => item.productoId === producto.id);
     if (existing) {
+      if (producto.esCombo && Number.isFinite(disponibilidadCombo) && existing.cantidad >= disponibilidadCombo) {
+        showToast('Combo agotado', `Solo hay ${disponibilidadCombo} combo(s) armable(s) en esta sede.`, 'warning');
+        return;
+      }
       existing.cantidad += 1;
       existing.subtotal = existing.precioModificado * existing.cantidad;
     } else {
@@ -723,6 +763,10 @@ export async function initPos(container) {
         unidadMedida: producto.unidadMedida || 'und',
         tieneNumeroSerie: producto.esServicio ? false : producto.tieneNumeroSerie,
         esServicio: !!producto.esServicio,
+        tieneIVA: producto.tieneIVA !== false,
+        esCombo: !!producto.esCombo,
+        componentes: producto.componentes || [],
+        disponibilidadCombo: Number.isFinite(disponibilidadCombo) ? disponibilidadCombo : null,
         imei: producto.autoDetectedImei || '',
         imagenUrl: producto.imagenUrl,
         subtotal: parseFloat(producto.precioVenta)
@@ -762,15 +806,15 @@ export async function initPos(container) {
     cartContainer.innerHTML = cart.map((item, idx) => {
       const initial = item.nombre.charAt(0).toUpperCase();
       const mediaHtml = item.imagenUrl
-        ? `<img src="${item.imagenUrl}" class="pos-cart-line__img" alt="" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
-           <span class="pos-cart-line__fallback" hidden aria-hidden="true">${initial}</span>`
-        : `<span class="pos-cart-line__fallback" aria-hidden="true">${initial}</span>`;
+        ? `<img src="${escapeHtml(item.imagenUrl)}" class="pos-cart-line__img" alt="" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
+           <span class="pos-cart-line__fallback" hidden aria-hidden="true">${escapeHtml(initial)}</span>`
+        : `<span class="pos-cart-line__fallback" aria-hidden="true">${escapeHtml(initial)}</span>`;
 
       const ud = labelUnidadMedida(item.unidadMedida);
       const qtyControl = item.tieneNumeroSerie
         ? `<span class="pos-qty-fixed" aria-label="Cantidad fija">1 ${ud}</span>`
         : `
-          <div class="pos-qty-stepper" role="group" aria-label="Cantidad de ${item.nombre}">
+          <div class="pos-qty-stepper" role="group" aria-label="Cantidad de ${escapeHtml(item.nombre)}">
             <button type="button" class="pos-qty-btn btn-dec-qty" data-idx="${idx}" aria-label="Quitar ${ud}">−</button>
             <input type="number" class="pos-qty-input input-qty-cart" data-idx="${idx}" value="${item.cantidad}" min="1" inputmode="numeric" aria-label="Cantidad en ${ud}">
             <button type="button" class="pos-qty-btn btn-inc-qty" data-idx="${idx}" aria-label="Agregar ${ud}">+</button>
@@ -782,7 +826,7 @@ export async function initPos(container) {
           <div class="pos-cart-line__media">${mediaHtml}</div>
           <div class="pos-cart-line__body">
             <div class="pos-cart-line__head">
-              <h3 class="pos-cart-line__name" title="${item.nombre}">${item.nombre}</h3>
+              <h3 class="pos-cart-line__name" title="${escapeHtml(item.nombre)}">${escapeHtml(item.nombre)}${item.esCombo ? ' <span class="pos-combo-badge">Combo</span>' : ''}</h3>
               <span class="pos-cart-line__subtotal">${formatter.format(item.subtotal)}</span>
             </div>
             <div class="pos-cart-line__unit">
@@ -808,7 +852,7 @@ export async function initPos(container) {
                 <label class="visually-hidden" for="imei-${idx}">IMEI o serie</label>
                 <div class="input-icon input-icon-sm">
                   <span class="input-icon-addon"><i class="ti ti-barcode" aria-hidden="true"></i></span>
-                  <input type="text" id="imei-${idx}" class="form-control form-control-sm input-imei-cart" data-idx="${idx}" placeholder="IMEI o número de serie" value="${item.imei || ''}" required spellcheck="false">
+                  <input type="text" id="imei-${idx}" class="form-control form-control-sm input-imei-cart" data-idx="${idx}" placeholder="IMEI o número de serie" value="${escapeHtml(item.imei || '')}" required spellcheck="false">
                 </div>
               </div>
             ` : ''}
@@ -829,6 +873,10 @@ export async function initPos(container) {
     document.querySelectorAll('.btn-inc-qty').forEach(btn => {
       btn.addEventListener('click', () => {
         const idx = parseInt(btn.getAttribute('data-idx'));
+        if (cart[idx].esCombo && cart[idx].disponibilidadCombo !== null && cart[idx].cantidad >= cart[idx].disponibilidadCombo) {
+          showToast('Combo agotado', `Solo hay ${cart[idx].disponibilidadCombo} combo(s) armable(s) en esta sede.`, 'warning');
+          return;
+        }
         cart[idx].cantidad += 1;
         cart[idx].subtotal = cart[idx].precioModificado * cart[idx].cantidad;
         renderCart();
@@ -855,6 +903,10 @@ export async function initPos(container) {
         if (isNaN(val) || val <= 0) {
           cart.splice(idx, 1);
         } else {
+          if (cart[idx].esCombo && cart[idx].disponibilidadCombo !== null && val > cart[idx].disponibilidadCombo) {
+            showToast('Stock insuficiente', `Solo hay ${cart[idx].disponibilidadCombo} combo(s) armable(s).`, 'warning');
+            val = cart[idx].disponibilidadCombo;
+          }
           cart[idx].cantidad = val;
           cart[idx].subtotal = cart[idx].precioModificado * cart[idx].cantidad;
         }
@@ -905,20 +957,24 @@ export async function initPos(container) {
     // Calcular Totales
     let subtotalTotal = 0;
     let descTotal = 0;
+    let ivaTotal = 0;
 
     cart.forEach(item => {
-      subtotalTotal += item.precioBase * item.cantidad;
-      descTotal += (item.precioBase - item.precioModificado) * item.cantidad;
+      const base = roundMoney(item.precioBase * item.cantidad);
+      const net = roundMoney(item.precioModificado * item.cantidad);
+      subtotalTotal = roundMoney(subtotalTotal + base);
+      descTotal = roundMoney(descTotal + base - net);
+      if (cobrarIva && item.tieneIVA !== false) ivaTotal = roundMoney(ivaTotal + roundMoney(net * ivaPct));
     });
 
-    const ivaTotal = cobrarIva ? (subtotalTotal - descTotal) * ivaPct : 0;
-    const totalFinal = (subtotalTotal - descTotal) + ivaTotal;
+    const totalFinal = roundMoney(subtotalTotal - descTotal + ivaTotal);
 
     updateTotals(subtotalTotal, descTotal, ivaTotal, totalFinal);
     updateCartCount();
   }
 
   function updateTotals(sub, desc, iva, tot) {
+    saleTotals = { subtotal: sub, descuentoTotal: desc, iva, total: tot };
     const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
     document.getElementById('pos-subtotal').textContent = formatter.format(sub);
     document.getElementById('pos-descuento').textContent = `-${formatter.format(desc)}`;
@@ -1026,8 +1082,8 @@ export async function initPos(container) {
     const wrapper = document.getElementById('checkout-payment-methods');
     wrapper.innerHTML = mediosPagoActivos.map((medio) => `
       <div class="mb-3">
-        <label class="form-label">${medio.nombre}${medio.id === 'efectivo' ? ' recibido' : ''} (COP)</label>
-        <input type="number" id="pay-${medio.id}" class="form-control pay-metodo" data-metodo="${medio.id}" min="0" value="0">
+        <label class="form-label">${escapeHtml(medio.nombre)}${medio.id === 'efectivo' ? ' recibido' : ''} (COP)</label>
+        <input type="number" id="pay-${escapeHtml(medio.id)}" class="form-control pay-metodo" data-metodo="${escapeHtml(medio.id)}" min="0" value="0">
         ${medio.id === 'sistecredito' || medio.recaudoDiferido ? '<div class="form-hint">Sistecredito liquida este valor después; no entra a Caja hoy.</div>' : ''}
       </div>
     `).join('');
@@ -1044,7 +1100,7 @@ export async function initPos(container) {
     for (const item of cart) {
       if (item.tieneNumeroSerie) {
         if (!item.imei) {
-          showToast('IMEI Requerido', `Por favor, ingrese el IMEI para: ${item.nombre}`, 'warning');
+          showToast('IMEI Requerido', `Por favor, ingrese el IMEI para: ${escapeHtml(item.nombre)}`, 'warning');
           return;
         }
         imeis.push(item.imei);
@@ -1123,8 +1179,8 @@ export async function initPos(container) {
           <label class="form-label text-success fw-bold">Saldo a favor de Trade-In Disponible</label>
           ${unassociated.map((ti, index) => `
             <label class="form-check text-success">
-              <input class="form-check-input chk-apply-tradein" type="checkbox" data-id="${ti.id}" data-val="${ti.valoracion}" data-desc="${ti.marca} ${ti.modelo} - IMEI: ${ti.imei}">
-              <span class="form-check-label">${ti.marca} ${ti.modelo} (${formatter.format(ti.valoracion)})</span>
+              <input class="form-check-input chk-apply-tradein" type="checkbox" data-id="${ti.id}" data-val="${ti.valoracion}" data-desc="${escapeHtml(ti.marca)} ${escapeHtml(ti.modelo)} - IMEI: ${escapeHtml(ti.imei)}">
+              <span class="form-check-label">${escapeHtml(ti.marca)} ${escapeHtml(ti.modelo)} (${formatter.format(ti.valoracion)})</span>
             </label>
           `).join('')}
         `;
@@ -1157,8 +1213,7 @@ export async function initPos(container) {
   });
 
   function updateChangeCalculations() {
-    const totalStr = document.getElementById('pos-total').textContent.replace(/[^\d]/g, '');
-    const total = parseFloat(totalStr);
+    const total = saleTotals.total;
 
     const pagosNormales = [...document.querySelectorAll('.pay-metodo')]
       .reduce((sum, input) => sum + parseFloat(input.value || 0), 0);
@@ -1196,14 +1251,7 @@ export async function initPos(container) {
     const submitBtn = document.getElementById('checkout-submit-btn');
 
     // Totales
-    const totalStr = document.getElementById('pos-total').textContent.replace(/[^\d]/g, '');
-    const total = parseFloat(totalStr);
-    const subtotalStr = document.getElementById('pos-subtotal').textContent.replace(/[^\d]/g, '');
-    const subtotal = parseFloat(subtotalStr);
-    const descStr = document.getElementById('pos-descuento').textContent.replace(/[^\d\-]/g, '');
-    const descuentoTotal = parseFloat(descStr);
-    const ivaStr = document.getElementById('pos-iva').textContent.replace(/[^\d]/g, '');
-    const iva = parseFloat(ivaStr);
+    const { total, subtotal, descuentoTotal, iva } = saleTotals;
 
     const isCredito = document.getElementById('checkout-credito').checked;
     const clienteId = document.getElementById('checkout-cliente').value;
@@ -1259,11 +1307,14 @@ export async function initPos(container) {
         imei: item.imei
       })),
       pagos,
-      pinAdmin,
-      idempotencyKey: (typeof crypto !== 'undefined' && crypto.randomUUID)
-        ? crypto.randomUUID()
-        : `pos-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+      pinAdmin
     };
+    const signature = JSON.stringify({ ...body, pinAdmin: null });
+    if (!pendingSale || pendingSale.signature !== signature) {
+      pendingSale = { signature, key: (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID() : `pos-${Date.now()}-${Math.random().toString(36).slice(2, 10)}` };
+    }
+    body.idempotencyKey = pendingSale.key;
 
     submitBtn.disabled = true;
     submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status"></span>Registrando…`;
@@ -1278,7 +1329,7 @@ export async function initPos(container) {
       if (window.pendingCotizacionAprobacionId) {
         await apiFetch(`/cotizaciones/${window.pendingCotizacionAprobacionId}/aprobar`, {
           method: 'POST',
-          body: JSON.stringify({ ventaId: res.id })
+          body: JSON.stringify({ ventaId: res.ventaId })
         }).catch(err => console.error('Error aprobando cotización:', err));
         delete window.pendingCotizacionAprobacionId;
       }
@@ -1287,16 +1338,26 @@ export async function initPos(container) {
       
       // Mostrar ticket para impresión
       const itemsVendidos = [...cart];
-      renderPrintReceipt(res, body, itemsVendidos);
+      const savedItems = [...(res.items || [])];
+      const canonicalItems = itemsVendidos.map((item) => {
+        const index = savedItems.findIndex((saved) => String(saved.productoId) === String(item.productoId) && Number(saved.cantidad) === Number(item.cantidad));
+        return { ...item, ...(index >= 0 ? savedItems.splice(index, 1)[0] : {}) };
+      });
+      renderPrintReceipt(res, { ...body, ...res }, canonicalItems);
 
       // Limpiar carrito
       cart = [];
+      pendingSale = null;
       renderCart();
 
       // Forzar impresión
       window.print();
     } catch (err) {
       showToast('Error', err.message, 'error');
+      if (err.code === 'CAJA_CIERRE_PENDIENTE') {
+        modalCheckout.hide();
+        await loadAndRenderPOS();
+      }
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Procesar Venta';
@@ -1327,6 +1388,7 @@ export async function initPos(container) {
       total: body.total,
       cobrarIva,
       pagos: body.pagos || [],
+      cambio: body.cambio,
       esCredito: body.esCredito
     });
   }
@@ -1343,7 +1405,7 @@ export async function initPos(container) {
   }
 }
 
-  loadAndRenderPOS();
+  await loadAndRenderPOS();
 }
 
 export function destroyPos() {

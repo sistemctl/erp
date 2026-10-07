@@ -1,7 +1,9 @@
+import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { erpAction } from '../utils/action-buttons.js';
+import { showConfirm, showToast } from '../utils/toast.js';
 
 export async function initReparaciones(container) {
   const usuario = getUsuario();
@@ -726,6 +728,51 @@ export async function initReparaciones(container) {
     try {
       const orden = await apiFetch(`/reparaciones/${id}`);
       const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+      const canEditRepuestos = (isAdminOrGerente || esTecnico) && !['entregado', 'cancelado'].includes(orden.estado);
+      const captureFields = () => [...(document.getElementById('form-update-detalle')?.elements || [])]
+        .filter(input => input.id).map(input => ({ id: input.id, value: input.value, checked: input.checked }));
+      const refreshDetalle = async fields => {
+        await loadData();
+        if (window.location.hash.split('?')[0] !== '#/reparaciones') return;
+        fillKanban(document.getElementById('kanban-search').value);
+        await openDetalle(id);
+        for (const field of fields) {
+          const input = document.getElementById(field.id);
+          if (input) { input.value = field.value; if (input.type === 'checkbox') input.checked = field.checked; }
+        }
+      };
+      const guardarCosto = async button => {
+        const input = button.closest('td').querySelector('.repuesto-costo');
+        if (!input.reportValidity()) return;
+        const fields = captureFields();
+        button.disabled = true;
+        input.disabled = true;
+        try {
+          const result = await apiFetch(`/reparaciones/${id}/repuestos/${encodeURIComponent(button.dataset.repuestoId)}`, {
+            method: 'PUT', body: JSON.stringify({ costoUnitario: Number(input.value) })
+          });
+          showToast('Costo actualizado', result.message, 'success');
+          await refreshDetalle(fields);
+        } catch (error) {
+          button.disabled = false;
+          input.disabled = false;
+          showToast('No se pudo actualizar el costo', error.message, 'error');
+        }
+      };
+      const retirarRepuesto = async (button, closePicker) => {
+        if (!await showConfirm('Retirar repuesto', 'Se devolverá la cantidad asignada al inventario de esta sede y se ajustará el total de la reparación.')) return;
+        const fields = captureFields();
+        button.disabled = true;
+        try {
+          const result = await apiFetch(`/reparaciones/${id}/repuestos/${encodeURIComponent(button.dataset.repuestoId)}`, { method: 'DELETE' });
+          closePicker?.();
+          showToast('Repuesto retirado', result.message, 'success');
+          await refreshDetalle(fields);
+        } catch (error) {
+          button.disabled = false;
+          showToast('No se pudo retirar el repuesto', error.message, 'error');
+        }
+      };
 
       content.innerHTML = `
         <div class="modal-header">
@@ -835,29 +882,44 @@ export async function initReparaciones(container) {
               <!-- Repuestos Usados -->
               <h4 class="text-primary mb-3 mt-4 border-top pt-3"><i class="ti ti-components me-1"></i>Repuestos Asignados</h4>
               <div class="table-responsive mb-2">
-                <table class="table table-sm table-vcenter">
+                <table class="table table-sm table-vcenter repair-parts-table">
+                  <colgroup>
+                    <col>
+                    <col class="repair-parts-quantity">
+                    <col class="repair-parts-cost">
+                    <col class="repair-parts-total">
+                    ${canEditRepuestos ? '<col class="repair-parts-actions">' : ''}
+                  </colgroup>
                   <thead>
                     <tr>
                       <th>Repuesto</th>
-                      <th>Cantidad</th>
-                      <th>Costo Unit.</th>
-                      <th>Total</th>
+                      <th class="text-center" title="Cantidad">Cant.</th>
+                      <th>Costo unit.</th>
+                      <th class="text-end">Total</th>
+                      ${canEditRepuestos ? '<th><span class="visually-hidden">Acciones</span></th>' : ''}
                     </tr>
                   </thead>
                   <tbody id="det-repuestos-body">
                     ${orden.repuestos && orden.repuestos.length > 0 ? orden.repuestos.map(r => `
                       <tr>
                         <td>${r.producto ? r.producto.nombre : 'Repuesto'}</td>
-                        <td>${r.cantidad}</td>
-                        <td>${formatter.format(r.costoUnitario)}</td>
-                        <td>${formatter.format(r.costoUnitario * r.cantidad)}</td>
+                        <td class="text-center">${r.cantidad}</td>
+                        <td>${canEditRepuestos ? `<div class="repair-part-cost-editor">
+                          <div class="repair-part-cost-field">
+                            <span aria-hidden="true">$</span>
+                            <input type="number" class="form-control form-control-sm repuesto-costo" value="${Number(r.costoUnitario)}" min="0" max="9999999999999.99" step="0.01" required aria-label="Costo unitario del repuesto en pesos">
+                          </div>
+                          <button type="button" class="btn btn-sm btn-icon btn-outline-primary btn-guardar-costo" data-repuesto-id="${r.id}" aria-label="Guardar costo del repuesto" title="Guardar costo"><i class="ti ti-check" aria-hidden="true"></i></button>
+                        </div>` : formatter.format(r.costoUnitario)}</td>
+                        <td class="text-end text-nowrap">${formatter.format(r.costoUnitario * r.cantidad)}</td>
+                        ${canEditRepuestos ? `<td class="text-end"><button type="button" class="btn btn-sm btn-icon btn-outline-danger btn-retirar-repuesto" data-repuesto-id="${r.id}" aria-label="Retirar repuesto" title="Retirar repuesto"><i class="ti ti-trash" aria-hidden="true"></i></button></td>` : ''}
                       </tr>
-                    `).join('') : '<tr><td colspan="4" class="text-center py-2 text-secondary">No se han utilizado repuestos en esta orden.</td></tr>'}
+                    `).join('') : `<tr><td colspan="${canEditRepuestos ? 5 : 4}" class="text-center py-2 text-secondary">No se han utilizado repuestos en esta orden.</td></tr>`}
                   </tbody>
                 </table>
               </div>
 
-              ${isAdminOrGerente || esTecnico ? `
+              ${canEditRepuestos ? `
                 <form id="form-add-repuesto" class="row g-2 mb-4 border p-2 bg-light rounded">
                   <div class="col-md-7">
                     <div class="position-relative" id="repuesto-dropdown-container">
@@ -916,6 +978,15 @@ export async function initReparaciones(container) {
       `;
 
       // Event handlers inside details modal
+      content.querySelectorAll('.btn-guardar-costo').forEach(button => {
+        button.addEventListener('click', () => guardarCosto(button));
+        button.closest('td').querySelector('.repuesto-costo').addEventListener('keydown', event => {
+          if (event.key === 'Enter') { event.preventDefault(); if (!button.disabled) guardarCosto(button); }
+        });
+      });
+      content.querySelectorAll('.btn-retirar-repuesto').forEach(button => {
+        button.addEventListener('click', () => retirarRepuesto(button));
+      });
       // 1. Update Estado directly
       document.getElementById('det-estado').addEventListener('change', async (e) => {
         const newStatus = e.target.value;
@@ -1059,7 +1130,10 @@ export async function initReparaciones(container) {
       // El catálogo de repuestos usa la misma superficie de trabajo que Compras.
       const repuestoModalTrigger = document.getElementById('repuesto-search');
       if (repuestoModalTrigger) {
-        repuestoModalTrigger.addEventListener('click', () => {
+        repuestoModalTrigger.addEventListener('click', async () => {
+          try { productos = (await apiFetch('/productos')).filter(p => p.activo !== false); }
+          catch (error) { alert('No se pudo actualizar el catálogo: ' + error.message); return; }
+          if (!container.isConnected || window.location.hash.split('?')[0] !== '#/reparaciones') return;
           document.getElementById('repuesto-dropdown-menu')?.style.setProperty('display', 'none');
           document.getElementById('modal-repuesto-picker')?.remove();
           const repuestos = productos.filter((p) => p.tieneNumeroSerie === false);
@@ -1093,7 +1167,7 @@ export async function initReparaciones(container) {
           const assignedEl = picker.querySelector('#rep-modal-assigned');
           const renderAssigned = () => {
             const rows = orden.repuestos || [];
-            assignedEl.innerHTML = rows.length ? rows.map((row) => `<div class="oc-product-modal__added-item"><div class="oc-product-modal__added-top"><strong class="oc-product-modal__added-name">${esc(row.producto?.nombre || 'Repuesto')}</strong></div><div class="oc-product-modal__added-meta"><span>× ${row.cantidad}</span><span>${formatter.format(row.costoUnitario || 0)}</span><span class="oc-product-modal__added-sub">${formatter.format((row.costoUnitario || 0) * row.cantidad)}</span></div></div>`).join('') : '<div class="oc-product-modal__added-empty"><span class="oc-product-modal__added-empty-title">Sin repuestos aún</span><span class="oc-product-modal__added-empty-hint">Elija un repuesto de la lista para agregarlo.</span></div>';
+            assignedEl.innerHTML = rows.length ? rows.map((row) => `<div class="oc-product-modal__added-item"><div class="oc-product-modal__added-top"><strong class="oc-product-modal__added-name">${esc(row.producto?.nombre || 'Repuesto')}</strong>${canEditRepuestos ? `<button type="button" class="btn btn-sm btn-outline-danger btn-retirar-repuesto" data-repuesto-id="${esc(row.id)}" aria-label="Retirar repuesto"><i class="ti ti-trash" aria-hidden="true"></i> Retirar</button>` : ''}</div><div class="oc-product-modal__added-meta"><span>× ${row.cantidad}</span><span>${formatter.format(row.costoUnitario || 0)}</span><span class="oc-product-modal__added-sub">${formatter.format((row.costoUnitario || 0) * row.cantidad)}</span></div></div>`).join('') : '<div class="oc-product-modal__added-empty"><span class="oc-product-modal__added-empty-title">Sin repuestos aún</span><span class="oc-product-modal__added-empty-hint">Elija un repuesto de la lista para agregarlo.</span></div>';
           };
           const renderCategories = () => {
             const categories = Array.from(new Map(repuestos.map((p) => [catId(p), catName(p)]).filter(([key, name]) => key && name)).entries()).sort((a, b) => a[1].localeCompare(b[1], 'es'));
@@ -1117,6 +1191,7 @@ export async function initReparaciones(container) {
           renderAssigned(); renderCategories(); renderList();
           searchEl.addEventListener('input', renderList);
           categoryEl.addEventListener('click', (event) => { const chip = event.target.closest('[data-category]'); if (!chip) return; activeCategory = chip.dataset.category || ''; renderCategories(); renderList(); });
+          assignedEl.querySelectorAll('.btn-retirar-repuesto').forEach(button => button.addEventListener('click', () => retirarRepuesto(button, () => modal.hide())));
           listEl.addEventListener('click', (event) => { const item = event.target.closest('[data-product]'); if (!item) return; selected = repuestos.find((p) => String(p.id) === item.dataset.product) || null; renderCompose(); });
           picker.addEventListener('shown.bs.modal', () => { picker.style.zIndex = '1065'; const backdrops = document.querySelectorAll('.modal-backdrop'); backdrops[backdrops.length - 1]?.style.setProperty('z-index', '1060'); searchEl.focus(); });
           picker.addEventListener('hidden.bs.modal', () => picker.remove());
@@ -1367,4 +1442,8 @@ export async function initReparaciones(container) {
       openDetalle(match.id);
     }
   }
+  watchDataChanges(container, ["productos","clientes","reparaciones"], async () => {
+    await loadData(); fillKanban(document.getElementById('kanban-search')?.value || '');
+  });
+
 }

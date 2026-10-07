@@ -1,3 +1,4 @@
+import { watchDataChanges, syncSelectOptions } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { showToast } from '../utils/toast.js';
@@ -381,4 +382,12 @@ export async function initSeries(container) {
       }
     });
   }
+  watchDataChanges(container, ["series","inventario","productos","compras","ventas","instalaciones"], async () => {
+    productos = (await apiFetch('/productos')).filter(p => p.activo !== false && p.tieneNumeroSerie);
+    for (const id of ['select-producto-series', 'reg-producto']) {
+      syncSelectOptions(document.getElementById(id), productos);
+    }
+    await loadSeries();
+  });
+
 }

@@ -1,7 +1,19 @@
-const { Producto, Categoria, Sede, StockSede, NumeroSerie, MovimientoInventario, sequelize } = require('../models');
+const { Producto, Categoria, Sede, StockSede, NumeroSerie, MovimientoInventario, ComboComponente, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const { generateInternalBarcode, normalizeCodigoBarras } = require('../utils/internal-barcode');
 const { normalizeUnidadMedida } = require('../utils/unidad-medida');
+const { validateComboComponents, replaceComboComponents, recalculateParentComboCosts, getComboAvailability } = require('../utils/combo');
+
+const comboInclude = {
+  model: ComboComponente,
+  as: 'componentes',
+  separate: true,
+  include: [{
+    model: Producto,
+    as: 'producto',
+    attributes: ['id', 'nombre', 'codigoBarras', 'precioCosto', 'tieneNumeroSerie', 'unidadMedida', 'activo']
+  }]
+};
 
 // --- CRUD PRODUCTOS ---
 
@@ -23,7 +35,10 @@ exports.getProductos = async (req, res, next) => {
 
     const productos = await Producto.findAll({
       where,
-      include: [{ model: Categoria, as: 'categoria', attributes: ['nombre'] }],
+      include: [
+        { model: Categoria, as: 'categoria', attributes: ['nombre'] },
+        comboInclude
+      ],
       order: [['nombre', 'ASC']]
     });
 
@@ -35,6 +50,7 @@ exports.getProductos = async (req, res, next) => {
 
 exports.createProducto = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const {
       nombre,
@@ -47,11 +63,17 @@ exports.createProducto = async (req, res, next) => {
       tieneNumeroSerie,
       esReacondicionado,
       esServicio,
+      esCombo,
+      componentes,
       unidadMedida,
       categoriaId,
       imagenUrl
     } = req.body;
-    const unidad = normalizeUnidadMedida(unidadMedida);
+    const combo = !!esCombo;
+    const unidad = combo ? 'und' : normalizeUnidadMedida(unidadMedida);
+    const comboData = combo
+      ? await validateComboComponents({ componentes, transaction })
+      : null;
 
     let codigoFinal = normalizeCodigoBarras(codigoBarras);
     if (!codigoFinal) {
@@ -62,6 +84,7 @@ exports.createProducto = async (req, res, next) => {
     const existe = await Producto.findOne({ where: { codigoBarras: codigoFinal }, transaction });
     if (existe) {
       if (existe.activo) {
+        await transaction.rollback();
         return res.status(400).json({ error: 'El código de barras ya está asignado a otro producto activo.' });
       } else {
         // Restaurarlo y actualizarlo con la nueva información
@@ -69,17 +92,24 @@ exports.createProducto = async (req, res, next) => {
           nombre,
           descripcion,
           precioVenta,
-          precioCosto,
+          precioCosto: combo ? comboData.precioCosto : precioCosto,
           tieneIVA,
           stockMinimo,
-          tieneNumeroSerie: esServicio ? false : !!tieneNumeroSerie,
+          tieneNumeroSerie: (esServicio || combo) ? false : !!tieneNumeroSerie,
           esReacondicionado,
-          esServicio: !!esServicio,
+          esServicio: combo ? false : !!esServicio,
+          esCombo: combo,
           unidadMedida: unidad,
           categoriaId,
           imagenUrl,
           activo: true
         }, { transaction });
+
+        if (combo) {
+          await replaceComboComponents(existe.id, comboData.normalized, transaction);
+        } else {
+          await ComboComponente.destroy({ where: { comboId: existe.id }, transaction });
+        }
 
         // Garantizar que tiene sus registros de StockSede inicializados
         const sedes = await Sede.findAll();
@@ -114,16 +144,21 @@ exports.createProducto = async (req, res, next) => {
       codigoBarras: codigoFinal,
       descripcion,
       precioVenta,
-      precioCosto,
+      precioCosto: combo ? comboData.precioCosto : precioCosto,
       tieneIVA,
       stockMinimo,
-      tieneNumeroSerie: esServicio ? false : !!tieneNumeroSerie,
+      tieneNumeroSerie: (esServicio || combo) ? false : !!tieneNumeroSerie,
       esReacondicionado,
-      esServicio: !!esServicio,
+      esServicio: combo ? false : !!esServicio,
+      esCombo: combo,
       unidadMedida: unidad,
       categoriaId,
       imagenUrl
     }, { transaction });
+
+    if (combo) {
+      await replaceComboComponents(producto.id, comboData.normalized, transaction);
+    }
 
     // Inicializar el StockSede en 0 para todas las sedes de forma predeterminada
     const sedes = await Sede.findAll();
@@ -148,35 +183,69 @@ exports.createProducto = async (req, res, next) => {
 
     return res.status(201).json(producto);
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
 exports.updateProducto = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id } = req.params;
-    const producto = await Producto.findByPk(id);
+    const producto = await Producto.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
 
     if (!producto) {
+      await transaction.rollback();
       return res.status(404).json({ error: 'Producto no encontrado.' });
     }
 
     const { codigoBarras } = req.body;
     if (codigoBarras && codigoBarras !== producto.codigoBarras) {
-      const existe = await Producto.findOne({ where: { codigoBarras } });
+      const existe = await Producto.findOne({ where: { codigoBarras }, transaction });
       if (existe) {
+        await transaction.rollback();
         return res.status(400).json({ error: 'El código de barras ya está asignado a otro producto (activo o inactivo).' });
       }
     }
 
-    const { ajusteStock, sedeId, ...productData } = req.body;
+    const { ajusteStock, sedeId, componentes, ...productData } = req.body;
+    const combo = productData.esCombo !== undefined ? !!productData.esCombo : !!producto.esCombo;
+    const comboData = combo
+      ? await validateComboComponents({ comboId: id, componentes, transaction })
+      : null;
 
-    if (productData.esServicio) {
+    const usadoComoComponente = await ComboComponente.findOne({ where: { productoId: id }, transaction });
+    if (usadoComoComponente && (combo || productData.esServicio)) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'Este producto forma parte de un combo activo y debe seguir siendo un producto físico.' });
+    }
+
+    if (combo && !producto.esCombo) {
+      const stockExistente = await StockSede.sum('cantidad', { where: { productoId: id }, transaction });
+      const serialesExistentes = await NumeroSerie.count({ where: { productoId: id }, transaction });
+      if ((Number(stockExistente) || 0) > 0 || serialesExistentes > 0) {
+        await transaction.rollback();
+        return res.status(400).json({ error: 'Para convertir un producto existente en combo, primero debe dejar su stock y seriales en cero.' });
+      }
+    }
+
+    if (combo) {
+      productData.esCombo = true;
+      productData.esServicio = false;
+      productData.tieneNumeroSerie = false;
+      productData.unidadMedida = 'und';
+      productData.stockMinimo = 0;
+      productData.precioCosto = comboData.precioCosto;
+    } else if (productData.esServicio) {
+      productData.esCombo = false;
       productData.esServicio = true;
       productData.tieneNumeroSerie = false;
     } else if (productData.esServicio === false || productData.esServicio === 'false') {
       productData.esServicio = false;
+      productData.esCombo = false;
     }
 
     if (productData.unidadMedida !== undefined) {
@@ -184,20 +253,22 @@ exports.updateProducto = async (req, res, next) => {
     }
 
     const rolesAjusteStock = ['admin', 'superadmin'];
-    if (rolesAjusteStock.includes(req.usuario.rol) && sedeId && ajusteStock !== undefined && ajusteStock !== null) {
+    if (!combo && rolesAjusteStock.includes(req.usuario.rol) && sedeId && ajusteStock !== undefined && ajusteStock !== null) {
       const stockNuevo = parseInt(ajusteStock, 10);
       if (Number.isNaN(stockNuevo) || stockNuevo < 0) {
+        await transaction.rollback();
         return res.status(400).json({ error: 'La cantidad de existencias debe ser un número mayor o igual a 0.' });
       }
 
       const [stockSede] = await StockSede.findOrCreate({
         where: { productoId: id, sedeId },
-        defaults: { cantidad: 0 }
+        defaults: { cantidad: 0 },
+        transaction
       });
 
       const cantidadAnterior = parseInt(stockSede.cantidad, 10);
       if (cantidadAnterior !== stockNuevo) {
-        await stockSede.update({ cantidad: stockNuevo });
+        await stockSede.update({ cantidad: stockNuevo }, { transaction });
 
         await MovimientoInventario.create({
           productoId: id,
@@ -206,12 +277,19 @@ exports.updateProducto = async (req, res, next) => {
           cantidad: Math.abs(stockNuevo - cantidadAnterior),
           motivo: `Ajuste manual de inventario por ${req.usuario.rol}`,
           usuarioId: req.usuario.userId
-        });
+        }, { transaction });
       }
     }
 
     const valorAnterior = producto.toJSON();
-    await producto.update(productData);
+    await producto.update(productData, { transaction });
+    if (combo) {
+      await replaceComboComponents(id, comboData.normalized, transaction);
+    } else {
+      await ComboComponente.destroy({ where: { comboId: id }, transaction });
+      await recalculateParentComboCosts(id, transaction);
+    }
+    await transaction.commit();
 
     if (req.logAudit) {
       await req.logAudit({
@@ -225,7 +303,10 @@ exports.updateProducto = async (req, res, next) => {
 
     return res.json(producto);
   } catch (error) {
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
@@ -236,6 +317,16 @@ exports.deleteProducto = async (req, res, next) => {
 
     if (!producto) {
       return res.status(404).json({ error: 'Producto no encontrado.' });
+    }
+
+    const usadoEnCombo = await ComboComponente.findOne({
+      where: { productoId: id },
+      include: [{ model: Producto, as: 'combo', where: { activo: true }, attributes: ['nombre'] }]
+    });
+    if (usadoEnCombo) {
+      return res.status(400).json({
+        error: `No se puede eliminar porque forma parte del combo ${usadoEnCombo.combo.nombre}.`
+      });
     }
 
     const valorAnterior = producto.toJSON();
@@ -265,7 +356,10 @@ exports.getProductoByBarcode = async (req, res, next) => {
     const { codigo } = req.params;
     const { sedeId } = req.query; // Para incluir opcionalmente existencias en la sede del cajero
 
-    const include = [{ model: Categoria, as: 'categoria', attributes: ['nombre'] }];
+    const include = [
+      { model: Categoria, as: 'categoria', attributes: ['nombre'] },
+      comboInclude
+    ];
 
     if (sedeId) {
       include.push({
@@ -310,6 +404,11 @@ exports.getProductoByBarcode = async (req, res, next) => {
     }
 
     const responseData = producto.toJSON();
+    if (producto.esCombo && sedeId) {
+      const disponibilidad = await getComboAvailability(producto.id, sedeId);
+      responseData.disponibilidadCombo = disponibilidad.cantidad;
+      responseData.stocks = [{ cantidad: disponibilidad.cantidad }];
+    }
     if (autoDetectedImei) {
       responseData.autoDetectedImei = autoDetectedImei;
     }
@@ -328,6 +427,7 @@ exports.importarCSV = async (req, res, next) => {
   }
 
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const csvData = req.file.buffer.toString('utf8');
     const lines = csvData.split(/\r?\n/);
@@ -421,8 +521,10 @@ exports.importarCSV = async (req, res, next) => {
       productos: productosCreados
     });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
@@ -554,6 +656,7 @@ exports.updateCategoria = async (req, res, next) => {
 
 exports.deleteCategoria = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id } = req.params;
     const reasignarA = req.body?.reasignarA || req.query?.reasignarA || null;
@@ -609,9 +712,9 @@ exports.deleteCategoria = async (req, res, next) => {
       reasignados: productosAsociados
     });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
-
-

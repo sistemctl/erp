@@ -41,6 +41,7 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use('/api/config/restore', express.json({ limit: '50mb' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(auditLogMiddleware);
@@ -116,8 +117,10 @@ const startServer = async () => {
     console.log('Conectando y sincronizando base de datos PostgreSQL...');
     const isProd = process.env.NODE_ENV === 'production';
     // Producción: sync sin alter salvo DB_SYNC_ALTER=true (una vez al desplegar modelos nuevos).
-    const allowAlter = !isProd || process.env.DB_SYNC_ALTER === 'true';
+    const allowAlter = process.env.DB_SYNC_ALTER !== 'false' && (!isProd || process.env.DB_SYNC_ALTER === 'true');
     await sequelize.sync(allowAlter ? { alter: true } : {});
+    await require('./migrations/audit-2026-10').migrateAuditSchema(sequelize);
+    await require('./migrations/caja-facturas-2026-10').migrateCajaFacturasSchema(sequelize);
     console.log(allowAlter
       ? 'Base de datos sincronizada (con alter).'
       : 'Base de datos sincronizada (producción, sin alter).');

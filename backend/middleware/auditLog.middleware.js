@@ -13,7 +13,7 @@ module.exports = (req, res, next) => {
         valorNuevo: valorNuevo || null,
         sedeId: req.usuario ? req.usuario.sedeId : null,
         ip: req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress
-      });
+      }, { transaction: req.auditTransaction && !req.auditTransaction.finished ? req.auditTransaction : undefined });
     } catch (err) {
       console.error('Error al registrar log de auditoría:', err);
     }

@@ -2,6 +2,7 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
 const CuentaPorCobrar = sequelize.define('CuentaPorCobrar', {
+  anuladaAt: { type: DataTypes.DATE, allowNull: true },
   id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,

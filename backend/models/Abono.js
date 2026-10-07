@@ -2,6 +2,12 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
 const Abono = sequelize.define('Abono', {
+  cajaId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: { model: 'Cajas', key: 'id' }
+  },
+  anuladoAt: { type: DataTypes.DATE, allowNull: true },
   id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,

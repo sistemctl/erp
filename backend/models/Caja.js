@@ -2,6 +2,8 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
 const Caja = sequelize.define('Caja', {
+  arqueoDeclarado: { type: DataTypes.JSONB, allowNull: true },
+  ingresosAlCierre: { type: DataTypes.JSONB, allowNull: true },
   id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,

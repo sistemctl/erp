@@ -11,6 +11,7 @@ module.exports = (err, req, res, next) => {
   }
 
   res.status(status).json({
-    error: message
+    error: status >= 500 && process.env.NODE_ENV === 'production' ? 'Error interno del servidor.' : message,
+    ...(err.code ? { code: err.code } : {})
   });
 };

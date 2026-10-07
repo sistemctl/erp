@@ -1,3 +1,4 @@
+import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
@@ -381,4 +382,8 @@ export async function initTradeIn(container) {
   };
 
   await loadTradeIns();
+  watchDataChanges(container, ["trade-in","ventas"], async () => {
+    await loadTradeIns();
+  });
+
 }

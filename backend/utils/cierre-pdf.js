@@ -103,7 +103,7 @@ async function generarCierrePDF(caja, config = {}, detalle = { ventas: [], egres
       const totalIngresosDigitales = totalNequi + totalDaviplata + totalTarjeta + totalTransferencia;
       const totalVentasGlobal = totalEfectivoIngresos + totalIngresosDigitales;
 
-      const efectivoTeoricoEsperado = montoApertura + totalEfectivoIngresos - totalEgresos;
+      const efectivoTeoricoEsperado = montoApertura + Number(caja.ingresosAlCierre?.efectivo ?? totalEfectivoIngresos) - totalEgresos;
       const diferencia = parseFloat(caja.diferencia || 0);
 
       // Tabla de Desglose por Medio de Pago
@@ -190,7 +190,7 @@ async function generarCierrePDF(caja, config = {}, detalle = { ventas: [], egres
       }
 
       // Box 3: Detalle de Transacciones (si existe)
-      if (detalle.ventas?.length || detalle.egresos?.length || detalle.abonos?.length) {
+      if (detalle.ventas?.length || detalle.egresos?.length || detalle.abonos?.length || detalle.servicios?.length || detalle.reversos?.length) {
         doc.font('Helvetica-Bold').fontSize(11).fillColor(BLUE).text('2. LISTADO DETALLADO DE TRANSACCIONES DEL TURNO', innerX, y);
         y += 16;
 
@@ -286,6 +286,37 @@ async function generarCierrePDF(caja, config = {}, detalle = { ventas: [], egres
           }
           y += 10;
         }
+
+        // Cobros de servicios, abonos y reversos conservan su documento y fecha.
+        for (const [titulo, filas] of [
+          ['Cobros de reparaciones e instalaciones', detalle.servicios || []],
+          ['Abonos de cartera', detalle.abonos || []],
+          ['Reversos por anulación', detalle.reversos || []]
+        ]) {
+          if (!filas.length) continue;
+          if (y > PAGE_H - 100) { doc.addPage(); y = MARGIN; }
+          doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(`${titulo} (${filas.length})`, innerX, y);
+          y += 16;
+          for (const fila of filas) {
+            const monto = fila.monto ?? fila.totalCobrado;
+            const texto = `${fila.numeroFactura} · ${fila.medioPago || fila.metodo} · ${fmtMoney(monto)} · ${fmtDate(fila.createdAt)}` +
+              (fila.anuladoAt || fila.estado === 'anulada' ? ' · Anulado (ver reverso)' : '');
+            doc.font('Helvetica').fontSize(8).fillColor(INK);
+            const altura = doc.heightOfString(texto, { width: innerW - 8 });
+            if (y + altura > PAGE_H - 60) { doc.addPage(); y = MARGIN; }
+            doc.text(texto, innerX + 4, y, { width: innerW - 8 });
+            y += altura + 6;
+          }
+          y += 10;
+        }
+      }
+
+      for (const advertencia of detalle.advertencias || []) {
+        doc.font('Helvetica-Oblique').fontSize(8).fillColor(MUTED);
+        const altura = doc.heightOfString(advertencia, { width: innerW });
+        if (y + altura > PAGE_H - 60) { doc.addPage(); y = MARGIN; }
+        doc.text(advertencia, innerX, y, { width: innerW });
+        y += altura + 6;
       }
 
       // Pie de página firmas

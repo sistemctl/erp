@@ -1,3 +1,4 @@
+import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
@@ -669,4 +670,7 @@ export async function initRentabilidad(container) {
   });
 
   loadReparacionesReport();
+  watchDataChanges(container, ['ventas', 'reparaciones', 'instalaciones', 'caja', 'compras'], async () => {
+    await Promise.all([loadReparacionesReport(), loadVentasReport(), loadCajaReport()]);
+  });
 }

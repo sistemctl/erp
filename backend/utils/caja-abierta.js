@@ -1,4 +1,5 @@
 const { Caja, ConfiguracionSistema } = require('../models');
+const { assertCajaVigente } = require('./caja-fecha');
 
 /**
  * Caja compartida por sede (default true): una sesión abierta sirve a todos los usuarios.
@@ -21,7 +22,7 @@ function buildCajaAbiertaWhere(sedeId, usuarioId, compartida) {
   return where;
 }
 
-async function findCajaAbierta({ sedeId, usuarioId, transaction, include } = {}) {
+async function findCajaAbierta({ sedeId, usuarioId, transaction, include, permitirPendiente = false } = {}) {
   if (!sedeId) return { caja: null, compartida: true };
 
   const compartida = await isCajaCompartidaSede(transaction);
@@ -31,9 +32,11 @@ async function findCajaAbierta({ sedeId, usuarioId, transaction, include } = {})
     where,
     order: [['createdAt', 'DESC']],
     include: include || undefined,
-    transaction: transaction || undefined
+    transaction: transaction || undefined,
+    ...(transaction ? { lock: { level: transaction.LOCK.UPDATE, of: Caja } } : {})
   });
 
+  if (!permitirPendiente) assertCajaVigente(caja);
   return { caja, compartida };
 }
 

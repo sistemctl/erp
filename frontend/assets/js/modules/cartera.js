@@ -1,3 +1,4 @@
+import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
@@ -394,4 +395,8 @@ export async function initCartera(container) {
 
   await loadResumen();
   await loadCartera();
+  watchDataChanges(container, ["cartera","ventas","facturas","reparaciones","instalaciones"], async () => {
+    await Promise.all([loadResumen(), loadCartera()]);
+  });
+
 }

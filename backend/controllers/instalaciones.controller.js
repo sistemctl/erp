@@ -1,3 +1,5 @@
+const { nextDocumentNumber } = require('../utils/document-number');
+const { assertSedeAccess } = require('../utils/sede');
 const {
   OrdenInstalacion,
   MaterialInstalacion,
@@ -16,6 +18,7 @@ const {
 const { Op } = require('sequelize');
 const { resolveQuerySede, resolveActionSede } = require('../utils/sede');
 const { findCajaAbierta } = require('../utils/caja-abierta');
+const { pagosServicio } = require('../utils/caja-cobros');
 const { calcularFechaVencimientoCredito, getDiasPlazoCredito } = require('../utils/credito');
 
 const includeDetalle = [
@@ -108,6 +111,7 @@ exports.getOrdenes = async (req, res, next) => {
 exports.getOrdenById = async (req, res, next) => {
   try {
     const orden = await OrdenInstalacion.findByPk(req.params.id, { include: includeDetalle });
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
     if (!orden) {
       return res.status(404).json({ error: 'Orden de instalación no encontrada.' });
     }
@@ -119,6 +123,7 @@ exports.getOrdenById = async (req, res, next) => {
 
 exports.createOrden = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const {
       clienteId,
@@ -145,8 +150,7 @@ exports.createOrden = async (req, res, next) => {
       return res.status(400).json({ error: 'Debe indicar una sede.' });
     }
 
-    const count = await OrdenInstalacion.count({ transaction });
-    const numeroOrden = `IN-${String(count + 1).padStart(6, '0')}`;
+    const numeroOrden = await nextDocumentNumber(sequelize, 'IN', transaction);
     const svc = parseFloat(valorServicio) || 0;
     const cerrado = precioCerrado === true || precioCerrado === 'true' || precioCerrado === 1;
 
@@ -179,20 +183,25 @@ exports.createOrden = async (req, res, next) => {
     }
 
     const full = await OrdenInstalacion.findByPk(orden.id, { include: includeDetalle });
+    if (full) assertSedeAccess(req.usuario, full.sedeId);
     return res.status(201).json(full);
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
 exports.updateOrden = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const orden = await OrdenInstalacion.findByPk(req.params.id, {
       include: [{ model: MaterialInstalacion, as: 'materiales' }],
-      transaction
+      transaction, lock: { level: transaction.LOCK.UPDATE, of: OrdenInstalacion }
     });
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
     if (!orden) {
       await transaction.rollback();
       return res.status(404).json({ error: 'Orden de instalación no encontrada.' });
@@ -248,15 +257,19 @@ exports.updateOrden = async (req, res, next) => {
     await transaction.commit();
 
     const full = await OrdenInstalacion.findByPk(req.params.id, { include: includeDetalle });
+    if (full) assertSedeAccess(req.usuario, full.sedeId);
     return res.json(full);
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
 exports.addMaterial = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id } = req.params;
     const { productoId, cantidad, series } = req.body;
@@ -267,7 +280,8 @@ exports.addMaterial = async (req, res, next) => {
       return res.status(400).json({ error: 'Producto y cantidad válida son obligatorios.' });
     }
 
-    const orden = await OrdenInstalacion.findByPk(id, { transaction });
+    const orden = await OrdenInstalacion.findByPk(id, { transaction, lock: { level: transaction.LOCK.UPDATE, of: OrdenInstalacion } });
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
     if (!orden) {
       await transaction.rollback();
       return res.status(404).json({ error: 'Orden de instalación no encontrada.' });
@@ -382,14 +396,17 @@ exports.addMaterial = async (req, res, next) => {
     });
     return res.status(201).json(full);
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
 /** Ajusta cantidad y/o precio de venta de un material sin borrar la línea. */
 exports.updateMaterial = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id, mid } = req.params;
     const hasCantidad = Object.prototype.hasOwnProperty.call(req.body, 'cantidad');
@@ -400,7 +417,8 @@ exports.updateMaterial = async (req, res, next) => {
       return res.status(400).json({ error: 'Indique la cantidad o el precio de venta a actualizar.' });
     }
 
-    const orden = await OrdenInstalacion.findByPk(id, { transaction });
+    const orden = await OrdenInstalacion.findByPk(id, { transaction, lock: { level: transaction.LOCK.UPDATE, of: OrdenInstalacion } });
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
     if (!orden) {
       await transaction.rollback();
       return res.status(404).json({ error: 'Orden no encontrada.' });
@@ -520,16 +538,20 @@ exports.updateMaterial = async (req, res, next) => {
     });
     return res.json({ material: full, ...totales });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
 exports.removeMaterial = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id, mid } = req.params;
-    const orden = await OrdenInstalacion.findByPk(id, { transaction });
+    const orden = await OrdenInstalacion.findByPk(id, { transaction, lock: { level: transaction.LOCK.UPDATE, of: OrdenInstalacion } });
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
     if (!orden) {
       await transaction.rollback();
       return res.status(404).json({ error: 'Orden no encontrada.' });
@@ -594,15 +616,19 @@ exports.removeMaterial = async (req, res, next) => {
     await transaction.commit();
     return res.json({ message: 'Material revertido al inventario.', ...totales });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
 exports.reabrirOrden = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
-    const orden = await OrdenInstalacion.findByPk(req.params.id, { transaction });
+    const orden = await OrdenInstalacion.findByPk(req.params.id, { transaction, lock: { level: transaction.LOCK.UPDATE, of: OrdenInstalacion } });
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
     if (!orden) {
       await transaction.rollback();
       return res.status(404).json({ error: 'Orden de instalación no encontrada.' });
@@ -650,6 +676,7 @@ exports.reabrirOrden = async (req, res, next) => {
     }
 
     const full = await OrdenInstalacion.findByPk(orden.id, { include: includeDetalle });
+    if (full) assertSedeAccess(req.usuario, full.sedeId);
     const message = totalBloqueado
       ? `Orden reabierta. El total queda fijo en ${factura.total} porque la factura ${factura.numeroFactura} ya tiene recaudo.`
       : factura
@@ -657,21 +684,25 @@ exports.reabrirOrden = async (req, res, next) => {
         : 'Orden reabierta. Ya puede completar sus datos y materiales.';
     return res.json({ message, totalBloqueado, orden: full });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
 exports.cerrarOrden = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id } = req.params;
     const { modoCobro, pagos, metodoPago } = req.body || {};
 
     const orden = await OrdenInstalacion.findByPk(id, {
       include: [{ model: MaterialInstalacion, as: 'materiales' }],
-      transaction
+      transaction, lock: { level: transaction.LOCK.UPDATE, of: OrdenInstalacion }
     });
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
     if (!orden) {
       await transaction.rollback();
       return res.status(404).json({ error: 'Orden no encontrada.' });
@@ -683,6 +714,7 @@ exports.cerrarOrden = async (req, res, next) => {
     if (orden.estado === 'entregada') {
       await transaction.rollback();
       const full = await OrdenInstalacion.findByPk(orden.id, { include: includeDetalle });
+      if (full) assertSedeAccess(req.usuario, full.sedeId);
       return res.json(full);
     }
 
@@ -710,10 +742,9 @@ exports.cerrarOrden = async (req, res, next) => {
         });
       }
 
-      const diasPlazo = await getDiasPlazoCredito(ConfiguracionSistema);
+      const diasPlazo = await getDiasPlazoCredito(ConfiguracionSistema, transaction);
       const fechaVencimiento = calcularFechaVencimientoCredito(diasPlazo);
-      const countFacturas = await Factura.count({ transaction });
-      const numeroFactura = `FE-${String(countFacturas + 1).padStart(6, '0')}`;
+      const numeroFactura = await nextDocumentNumber(sequelize, 'FE', transaction);
       // Cobro de instalación: el total pactado es el valor final (sin desglose de IVA).
       const subtotal = totalNum;
       const iva = 0;
@@ -732,6 +763,7 @@ exports.cerrarOrden = async (req, res, next) => {
             });
           }
 
+          const pagosCaja = pagosServicio(totalNum, pagos, metodoPago || 'efectivo');
           if (pagos) {
             const efectivoRec = parseFloat(pagos.efectivo || 0);
             const nequiRec = parseFloat(pagos.nequi || 0);
@@ -778,6 +810,8 @@ exports.cerrarOrden = async (req, res, next) => {
 
           await Factura.create({
             numeroFactura,
+            cajaId: caja.id,
+            pagosCaja,
             ordenInstalacionId: id,
             clienteId: orden.clienteId,
             sedeId: orden.sedeId,
@@ -790,6 +824,7 @@ exports.cerrarOrden = async (req, res, next) => {
       } else {
           const factura = await Factura.create({
             numeroFactura,
+            pagosCaja: [],
             ordenInstalacionId: id,
             clienteId: orden.clienteId,
             sedeId: orden.sedeId,
@@ -857,9 +892,12 @@ exports.cerrarOrden = async (req, res, next) => {
     }
 
     const full = await OrdenInstalacion.findByPk(orden.id, { include: includeDetalle });
+    if (full) assertSedeAccess(req.usuario, full.sedeId);
     return res.json(full);
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };

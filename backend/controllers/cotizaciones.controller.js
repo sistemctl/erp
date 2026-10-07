@@ -1,3 +1,5 @@
+const { nextDocumentNumber } = require('../utils/document-number');
+const { assertSedeAccess } = require('../utils/sede');
 const { Cotizacion, ItemCotizacion, Cliente, Sede, Usuario, Producto, Venta, OrdenReparacion, ConfiguracionSistema, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const PDFDocument = require('pdfkit');
@@ -66,6 +68,7 @@ exports.getCotizacionById = async (req, res, next) => {
         }
       ]
     });
+    if (cotizacion) assertSedeAccess(req.usuario, cotizacion.sedeId);
 
     if (!cotizacion) {
       return res.status(404).json({ error: 'Cotización no encontrada.' });
@@ -80,9 +83,10 @@ exports.getCotizacionById = async (req, res, next) => {
 // --- CREAR COTIZACION ---
 exports.crearCotizacion = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { clienteId, items, fechaVencimiento, notas, sedeId: bodySedeId } = req.body;
-    let sedeId = bodySedeId || req.usuario.sedeId;
+    let sedeId = await resolveActionSede(bodySedeId, req.usuario, Sede, transaction);
 
     if (!sedeId) {
       sedeId = await resolveActionSede(null, req.usuario, Sede, transaction);
@@ -98,8 +102,7 @@ exports.crearCotizacion = async (req, res, next) => {
       return res.status(400).json({ error: 'Datos de cotización incompletos.' });
     }
 
-    const count = await Cotizacion.count({ transaction });
-    const numeroCotizacion = `COT-${String(count + 1).padStart(6, '0')}`;
+    const numeroCotizacion = await nextDocumentNumber(sequelize, 'COT', transaction);
 
     let total = 0;
     const itemsACrear = [];
@@ -146,8 +149,10 @@ exports.crearCotizacion = async (req, res, next) => {
 
     return res.status(201).json(cotizacion);
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
@@ -156,8 +161,12 @@ exports.aprobarCotizacion = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { ventaId, ordenReparacionId } = req.body;
+    if (!ventaId && !ordenReparacionId) {
+      return res.status(400).json({ error: 'Debe vincular una venta o reparación para aprobar la cotización.' });
+    }
 
     const cotizacion = await Cotizacion.findByPk(id);
+    if (cotizacion) assertSedeAccess(req.usuario, cotizacion.sedeId);
     if (!cotizacion) {
       return res.status(404).json({ error: 'Cotización no encontrada.' });
     }
@@ -168,6 +177,19 @@ exports.aprobarCotizacion = async (req, res, next) => {
 
     const valorAnterior = cotizacion.toJSON();
 
+    if (ventaId) {
+      const venta = await Venta.findByPk(ventaId);
+      if (!venta || String(venta.sedeId) !== String(cotizacion.sedeId) || String(venta.clienteId) !== String(cotizacion.clienteId)) {
+        return res.status(400).json({ error: 'La venta debe corresponder al cliente y sede de la cotización.' });
+      }
+    }
+    if (ordenReparacionId) {
+      const orden = await OrdenReparacion.findByPk(ordenReparacionId);
+      if (!orden || String(orden.sedeId) !== String(cotizacion.sedeId) || String(orden.clienteId) !== String(cotizacion.clienteId)) {
+        return res.status(400).json({ error: 'La reparación debe corresponder al cliente y sede de la cotización.' });
+      }
+    }
+
     await cotizacion.update({
       estado: 'aprobada',
       ventaId: ventaId || null,
@@ -176,7 +198,7 @@ exports.aprobarCotizacion = async (req, res, next) => {
 
     if (req.logAudit) {
       await req.logAudit({
-        accion: 'APROBAR_COTIZACION',
+        accion: 'UPDATE',
         modulo: 'Cotizacion',
         registroId: cotizacion.id,
         valorAnterior,
@@ -206,6 +228,7 @@ exports.generarCotizacionPDF = async (req, res, next) => {
         }
       ]
     });
+    if (cotizacion) assertSedeAccess(req.usuario, cotizacion.sedeId);
 
     if (!cotizacion) {
       return res.status(404).json({ error: 'Cotización no encontrada.' });

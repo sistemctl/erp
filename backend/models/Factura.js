@@ -2,6 +2,14 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
 
 const Factura = sequelize.define('Factura', {
+  cajaId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: { model: 'Cajas', key: 'id' }
+  },
+  // Desglose neto recibido al emitirla; null identifica facturas históricas.
+  pagosCaja: { type: DataTypes.JSONB, allowNull: true },
+  cajaRevertidaAt: { type: DataTypes.DATE, allowNull: true },
   id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,

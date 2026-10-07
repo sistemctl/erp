@@ -5,8 +5,8 @@ function calcularFechaVencimientoCredito(diasPlazo = 30) {
   return fecha;
 }
 
-async function getDiasPlazoCredito(ConfiguracionSistema) {
-  const config = await ConfiguracionSistema.findOne();
+async function getDiasPlazoCredito(ConfiguracionSistema, transaction) {
+  const config = await ConfiguracionSistema.findOne({ transaction });
   return parseInt(config?.diasPlazoCredito, 10) || 30;
 }
 

@@ -13,17 +13,18 @@ const {
 } = require('../models');
 const { Op } = require('sequelize');
 const { resolveQuerySede } = require('../utils/sede');
+const { assertSedeAccess } = require('../utils/sede');
 const { findCajaAbierta } = require('../utils/caja-abierta');
 
 // --- GET ALL CUENTAS POR COBRAR (CARTERA) ---
 exports.getCartera = async (req, res, next) => {
   try {
     const { sede, cliente, estado, morosidad } = req.query;
-    const where = {};
+    const where = { anuladaAt: null };
 
     const querySedeId = resolveQuerySede(sede, req.usuario);
     
-    const includeFacturaWhere = {};
+    const includeFacturaWhere = { estado: { [Op.ne]: 'anulada' } };
     if (querySedeId) {
       includeFacturaWhere.sedeId = querySedeId;
     }
@@ -100,10 +101,20 @@ exports.getCartera = async (req, res, next) => {
 // --- REGISTRAR ABONO A CUENTA POR COBRAR ---
 exports.registrarAbonoCartera = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id } = req.params;
     const { monto, metodo, observaciones, sedeId: bodySedeId } = req.body;
 
+    // Mismo orden de bloqueo que la anulación: factura, cartera, caja.
+    const referencia = await CuentaPorCobrar.findByPk(id, { transaction });
+    if (!referencia) return res.status(404).json({ error: 'Cuenta por cobrar no encontrada.' });
+    const factura = await Factura.findByPk(referencia.facturaId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (factura) assertSedeAccess(req.usuario, factura.sedeId);
+    if (!factura || factura.estado === 'anulada') {
+      return res.status(400).json({ error: 'No se pueden registrar abonos a una factura anulada.' });
+    }
+    await CuentaPorCobrar.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
     const cpc = await CuentaPorCobrar.findByPk(id, {
       include: [
         { model: Factura, as: 'factura' }
@@ -114,15 +125,17 @@ exports.registrarAbonoCartera = async (req, res, next) => {
     if (!cpc) {
       return res.status(404).json({ error: 'Cuenta por cobrar no encontrada.' });
     }
+    assertSedeAccess(req.usuario, cpc.factura?.sedeId);
+    if (cpc.anuladaAt) return res.status(400).json({ error: 'Esta cuenta por cobrar fue anulada.' });
 
-    const sedeId = bodySedeId || req.usuario.sedeId || cpc.factura?.sedeId;
+    const sedeId = cpc.factura?.sedeId;
     if (!sedeId) {
       return res.status(400).json({ error: 'Debe especificar la sede para registrar el abono de cartera.' });
     }
 
     const usuarioId = req.usuario.userId;
 
-    if (!monto || parseFloat(monto) <= 0 || !metodo) {
+    if (!Number.isFinite(Number(monto)) || Number(monto) <= 0 || !metodo) {
       return res.status(400).json({ error: 'Monto y método de pago requeridos.' });
     }
 
@@ -164,6 +177,7 @@ exports.registrarAbonoCartera = async (req, res, next) => {
 
     // 3. Crear registro de Abono
     const abono = await Abono.create({
+      cajaId: caja.id,
       cuentaPorCobrarId: cpc.id,
       usuarioId,
       monto: montoAbono,
@@ -183,7 +197,6 @@ exports.registrarAbonoCartera = async (req, res, next) => {
     }, { transaction });
 
     // 5. Actualizar la Factura y la Venta si aplica
-    const factura = await Factura.findByPk(cpc.facturaId, { transaction });
     if (factura) {
       const nuevoEstadoFactura = nuevoSaldoPendiente <= 0 ? 'pagada' : 'abono_parcial';
       await factura.update({ estado: nuevoEstadoFactura }, { transaction });
@@ -221,7 +234,7 @@ exports.registrarAbonoCartera = async (req, res, next) => {
 
     if (req.logAudit) {
       await req.logAudit({
-        accion: 'CARTERA_ABONO',
+        accion: 'UPDATE',
         modulo: 'Cartera',
         registroId: abono.id,
         valorAnterior,
@@ -231,8 +244,10 @@ exports.registrarAbonoCartera = async (req, res, next) => {
 
     return res.status(201).json({ message: 'Abono registrado correctamente.', abono, cuentaPorCobrar: cpc });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
@@ -247,12 +262,16 @@ exports.enviarRecordatorio = async (req, res, next) => {
     const cpc = await CuentaPorCobrar.findByPk(id, {
       include: [
         { model: Cliente, as: 'cliente', attributes: ['id', 'nombre', 'email'] },
-        { model: Factura, as: 'factura', attributes: ['numeroFactura', 'total'] }
+        { model: Factura, as: 'factura', attributes: ['numeroFactura', 'total', 'sedeId', 'estado'] }
       ]
     });
 
     if (!cpc) {
       return res.status(404).json({ error: 'Cuenta por cobrar no encontrada.' });
+    }
+    assertSedeAccess(req.usuario, cpc.factura?.sedeId);
+    if (cpc.anuladaAt || cpc.factura?.estado === 'anulada') {
+      return res.status(400).json({ error: 'Esta cuenta por cobrar fue anulada.' });
     }
     if (parseFloat(cpc.saldoPendiente) <= 0) {
       return res.status(400).json({ error: 'Esta cuenta no tiene saldo pendiente.' });

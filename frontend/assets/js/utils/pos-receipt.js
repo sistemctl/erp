@@ -7,6 +7,9 @@ const METODO_LABELS = {
   trade_in: 'Trade-in',
   credito: 'Ajuste crédito'
 };
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[char]));
 
 function fmtAmount(n) {
   return Math.round(parseFloat(n) || 0).toLocaleString('es-CO');
@@ -23,7 +26,7 @@ function fmtSiigoDate(d = new Date()) {
 }
 
 function fieldLine(label, value) {
-  return `<p class="pos-receipt__line"><span>${label} :</span> ${value || '—'}</p>`;
+  return `<p class="pos-receipt__line"><span>${escapeHtml(label)} :</span> ${escapeHtml(value || '—')}</p>`;
 }
 
 /**
@@ -46,13 +49,14 @@ export function renderPosReceipt({
   total = 0,
   cobrarIva = true,
   pagos = [],
+  cambio: cambioConfirmado,
   esCredito = false
 }) {
-  const empresa = (empresaConfig.empresa || 'TechStore Colombia').toUpperCase();
-  const nit = empresaConfig.nit || '';
-  const direccion = empresaConfig.direccion || sedeDireccion || '';
-  const telefono = empresaConfig.telefono || '';
-  const ciudad = sedeNombre || 'Colombia';
+  const empresa = escapeHtml((empresaConfig.empresa || 'TechStore Colombia').toUpperCase());
+  const nit = escapeHtml(empresaConfig.nit || '');
+  const direccion = escapeHtml(empresaConfig.direccion || sedeDireccion || '');
+  const telefono = escapeHtml(empresaConfig.telefono || '');
+  const ciudad = escapeHtml(sedeNombre || 'Colombia');
   const telLine = telefono ? `Tels: ${telefono}` : 'Tels: /';
 
   const cliente = clienteNombre || 'CONSUMIDOR FINAL';
@@ -61,19 +65,19 @@ export function renderPosReceipt({
 
   const itemRows = items.map((item) => `
     <tr>
-      <td class="pos-receipt__ct">${item.cantidad}</td>
-      <td class="pos-receipt__desc">${item.nombre}${item.imei ? `<br><span class="pos-receipt__imei">IMEI: ${item.imei}</span>` : ''}</td>
+      <td class="pos-receipt__ct">${escapeHtml(item.cantidad)}</td>
+      <td class="pos-receipt__desc">${escapeHtml(item.nombre)}${item.imei ? `<br><span class="pos-receipt__imei">IMEI: ${escapeHtml(item.imei)}</span>` : ''}</td>
       <td class="pos-receipt__val">${fmtAmount(item.subtotal)}</td>
     </tr>
   `).join('');
 
   const totalPagado = pagos.reduce((acc, p) => acc + (parseFloat(p.monto) || 0), 0);
-  const cambio = !esCredito && totalPagado > total ? totalPagado - total : 0;
+  const cambio = cambioConfirmado ?? (!esCredito && totalPagado > total ? totalPagado - total : 0);
 
   const pagosRows = pagos.length
     ? pagos.map((p) => `
         <div class="pos-receipt__pay-line">
-          <span>${METODO_LABELS[p.metodo] || p.metodo}</span>
+          <span>${escapeHtml(METODO_LABELS[p.metodo] || p.metodo)}</span>
           <span>${fmtAmount(p.monto)}</span>
         </div>
       `).join('')
@@ -96,7 +100,7 @@ export function renderPosReceipt({
 
       <hr class="pos-receipt__rule pos-receipt__rule--thick">
 
-      <p class="pos-receipt__title">Factura de venta : ${numeroFactura}</p>
+      <p class="pos-receipt__title">Factura de venta : ${escapeHtml(numeroFactura)}</p>
 
       ${fieldLine('Fecha', fmtSiigoDate(fecha))}
       ${fieldLine('Cliente', cliente)}
@@ -160,7 +164,7 @@ export function renderPosReceipt({
       <hr class="pos-receipt__rule pos-receipt__rule--thick">
 
       <footer class="pos-receipt__foot">
-        <p>Elaborado por: ${empresaConfig.empresa || empresa} / POS</p>
+        <p>Elaborado por: ${escapeHtml(empresaConfig.empresa || 'TechStore Colombia')} / POS</p>
         ${nit ? `<p>Nit: ${nit}</p>` : ''}
       </footer>
     </article>

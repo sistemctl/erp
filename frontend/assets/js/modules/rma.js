@@ -1,3 +1,4 @@
+import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { showToast } from '../utils/toast.js';
@@ -197,4 +198,8 @@ export async function initRma(container) {
       showToast('Error', err.message || 'No se pudo crear el reclamo.', 'error');
     }
   });
+  watchDataChanges(container, ["rma","ventas","series"], async () => {
+    await loadList(); renderTable();
+  });
+
 }

@@ -15,6 +15,10 @@ const ItemVenta = sequelize.define('ItemVenta', {
     type: DataTypes.UUID,
     allowNull: false
   },
+  numeroSerieId: {
+    type: DataTypes.UUID,
+    allowNull: true
+  },
   cantidad: {
     type: DataTypes.INTEGER,
     allowNull: false,
@@ -39,6 +43,10 @@ const ItemVenta = sequelize.define('ItemVenta', {
     type: DataTypes.DECIMAL(15, 2),
     allowNull: false,
     defaultValue: 0.00
+  },
+  ivaTotal: {
+    type: DataTypes.DECIMAL(15, 2),
+    allowNull: true
   },
   subtotal: {
     type: DataTypes.DECIMAL(15, 2),

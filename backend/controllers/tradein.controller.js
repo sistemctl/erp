@@ -36,6 +36,7 @@ exports.getTradeIns = async (req, res, next) => {
 // --- REGISTRAR TRADE-IN ---
 exports.registrarTradeIn = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { clienteId, tipoEquipo, marca, modelo, imei, estadoFisico, valoracion, precioVenta, ventaId, sedeId: bodySedeId } = req.body;
     const sedeId = await resolveActionSede(bodySedeId, req.usuario, Sede, transaction);
@@ -139,7 +140,9 @@ exports.registrarTradeIn = async (req, res, next) => {
 
     return res.status(201).json(tradeIn);
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };

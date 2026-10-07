@@ -1,8 +1,9 @@
 const jwt = require('jsonwebtoken');
 const { isDenied } = require('../utils/token-denylist');
+const { Usuario } = require('../models');
 require('dotenv').config();
 
-module.exports = (req, res, next) => {
+module.exports = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -16,10 +17,17 @@ module.exports = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.usuario = decoded; // { userId, nombre, rol, sedeId }
+    const usuario = await Usuario.findByPk(decoded.userId, {
+      attributes: ['id', 'nombre', 'rol', 'sedeId', 'activo', 'sessionVersion']
+    });
+    if (!usuario?.activo || Number(decoded.sessionVersion || 0) !== Number(usuario.sessionVersion || 0)) {
+      return res.status(401).json({ error: 'La sesión fue revocada. Inicie sesión nuevamente.', code: 'SESSION_REVOKED' });
+    }
+    req.usuario = { userId: usuario.id, nombre: usuario.nombre, rol: usuario.rol, sedeId: usuario.sedeId };
     req.token = token;
     next();
   } catch (error) {
+    if (!['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError'].includes(error.name)) return next(error);
     return res.status(401).json({ error: 'Sesión expirada o token inválido.' });
   }
 };

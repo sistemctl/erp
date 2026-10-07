@@ -477,6 +477,25 @@ docker compose exec erp node scripts/migrate-odoo.js --execute
 | Respaldo BD | `pg_dump` vía contenedor `postgres` | `pg_dump` local |
 | Subidas | Volumen `erp_uploads` | `backend/uploads/` |
 
+### Correcciones de auditoría de octubre de 2026
+
+El arranque del backend ejecuta una migración aditiva e idempotente para los campos de combos, sesiones, seriales vendidos y el IVA de cada artículo, y crea secuencias PostgreSQL para los consecutivos. Se ejecuta también en producción sin depender de `sync({ alter: true })`. Instala las dependencias del archivo de bloqueo con `npm --prefix backend ci` y reinicia el backend para activar el código y la migración.
+
+En Configuración, el respaldo JSON requiere una contraseña de al menos 12 caracteres. Contiene todas las tablas, contraseñas almacenadas como hashes y credenciales de configuración, cifradas con AES-256-GCM. La contraseña es necesaria para restaurar en otra instalación. Los archivos de `backend/uploads/` o del volumen `erp_uploads` se respaldan por separado. Los JSON antiguos incompletos se rechazan antes de modificar datos. Una restauración correcta invalida las sesiones existentes.
+
+Las ventas históricas sin IMEI vinculado, sin componentes de combo o con importes inconsistentes requieren conciliación antes de devolver o anular; el sistema responde con un error explicativo y conserva los registros.
+
+Pruebas de las correcciones:
+
+```powershell
+npm --prefix backend test
+npm --prefix backend run test:audit:integration
+npm --prefix backend run test:audit:frontend
+npm --prefix backend audit
+```
+
+La integración crea y elimina una base PostgreSQL temporal; el usuario de base de datos necesita permiso para crearla. Chromium debe estar instalado para la prueba de frontend (`npx playwright install chromium` desde `backend`). Detalles y evidencia en [CORRECCIONES.md](audits/2026-10-06/CORRECCIONES.md).
+
 ---
 
 ## Solución de problemas

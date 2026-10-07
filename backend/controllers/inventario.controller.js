@@ -1,11 +1,14 @@
-const { Producto, Categoria, Sede, StockSede, MovimientoInventario, Usuario, sequelize } = require('../models');
+const { Producto, Categoria, Sede, StockSede, NumeroSerie, MovimientoInventario, Usuario, sequelize } = require('../models');
+const { assertSedeAccess } = require('../utils/sede');
+const { randomUUID } = require('crypto');
 const { Op } = require('sequelize');
 const { resolveQuerySede } = require('../utils/sede');
+const { getComboAvailability } = require('../utils/combo');
 
 exports.getStockSede = async (req, res, next) => {
   try {
     const { sedeId } = req.query;
-    const querySedeId = sedeId || req.usuario.sedeId;
+    const querySedeId = resolveQuerySede(sedeId, req.usuario) || req.usuario.sedeId;
 
     if (!querySedeId) {
       return res.status(400).json({ error: 'Por favor, especifique una sede.' });
@@ -18,14 +21,25 @@ exports.getStockSede = async (req, res, next) => {
           model: Producto,
           as: 'producto',
           where: { activo: true },
-          attributes: ['id', 'nombre', 'codigoBarras', 'precioVenta', 'precioCosto', 'stockMinimo', 'tieneNumeroSerie', 'tieneIVA', 'esReacondicionado', 'esServicio', 'unidadMedida', 'categoriaId', 'imagenUrl'],
+          attributes: ['id', 'nombre', 'codigoBarras', 'descripcion', 'precioVenta', 'precioCosto', 'stockMinimo', 'tieneNumeroSerie', 'tieneIVA', 'esReacondicionado', 'esServicio', 'esCombo', 'unidadMedida', 'categoriaId', 'imagenUrl'],
           include: [{ model: Categoria, as: 'categoria', attributes: ['id', 'nombre'] }]
         }
       ],
       order: [[{ model: Producto, as: 'producto' }, 'nombre', 'ASC']]
     });
 
-    return res.json(stock);
+    const response = await Promise.all(stock.map(async (row) => {
+      const json = row.toJSON();
+      if (json.producto?.esCombo) {
+        const disponibilidad = await getComboAvailability(json.producto.id, querySedeId);
+        json.cantidad = disponibilidad.cantidad;
+        json.producto.componentes = disponibilidad.componentes;
+        json.producto.disponibilidadCombo = disponibilidad.cantidad;
+      }
+      return json;
+    }));
+
+    return res.json(response);
   } catch (error) {
     next(error);
   }
@@ -88,21 +102,47 @@ exports.getMovimientos = async (req, res, next) => {
 
 exports.trasladarMercancia = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
-    const { productoId, sedeOrigenId, sedeDestinoId, cantidad, motivo } = req.body;
+    const { productoId, sedeOrigenId, sedeDestinoId, cantidad: rawCantidad, motivo, series } = req.body;
+    const cantidad = Number(rawCantidad);
 
-    if (!productoId || !sedeOrigenId || !sedeDestinoId || !cantidad || cantidad <= 0) {
+    if (!productoId || !sedeOrigenId || !sedeDestinoId || !Number.isSafeInteger(cantidad) || cantidad <= 0) {
       return res.status(400).json({ error: 'Datos de traslado incompletos o cantidad inválida.' });
+    }
+    assertSedeAccess(req.usuario, sedeOrigenId);
+
+    const producto = await Producto.findByPk(productoId, { transaction });
+    if (!producto || producto.esCombo || producto.esServicio) {
+      await transaction.rollback();
+      return res.status(400).json({ error: producto?.esCombo
+        ? 'Los combos tienen stock calculado y no se pueden trasladar directamente.'
+        : 'Producto no encontrado.' });
     }
 
     if (sedeOrigenId === sedeDestinoId) {
       return res.status(400).json({ error: 'La sede origen y destino deben ser distintas.' });
     }
+    for (const id of [sedeOrigenId, sedeDestinoId].sort()) {
+      const sede = await Sede.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!sede) return res.status(400).json({ error: 'Una de las sedes no existe.' });
+    }
+
+    let seriales = [];
+    if (producto.tieneNumeroSerie) {
+      if (!Array.isArray(series) || series.length !== cantidad || new Set(series).size !== cantidad) {
+        return res.status(400).json({ error: 'Indique un IMEI o serial distinto por cada equipo trasladado.' });
+      }
+      seriales = await NumeroSerie.findAll({ where: { serie: { [Op.in]: series }, productoId,
+        sedeId: sedeOrigenId, estado: 'en_stock' }, transaction, lock: transaction.LOCK.UPDATE });
+      if (seriales.length !== cantidad) return res.status(400).json({ error: 'Los seriales deben estar disponibles en la sede origen.' });
+    }
 
     // 1. Obtener y verificar stock en origen
     const stockOrigen = await StockSede.findOne({
       where: { productoId, sedeId: sedeOrigenId },
-      transaction
+      transaction,
+      lock: transaction.LOCK.UPDATE
     });
 
     if (!stockOrigen || stockOrigen.cantidad < cantidad) {
@@ -112,7 +152,8 @@ exports.trasladarMercancia = async (req, res, next) => {
     // 2. Obtener o crear stock en destino
     let stockDestino = await StockSede.findOne({
       where: { productoId, sedeId: sedeDestinoId },
-      transaction
+      transaction,
+      lock: transaction.LOCK.UPDATE
     });
 
     if (!stockDestino) {
@@ -126,9 +167,10 @@ exports.trasladarMercancia = async (req, res, next) => {
     // 3. Modificar cantidades
     await stockOrigen.update({ cantidad: stockOrigen.cantidad - cantidad }, { transaction });
     await stockDestino.update({ cantidad: stockDestino.cantidad + cantidad }, { transaction });
+    for (const serie of seriales) await serie.update({ sedeId: sedeDestinoId }, { transaction });
 
     // 4. Registrar movimientos de inventario
-    const trasladoRef = sequelize.Sequelize.UUIDV4(); // UUID común para enlazar ambos movimientos
+    const trasladoRef = randomUUID();
 
     // Salida en origen
     await MovimientoInventario.create({
@@ -137,7 +179,7 @@ exports.trasladarMercancia = async (req, res, next) => {
       tipo: 'traslado_salida',
       cantidad: -cantidad,
       motivo: motivo || 'Traslado entre sedes',
-      referenciaId: null,
+      referenciaId: trasladoRef,
       usuarioId: req.usuario.userId
     }, { transaction });
 
@@ -148,7 +190,7 @@ exports.trasladarMercancia = async (req, res, next) => {
       tipo: 'traslado_entrada',
       cantidad,
       motivo: motivo || 'Traslado entre sedes',
-      referenciaId: null,
+      referenciaId: trasladoRef,
       usuarioId: req.usuario.userId
     }, { transaction });
 
@@ -166,7 +208,9 @@ exports.trasladarMercancia = async (req, res, next) => {
 
     return res.json({ message: 'Traslado realizado exitosamente.' });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };

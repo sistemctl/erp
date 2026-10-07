@@ -1,3 +1,4 @@
+const { nextDocumentNumber } = require('../utils/document-number');
 const { Op } = require('sequelize');
 const {
   ReclamoGarantia,
@@ -132,6 +133,7 @@ exports.listar = async (req, res, next) => {
 
 exports.crear = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const {
       serie,
@@ -173,8 +175,7 @@ exports.crear = async (req, res, next) => {
       dentro = new Date() <= fechaVence;
     }
 
-    const count = await ReclamoGarantia.count({ transaction });
-    const numero = `RMA-${String(count + 1).padStart(6, '0')}`;
+    const numero = await nextDocumentNumber(sequelize, 'RMA', transaction);
 
     const reclamo = await ReclamoGarantia.create({
       numero,
@@ -208,8 +209,10 @@ exports.crear = async (req, res, next) => {
 
     return res.status(201).json(reclamo);
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 

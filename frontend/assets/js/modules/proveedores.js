@@ -1,3 +1,4 @@
+import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { showConfirm } from '../utils/toast.js';
@@ -249,4 +250,8 @@ export async function initProveedores(container) {
       alert('Error al eliminar proveedor: ' + err.message);
     }
   }
+  watchDataChanges(container, ["proveedores","compras"], async () => {
+    await loadProveedores(); document.getElementById('prov-search-input')?.dispatchEvent(new Event('input'));
+  });
+
 }

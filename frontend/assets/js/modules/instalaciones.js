@@ -1,3 +1,4 @@
+import { watchDataChanges, syncSelectOptions } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
@@ -37,13 +38,13 @@ export async function initInstalaciones(container) {
   let filtroBuscar = '';
 
   async function loadData() {
-    ordenes = await apiFetch('/instalaciones').catch(() => []);
-    clientes = await apiFetch('/clientes').catch(() => []);
-    tecnicos = await apiFetch('/config/usuarios-operativos?rol=tecnico').catch(() => []);
-    productos = (await apiFetch('/productos').catch(() => [])).filter((p) => p.activo !== false && !p.esServicio);
-    if (needsSedePicker) {
-      sedes = await apiFetch('/config/sedes').catch(() => []);
-    }
+    [ordenes, clientes, tecnicos, productos, sedes] = await Promise.all([
+      apiFetch('/instalaciones').catch(() => ordenes),
+      apiFetch('/clientes').catch(() => clientes),
+      apiFetch('/config/usuarios-operativos?rol=tecnico').catch(() => tecnicos),
+      apiFetch('/productos').then(list => list.filter(p => p.activo !== false && !p.esServicio)).catch(() => productos),
+      needsSedePicker ? apiFetch('/config/sedes').catch(() => sedes) : Promise.resolve(sedes)
+    ]);
   }
 
   await loadData();
@@ -910,7 +911,10 @@ export async function initInstalaciones(container) {
     cantEl?.select?.();
   }
 
-  function openProductoPickerModal() {
+  async function openProductoPickerModal() {
+    try { productos = (await apiFetch('/productos')).filter(p => p.activo !== false && !p.esServicio); }
+    catch (error) { showToast('No se pudo actualizar el catálogo', error.message, 'error'); return; }
+    if (!container.isConnected || window.location.hash.split('?')[0] !== '#/instalaciones') return;
     if (!modalProd) return;
     pickerCategoriaId = '';
     const searchProd = document.getElementById('inst-producto-search');
@@ -1563,6 +1567,16 @@ export async function initInstalaciones(container) {
   document.addEventListener('keydown', instalacionesKeydownHandler);
 
   renderTabla();
+  watchDataChanges(container, ["productos","clientes","instalaciones"], async () => {
+    await loadData();
+    renderTabla();
+    syncSelectOptions(document.getElementById('inst-cliente'), clientes, c => `${c.nombre}${c.documento ? ` (${c.documento})` : ''}`);
+    syncSelectOptions(document.getElementById('inst-tecnico'), tecnicos);
+    if (document.getElementById('modal-inst-producto')?.classList.contains('show')) {
+      renderProductoPicker(document.getElementById('inst-producto-search')?.value || '');
+    }
+  }, { allowDuringModal: true });
+
 }
 
 export function destroyInstalaciones() {

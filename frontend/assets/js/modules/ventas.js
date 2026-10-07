@@ -1,3 +1,4 @@
+import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
@@ -793,4 +794,8 @@ export async function initVentas(container) {
   if (tabReparacionesEl) {
     tabReparacionesEl.addEventListener('shown.bs.tab', () => loadReparaciones());
   }
+  watchDataChanges(container, ["ventas","facturas","reparaciones"], async () => {
+    await loadVentasFiltradas();
+  });
+
 }

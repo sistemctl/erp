@@ -1,3 +1,4 @@
+import { watchDataChanges, notifyDataChange } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { showToast, showConfirm } from '../utils/toast.js';
@@ -174,8 +175,15 @@ export async function initInventario(container) {
                     <input type="date" id="mov-inv-hasta" class="form-control">
                   </div>
                   <div class="col-md-3">
-                    <label class="form-label" for="mov-inv-producto">Producto</label>
-                    <select id="mov-inv-producto" class="form-select"><option value="">Todos los productos</option></select>
+                    <label class="form-label" for="mov-inv-producto-buscar">Producto</label>
+                    <div class="input-group">
+                      <span class="input-group-text"><i class="ti ti-search" aria-hidden="true"></i></span>
+                      <input id="mov-inv-producto-buscar" type="search" class="form-control" list="mov-inv-productos" placeholder="Buscar nombre o código…" autocomplete="off" aria-describedby="mov-inv-producto-ayuda">
+                      <button id="mov-inv-producto-limpiar" type="button" class="btn btn-icon btn-outline-secondary" title="Todos los productos" aria-label="Limpiar filtro de producto" hidden><i class="ti ti-x" aria-hidden="true"></i></button>
+                    </div>
+                    <datalist id="mov-inv-productos"></datalist>
+                    <input id="mov-inv-producto" type="hidden" value="">
+                    <span id="mov-inv-producto-ayuda" class="visually-hidden">Escribe el nombre o código y elige una sugerencia. Deja vacío para consultar todos los productos.</span>
                   </div>
                   <div class="col-md-2">
                     <label class="form-label" for="mov-inv-tipo">Tipo</label>
@@ -313,6 +321,32 @@ export async function initInventario(container) {
                     </div>
                   </article>
 
+                  <article class="prod-form-card prod-combo-card d-none" id="sec-gestion-combo" aria-labelledby="prod-section-combo">
+                    <header class="prod-form-card__head prod-combo-card__head">
+                      <div>
+                        <h6 class="prod-form-card__title" id="prod-section-combo">Composición del combo</h6>
+                        <p class="prod-form-card__desc">Elige las piezas que se descontarán juntas al vender este producto.</p>
+                      </div>
+                      <span class="prod-combo-armables" id="prod-combo-armables">0 armables</span>
+                    </header>
+                    <div class="prod-combo-compose">
+                      <label class="visually-hidden" for="prod-combo-producto">Componente</label>
+                      <select id="prod-combo-producto" class="form-select">
+                        <option value="">Seleccionar componente…</option>
+                      </select>
+                      <label class="visually-hidden" for="prod-combo-cantidad">Cantidad</label>
+                      <input type="number" id="prod-combo-cantidad" class="form-control" min="1" step="1" value="1" aria-label="Cantidad del componente">
+                      <button type="button" id="btn-prod-combo-agregar" class="btn btn-primary">
+                        <i class="ti ti-plus" aria-hidden="true"></i><span>Agregar</span>
+                      </button>
+                    </div>
+                    <div class="prod-combo-list" id="prod-combo-list" aria-live="polite"></div>
+                    <footer class="prod-combo-summary">
+                      <span>Costo calculado</span>
+                      <strong id="prod-combo-costo">$0</strong>
+                    </footer>
+                  </article>
+
                   <article class="prod-form-card d-none" id="sec-gestion-seriales" aria-labelledby="prod-section-seriales">
                     <header class="prod-form-card__head">
                       <h6 class="prod-form-card__title" id="prod-section-seriales">Seriales en esta sede</h6>
@@ -354,7 +388,7 @@ export async function initInventario(container) {
 
                   <article class="prod-form-card prod-form-card--accent" aria-labelledby="prod-section-precios">
                     <header class="prod-form-card__head">
-                      <h6 class="prod-form-card__title" id="prod-section-precios">Precios e stock</h6>
+                      <h6 class="prod-form-card__title" id="prod-section-precios">Precios y stock</h6>
                     </header>
                     <div class="prod-price-grid">
                       <div class="prod-price-field">
@@ -438,6 +472,16 @@ export async function initInventario(container) {
                           </span>
                         </span>
                       </label>
+                      <label class="prod-form-prop">
+                        <input class="prod-form-prop__input" type="checkbox" id="prod-combo">
+                        <span class="prod-form-prop__box">
+                          <i class="ti ti-packages" aria-hidden="true"></i>
+                          <span class="prod-form-prop__text">
+                            <strong>Es combo</strong>
+                            <small>Vende varias piezas como un solo producto</small>
+                          </span>
+                        </span>
+                      </label>
                     </div>
                   </article>
 
@@ -518,6 +562,8 @@ export async function initInventario(container) {
               <div class="mb-3">
                 <label class="form-label">Motivo de Traslado</label>
                 <input type="text" id="traslado-motivo" class="form-control" required placeholder="Ej: Abastecimiento Sede Norte">
+                <label class="form-label mt-3" for="traslado-series">IMEI o seriales de los equipos</label>
+                <textarea id="traslado-series" class="form-control" rows="3" placeholder="Un serial por línea; obligatorio para equipos serializados"></textarea>
               </div>
             </div>
             <div class="modal-footer">
@@ -707,6 +753,7 @@ export async function initInventario(container) {
 
   let stockCache = [];
   let stockCacheSedeId = null;
+  let comboComponents = [];
   let filtroStock = soloStockBajo ? 'bajo' : 'todos';
   let filtroSerie = false;
   let filtroInterno = false;
@@ -714,6 +761,120 @@ export async function initInventario(container) {
   let movimientosInventarioPage = 1;
   let movimientosInventarioCache = [];
   let movimientosInventarioMeta = { page: 1, totalPages: 1, total: 0 };
+
+  const comboMoney = new Intl.NumberFormat('es-CO', {
+    style: 'currency', currency: 'COP', maximumFractionDigits: 0
+  });
+
+  const getComboCandidate = (productoId) => stockCache.find(
+    (row) => String(row.productoId) === String(productoId)
+  );
+
+  const renderComboPicker = () => {
+    const select = document.getElementById('prod-combo-producto');
+    if (!select) return;
+    const currentId = document.getElementById('producto-id')?.value || '';
+    const used = new Set(comboComponents.map((row) => String(row.productoId)));
+    const options = stockCache
+      .filter((row) => row.producto && !row.producto.esCombo && !row.producto.esServicio)
+      .filter((row) => String(row.productoId) !== String(currentId) && !used.has(String(row.productoId)))
+      .sort((a, b) => String(a.producto.nombre).localeCompare(String(b.producto.nombre), 'es'));
+    select.innerHTML = `<option value="">Seleccionar componente…</option>${options.map((row) =>
+      `<option value="${row.productoId}">${escapeHtml(row.producto.nombre)} · stock ${row.cantidad}</option>`
+    ).join('')}`;
+  };
+
+  const renderComboEditor = () => {
+    const list = document.getElementById('prod-combo-list');
+    const costEl = document.getElementById('prod-combo-costo');
+    const armablesEl = document.getElementById('prod-combo-armables');
+    if (!list || !costEl || !armablesEl) return;
+
+    let costo = 0;
+    let armables = Number.MAX_SAFE_INTEGER;
+    const hydrated = comboComponents.map((row) => {
+      const candidate = getComboCandidate(row.productoId);
+      const producto = candidate?.producto || row.producto || row;
+      const disponible = Number.parseInt(candidate?.cantidad ?? row.disponible ?? 0, 10) || 0;
+      const cantidad = Number.parseInt(row.cantidad, 10) || 1;
+      const precioCosto = Number.parseFloat(producto?.precioCosto ?? row.precioCosto) || 0;
+      costo += precioCosto * cantidad;
+      armables = Math.min(armables, Math.floor(disponible / cantidad));
+      return { ...row, producto, disponible, cantidad };
+    });
+
+    if (!hydrated.length) {
+      list.innerHTML = `
+        <div class="prod-combo-empty">
+          <i class="ti ti-box-multiple" aria-hidden="true"></i>
+          <span>Agrega al menos dos productos físicos.</span>
+        </div>`;
+      armables = 0;
+    } else {
+      list.innerHTML = hydrated.map((row, index) => `
+        <div class="prod-combo-row">
+          <span class="prod-combo-row__index">${index + 1}</span>
+          <span class="prod-combo-row__main">
+            <strong>${escapeHtml(row.producto?.nombre || 'Producto')}</strong>
+            <small>${row.producto?.tieneNumeroSerie ? 'Serial automático · ' : ''}${row.disponible} disponibles</small>
+          </span>
+          <label class="prod-combo-row__qty">
+            <span>×</span>
+            <input type="number" min="1" step="1" value="${row.cantidad}" data-combo-qty="${index}" aria-label="Cantidad de ${escapeHtml(row.producto?.nombre || 'componente')}">
+          </label>
+          <button type="button" class="btn btn-icon btn-ghost-danger btn-combo-remove" data-combo-remove="${index}" aria-label="Quitar ${escapeHtml(row.producto?.nombre || 'componente')}" title="Quitar componente">
+            <i class="ti ti-trash" aria-hidden="true"></i>
+          </button>
+        </div>
+      `).join('');
+    }
+
+    costEl.textContent = comboMoney.format(costo);
+    armablesEl.textContent = `${Math.max(0, armables)} armable${armables === 1 ? '' : 's'}`;
+    const costoInput = document.getElementById('prod-costo');
+    if (document.getElementById('prod-combo')?.checked && costoInput) costoInput.value = costo.toFixed(2);
+
+    list.querySelectorAll('[data-combo-qty]').forEach((input) => {
+      input.addEventListener('change', () => {
+        const index = Number.parseInt(input.dataset.comboQty, 10);
+        comboComponents[index].cantidad = Math.max(1, Number.parseInt(input.value, 10) || 1);
+        renderComboEditor();
+      });
+    });
+    list.querySelectorAll('[data-combo-remove]').forEach((button) => {
+      button.addEventListener('click', () => {
+        comboComponents.splice(Number.parseInt(button.dataset.comboRemove, 10), 1);
+        renderComboPicker();
+        renderComboEditor();
+      });
+    });
+    renderComboPicker();
+  };
+
+  const syncProductKind = () => {
+    const isCombo = !!document.getElementById('prod-combo')?.checked;
+    const comboSection = document.getElementById('sec-gestion-combo');
+    const serie = document.getElementById('prod-serie');
+    const servicio = document.getElementById('prod-servicio');
+    const costo = document.getElementById('prod-costo');
+    const minimo = document.getElementById('prod-minimo');
+    const unidad = document.getElementById('prod-unidad');
+    comboSection?.classList.toggle('d-none', !isCombo);
+    if (isCombo) {
+      if (serie) serie.checked = false;
+      if (servicio) servicio.checked = false;
+      if (minimo) minimo.value = '0';
+      if (unidad) unidad.value = 'und';
+      document.getElementById('sec-gestion-seriales')?.classList.add('d-none');
+    }
+    if (serie) serie.disabled = isCombo;
+    if (servicio) servicio.disabled = isCombo;
+    if (costo) costo.readOnly = isCombo;
+    if (minimo) minimo.readOnly = isCombo;
+    if (unidad) unidad.disabled = isCombo;
+    renderComboEditor();
+    syncProdUnidadHint();
+  };
 
   const formatMovimientoFecha = (fecha) => {
     const date = new Date(fecha);
@@ -741,15 +902,46 @@ export async function initInventario(container) {
     ajuste: 'Ajuste'
   })[tipo] || tipo;
 
-  const loadMovimientoProductos = async () => {
-    const select = document.getElementById('mov-inv-producto');
-    if (!select || select.dataset.loaded) return;
+  let movimientoProductos = [];
+  const productoSearch = document.getElementById('mov-inv-producto-buscar');
+  const productoFiltro = document.getElementById('mov-inv-producto');
+  const productoLimpiar = document.getElementById('mov-inv-producto-limpiar');
+  const syncMovimientoProducto = () => {
+    if (!productoSearch) return;
+    const query = productoSearch.value.trim().toLocaleLowerCase('es');
+    const matches = movimientoProductos.filter(producto => [producto.label, producto.nombre, producto.codigoBarras]
+      .some(value => value && String(value).toLocaleLowerCase('es') === query));
+    productoFiltro.value = matches.length === 1 ? matches[0].id : '';
+    productoSearch.setCustomValidity(query && matches.length !== 1 ? 'Elige un producto de las sugerencias o limpia el campo para ver todos.' : '');
+    productoLimpiar.hidden = !query;
+  };
+  productoSearch?.addEventListener('input', syncMovimientoProducto);
+  productoSearch?.addEventListener('change', syncMovimientoProducto);
+  productoLimpiar?.addEventListener('click', () => {
+    productoSearch.value = '';
+    syncMovimientoProducto();
+    productoSearch.focus();
+  });
+
+  const loadMovimientoProductos = async (force = false) => {
+    const list = document.getElementById('mov-inv-productos');
+    if (!list || (list.dataset.loaded && !force)) return;
     try {
       const productos = await apiFetch('/productos');
-      select.innerHTML = `<option value="">Todos los productos</option>${productos.map((producto) =>
-        `<option value="${producto.id}">${escapeHtml(producto.nombre)}${producto.codigoBarras ? ` · ${escapeHtml(producto.codigoBarras)}` : ''}</option>`
-      ).join('')}`;
-      select.dataset.loaded = '1';
+      const selectedId = productoFiltro.value;
+      movimientoProductos = productos.map(producto => ({ ...producto,
+        label: `${producto.nombre} · ${producto.codigoBarras || producto.id}` }));
+      const counts = new Map();
+      movimientoProductos.forEach(producto => counts.set(producto.label, (counts.get(producto.label) || 0) + 1));
+      movimientoProductos.forEach(producto => {
+        if (counts.get(producto.label) > 1) producto.label += ` · ${producto.id}`;
+      });
+      list.innerHTML = movimientoProductos.map(producto => `<option value="${escapeHtml(producto.label)}"></option>`).join('');
+      const selected = movimientoProductos.find(producto => producto.id === selectedId);
+      if (selected) productoSearch.value = selected.label;
+      else if (selectedId) productoSearch.value = '';
+      list.dataset.loaded = '1';
+      syncMovimientoProducto();
     } catch (error) {
       console.error('No se pudieron cargar los productos para el historial:', error);
     }
@@ -929,6 +1121,32 @@ export async function initInventario(container) {
   });
   document.getElementById('prod-codigo')?.addEventListener('input', syncProdFormMeta);
   document.getElementById('prod-unidad')?.addEventListener('change', syncProdUnidadHint);
+  document.getElementById('prod-combo')?.addEventListener('change', syncProductKind);
+  document.getElementById('btn-prod-combo-agregar')?.addEventListener('click', () => {
+    const select = document.getElementById('prod-combo-producto');
+    const cantidadInput = document.getElementById('prod-combo-cantidad');
+    const productoId = select?.value;
+    const cantidad = Math.max(1, Number.parseInt(cantidadInput?.value, 10) || 1);
+    if (!productoId) {
+      showToast('Falta componente', 'Selecciona un producto para agregar al combo.', 'warning');
+      select?.focus();
+      return;
+    }
+    const candidate = getComboCandidate(productoId);
+    if (!candidate?.producto || candidate.producto.esCombo || candidate.producto.esServicio) {
+      showToast('Componente inválido', 'Solo se pueden agregar productos físicos activos.', 'warning');
+      return;
+    }
+    comboComponents.push({
+      productoId,
+      cantidad,
+      producto: candidate.producto,
+      disponible: candidate.cantidad
+    });
+    if (cantidadInput) cantidadInput.value = '1';
+    renderComboEditor();
+    select?.focus();
+  });
 
   const updateEtiquetaPreview = () => {
     const preview = document.getElementById('etiqueta-preview');
@@ -1567,7 +1785,7 @@ export async function initInventario(container) {
           <td>
             <div class="inv-product">
               ${imgHtml}
-              <span class="inv-product__name" title="${prod.nombre}">${prod.nombre}</span>
+              <span class="inv-product__name" title="${prod.nombre}">${prod.nombre}${prod.esCombo ? ' <span class="inv-status inv-status--combo">Combo</span>' : ''}</span>
             </div>
           </td>
           <td class="inv-cat">${prod.categoria?.nombre || categoriasCache.find((c) => String(c.id) === String(prod.categoriaId))?.nombre || '—'}</td>
@@ -1575,7 +1793,11 @@ export async function initInventario(container) {
           <td class="text-end inv-money inv-money--sale">${formatter.format(prod.precioVenta)}</td>
           <td class="text-end"><span class="inv-qty ${statusClass}">${formatStockUnidad(stockQty, prod.unidadMedida)}</span></td>
           <td class="text-center">${statusBadge}</td>
-          <td class="text-center">${prod.tieneNumeroSerie ? '<span class="inv-status inv-status--imei">IMEI</span>' : '<span class="text-secondary">—</span>'}</td>
+          <td class="text-center">${prod.esCombo
+            ? '<span class="inv-status inv-status--combo">Combo</span>'
+            : prod.tieneNumeroSerie
+              ? '<span class="inv-status inv-status--imei">IMEI</span>'
+              : '<span class="text-secondary">—</span>'}</td>
           ${isAdminOrGerente ? `
             <td class="erp-td-actions">
               ${erpActions(`
@@ -1615,6 +1837,13 @@ export async function initInventario(container) {
       document.getElementById('prod-iva').checked = item.producto.tieneIVA;
       document.getElementById('prod-reacondicionado').checked = item.producto.esReacondicionado;
       document.getElementById('prod-servicio').checked = !!item.producto.esServicio;
+      document.getElementById('prod-combo').checked = !!item.producto.esCombo;
+      comboComponents = (item.producto.componentes || []).map((row) => ({
+        productoId: row.productoId || row.producto?.id,
+        cantidad: Number.parseInt(row.cantidad, 10) || 1,
+        producto: row.producto || row,
+        disponible: row.disponible
+      }));
       document.getElementById('prod-imagen-url').value = item.producto.imagenUrl || '';
       document.getElementById('prod-unidad').value = normalizeUnidadMedida(item.producto.unidadMedida);
       syncProdUnidadHint();
@@ -1624,8 +1853,13 @@ export async function initInventario(container) {
       stockInput.value = item.cantidad;
       document.getElementById('prod-stock-wrapper').classList.remove('d-none');
 
-      if (['admin', 'superadmin'].includes(usuario.rol)) {
+      if (item.producto.esCombo) {
+        stockInput.setAttribute('readonly', 'true');
+        adminNote.textContent = 'Disponibilidad calculada según el componente con menor stock.';
+        adminNote.classList.remove('d-none');
+      } else if (['admin', 'superadmin'].includes(usuario.rol)) {
         stockInput.removeAttribute('readonly');
+        adminNote.textContent = 'Como administrador puede ajustar o poner en 0 este valor.';
         adminNote.classList.remove('d-none');
       } else {
         stockInput.setAttribute('readonly', 'true');
@@ -1642,6 +1876,7 @@ export async function initInventario(container) {
       }
 
       document.getElementById('modal-producto-title').textContent = item.producto.nombre;
+      syncProductKind();
       syncProdFormMeta();
       modalProd.show();
     };
@@ -1702,6 +1937,12 @@ export async function initInventario(container) {
       await loadCategoriasList();
       syncStockChipCounts();
       applyInventarioFilters();
+      if (force && document.getElementById('mov-inv-productos')?.dataset.loaded) {
+        await loadMovimientoProductos(true);
+        if (document.getElementById('tab-inventario-movimientos')?.classList.contains('active')) {
+          await loadMovimientosInventario(movimientosInventarioPage);
+        }
+      }
     } catch (e) {
       console.error(e);
       stockCache = [];
@@ -2136,6 +2377,7 @@ export async function initInventario(container) {
 
     document.getElementById('btn-nuevo-producto').addEventListener('click', () => {
       document.getElementById('form-producto').reset();
+      comboComponents = [];
       document.getElementById('producto-id').value = '';
       document.getElementById('prod-stock-wrapper').classList.add('d-none');
       clearPendingSerials();
@@ -2147,6 +2389,7 @@ export async function initInventario(container) {
       if (catSearch) catSearch.value = '';
       closeProdCatPanel();
       syncProdFormMeta();
+      syncProductKind();
       syncProdUnidadHint();
       modalProd.show();
     });
@@ -2175,13 +2418,25 @@ export async function initInventario(container) {
         tieneIVA: document.getElementById('prod-iva').checked,
         esReacondicionado: document.getElementById('prod-reacondicionado').checked,
         esServicio: document.getElementById('prod-servicio').checked,
+        esCombo: document.getElementById('prod-combo').checked,
+        componentes: comboComponents.map((row) => ({
+          productoId: row.productoId,
+          cantidad: Number.parseInt(row.cantidad, 10) || 1
+        })),
         unidadMedida: normalizeUnidadMedida(document.getElementById('prod-unidad').value),
         imagenUrl: document.getElementById('prod-imagen-url').value.trim() || null,
-        ajusteStock: ['admin', 'superadmin'].includes(usuario.rol) ? parseStockInput(document.getElementById('prod-stock-actual').value) : null,
+        ajusteStock: !document.getElementById('prod-combo').checked && ['admin', 'superadmin'].includes(usuario.rol)
+          ? parseStockInput(document.getElementById('prod-stock-actual').value)
+          : null,
         sedeId
       };
       if (codigoRaw) {
         data.codigoBarras = codigoRaw;
+      }
+      if (data.esCombo && data.componentes.length < 2) {
+        showToast('Combo incompleto', 'Agrega al menos dos componentes antes de guardar.', 'warning');
+        document.getElementById('prod-combo-producto')?.focus();
+        return;
       }
 
       // Incluir texto pendiente del textarea al crear (por si no pulsó Agregar)
@@ -2239,7 +2494,7 @@ export async function initInventario(container) {
       try {
         const productos = await apiFetch('/productos');
         const selectProd = document.getElementById('traslado-producto');
-        selectProd.innerHTML = productos.map(p => `<option value="${p.id}">${p.nombre} (${p.codigoBarras})</option>`).join('');
+        selectProd.innerHTML = productos.filter((p) => !p.esCombo && !p.esServicio).map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.nombre)} (${escapeHtml(p.codigoBarras)})</option>`).join('');
 
         const selectOrig = document.getElementById('traslado-origen');
         const selectDest = document.getElementById('traslado-destino');
@@ -2250,6 +2505,8 @@ export async function initInventario(container) {
 
         // Seleccionar sede del usuario por defecto en origen
         selectOrig.value = usuario.sedeId;
+        if (!['admin', 'superadmin'].includes(usuario.rol)) selectOrig.disabled = true;
+        document.getElementById('traslado-series').value = '';
 
         modalTraslado.show();
       } catch (err) {
@@ -2265,7 +2522,8 @@ export async function initInventario(container) {
         sedeOrigenId: document.getElementById('traslado-origen').value,
         sedeDestinoId: document.getElementById('traslado-destino').value,
         cantidad: parseInt(document.getElementById('traslado-cantidad').value),
-        motivo: document.getElementById('traslado-motivo').value
+        motivo: document.getElementById('traslado-motivo').value,
+        series: document.getElementById('traslado-series').value.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean)
       };
 
       try {
@@ -2310,6 +2568,7 @@ export async function initInventario(container) {
         }
 
         alert(data.message);
+        notifyDataChange('/productos/importar-csv');
         modalCSV.hide();
         stockCacheSedeId = null;
         loadInventario({ force: true });
@@ -2321,6 +2580,10 @@ export async function initInventario(container) {
 
   // Primera carga
   await loadInventario();
+  watchDataChanges(container, ["productos","inventario","series","compras","ventas","instalaciones","reparaciones","rma"], async () => {
+    await loadInventario({ force: true });
+  });
+
 }
 
 export function destroyInventario() {

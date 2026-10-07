@@ -1,3 +1,4 @@
+const { assertSedeAccess } = require('../utils/sede');
 const {
   OrdenCompra,
   ItemOrdenCompra,
@@ -66,6 +67,7 @@ exports.getCompras = async (req, res, next) => {
 // --- CREATE ORDEN COMPRA ---
 exports.createCompra = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { proveedorId, fechaEsperada, observaciones, items, sedeId: bodySedeId } = req.body;
     const sedeId = await resolveActionSede(bodySedeId, req.usuario, Sede, transaction);
@@ -84,6 +86,12 @@ exports.createCompra = async (req, res, next) => {
     for (const item of items) {
       if (!item.productoId || !item.cantidadPedida || parseFloat(item.precioUnitario) <= 0) {
         throw new Error('Artículos incompletos o precio unitario inválido.');
+      }
+      const producto = await Producto.findByPk(item.productoId, { transaction });
+      if (!producto || producto.esCombo) {
+        throw new Error(producto?.esCombo
+          ? `El combo ${producto.nombre} no se puede comprar directamente; compre sus componentes.`
+          : 'Uno de los productos de la compra no existe.');
       }
       total += parseInt(item.cantidadPedida) * parseFloat(item.precioUnitario);
     }
@@ -129,14 +137,17 @@ exports.createCompra = async (req, res, next) => {
 
     return res.status(201).json(orden);
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
 // --- RECEPCIÓN DE MERCANCÍA (AFECTA STOCK) ---
 exports.recibirCompra = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id } = req.params;
     const { items } = req.body; // array of { productoId, cantidadRecibida }
@@ -147,8 +158,9 @@ exports.recibirCompra = async (req, res, next) => {
 
     const orden = await OrdenCompra.findByPk(id, {
       include: [{ model: ItemOrdenCompra, as: 'items' }],
-      transaction
+      transaction, lock: { level: transaction.LOCK.UPDATE, of: OrdenCompra }
     });
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
 
     if (!orden) {
       return res.status(404).json({ error: 'Orden de compra no encontrada.' });
@@ -257,14 +269,17 @@ exports.recibirCompra = async (req, res, next) => {
 
     return res.json({ message: 'Mercancía recibida e inventario actualizado con éxito.', estado: orden.estado });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
 // --- REGISTRAR ABONO / PAGO A CUENTAS POR PAGAR ---
 exports.registrarPagoCompra = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id } = req.params;
     const { monto, fuenteFondos, pagadoPor, referencia } = req.body;
@@ -278,7 +293,8 @@ exports.registrarPagoCompra = async (req, res, next) => {
       return res.status(400).json({ error: 'Origen del dinero no válido.' });
     }
 
-    const orden = await OrdenCompra.findByPk(id, { transaction });
+    const orden = await OrdenCompra.findByPk(id, { transaction, lock: { level: transaction.LOCK.UPDATE, of: OrdenCompra } });
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
     if (!orden) {
       return res.status(404).json({ error: 'Orden de compra no encontrada.' });
     }
@@ -363,7 +379,7 @@ exports.registrarPagoCompra = async (req, res, next) => {
 
     if (req.logAudit) {
       await req.logAudit({
-        accion: 'PAGO_COMPRA',
+        accion: 'UPDATE',
         modulo: 'Compras',
         registroId: id,
         valorNuevo: {
@@ -393,13 +409,16 @@ exports.registrarPagoCompra = async (req, res, next) => {
       estadoPago: nuevoEstadoPago
     });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
 exports.devolverMercancia = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id } = req.params;
     const { items } = req.body; // array of { productoId, cantidadDevolver, series }
@@ -410,8 +429,9 @@ exports.devolverMercancia = async (req, res, next) => {
 
     const orden = await OrdenCompra.findByPk(id, {
       include: [{ model: ItemOrdenCompra, as: 'items' }],
-      transaction
+      transaction, lock: { level: transaction.LOCK.UPDATE, of: OrdenCompra }
     });
+    if (orden) assertSedeAccess(req.usuario, orden.sedeId);
 
     if (!orden) {
       return res.status(404).json({ error: 'Orden de compra no encontrada.' });
@@ -526,8 +546,9 @@ exports.devolverMercancia = async (req, res, next) => {
 
     return res.json({ message: 'Mercancía devuelta e inventario actualizado con éxito.', estado: orden.estado });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
-

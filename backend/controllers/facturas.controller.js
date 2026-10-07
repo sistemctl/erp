@@ -1,3 +1,6 @@
+const { devolverComponentesCombo } = require('../utils/venta-inventario');
+const { httpError } = require('../utils/http-error');
+const { assertSedeAccess } = require('../utils/sede');
 const {
   Factura,
   Venta,
@@ -18,12 +21,13 @@ const {
   CuentaPorCobrar,
   Abono,
   sequelize,
-  ConfiguracionSistema
+  ConfiguracionSistema,
+  ItemVentaComponente
 } = require('../models');
 const { Op } = require('sequelize');
 const PDFDocument = require('pdfkit');
 const { resolveQuerySede } = require('../utils/sede');
-const { findCajaAbierta } = require('../utils/caja-abierta');
+const { revertirCobrosFactura } = require('../utils/caja-cobros');
 const { generarFacturaPDF } = require('../utils/factura-pdf');
 const emailService = require('../services/email.service');
 
@@ -121,6 +125,7 @@ exports.getFacturaById = async (req, res, next) => {
         }
       ]
     });
+    if (factura) assertSedeAccess(req.usuario, factura.sedeId);
 
     if (!factura) {
       return res.status(404).json({ error: 'Factura no encontrada.' });
@@ -135,9 +140,11 @@ exports.getFacturaById = async (req, res, next) => {
 // --- ANULACIÓN POR NOTA DE CRÉDITO ---
 exports.anularFactura = async (req, res, next) => {
   const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id } = req.params;
-    const factura = await Factura.findByPk(id, { transaction });
+    const factura = await Factura.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (factura) assertSedeAccess(req.usuario, factura.sedeId);
 
     if (!factura) {
       return res.status(404).json({ error: 'Factura no encontrada.' });
@@ -149,6 +156,7 @@ exports.anularFactura = async (req, res, next) => {
 
     // Bloquear anulación si ya hubo devoluciones parciales/totales del cliente
     if (factura.ventaId) {
+      await Venta.findByPk(factura.ventaId, { transaction, lock: transaction.LOCK.UPDATE });
       const ventaPrev = await Venta.findByPk(factura.ventaId, {
         attributes: ['id', 'devolucionEstado'],
         transaction
@@ -163,6 +171,7 @@ exports.anularFactura = async (req, res, next) => {
 
     const valorAnterior = factura.toJSON();
 
+    await revertirCobrosFactura(factura, transaction);
     // 1. Marcar Factura como anulada
     await factura.update({ estado: 'anulada' }, { transaction });
 
@@ -170,19 +179,27 @@ exports.anularFactura = async (req, res, next) => {
     if (factura.ventaId) {
       const venta = await Venta.findByPk(factura.ventaId, {
         include: [
-          { model: ItemVenta, as: 'items', include: [{ model: Producto, as: 'producto' }] },
+          { model: ItemVenta, as: 'items', include: [{ model: Producto, as: 'producto' }, { model: ItemVentaComponente, as: 'componentesVendidos' }] },
           { model: PagoVenta, as: 'pagos' }
         ],
         transaction
       });
 
       if (venta) {
-        await venta.update({ estado: 'anulada' }, { transaction });
+        await venta.update({ estado: 'anulada', saldoPendiente: 0 }, { transaction });
 
         // Devolver productos al Stock de la Sede y registrar movimientos
         for (const item of venta.items) {
+          if (item.componentesVendidos?.length) {
+            await devolverComponentesCombo({ item, cantidad: item.cantidad, yaDev: 0, venta,
+              devolucion: { id: factura.id }, numero: factura.numeroFactura, usuarioId: req.usuario.userId, transaction });
+            continue;
+          }
+          if (item.producto?.esServicio) continue;
+          if (item.producto?.esCombo) throw httpError(409, 'La venta no conserva los componentes originales del combo.');
           const stock = await StockSede.findOne({
             where: { productoId: item.productoId, sedeId: factura.sedeId },
+            lock: transaction.LOCK.UPDATE,
             transaction
           });
 
@@ -200,69 +217,16 @@ exports.anularFactura = async (req, res, next) => {
             usuarioId: req.usuario.userId
           }, { transaction });
 
-          // Si el producto tiene número de serie, devolver series a stock
-          if (item.producto.tieneNumeroSerie) {
-            // Buscamos las series vendidas en esta venta
-            // En una implementación simplificada, buscamos las series asociadas a esta venta
-            // Si el IMEI está en ItemVenta o en NumeroSerie:
-            // Busquemos en NumeroSerie por clienteId y productoId con fechaVenta reciente, o simplemente buscar por IMEI si lo tuviéramos
-            // Para ser precisos, podemos buscar series vendidas
-            // Buscamos cualquier serie asociada que tenga estado 'vendido' y coincida con el producto
-            // Nota: En pos.js guardamos el IMEI en NumeroSerie al procesar la venta
-            const series = await NumeroSerie.findAll({
-              where: {
-                productoId: item.productoId,
-                clienteId: factura.clienteId || null,
-                estado: 'vendido'
-              },
-              order: [['updatedAt', 'DESC']],
-              limit: item.cantidad,
-              transaction
-            });
-
-            for (const s of series) {
-              await s.update({
-                estado: 'en_stock',
-                clienteId: null,
-                fechaVenta: null
-              }, { transaction });
+          if (item.producto?.tieneNumeroSerie) {
+            if (!item.numeroSerieId) throw httpError(409, 'Esta venta antigua no conserva el IMEI original. Debe regularizarse antes de anular.');
+            const serie = await NumeroSerie.findByPk(item.numeroSerieId, { transaction, lock: transaction.LOCK.UPDATE });
+            if (!serie || serie.estado !== 'vendido' || String(serie.productoId) !== String(item.productoId)) {
+              throw httpError(409, 'El serial original no puede reintegrarse.');
             }
+            await serie.update({ estado: 'en_stock', clienteId: null, fechaVenta: null }, { transaction });
           }
         }
 
-        // Revertir flujos de dinero de la Caja Abierta
-        const { caja } = await findCajaAbierta({
-          sedeId: factura.sedeId,
-          usuarioId: req.usuario.userId,
-          transaction
-        });
-
-        if (caja) {
-          let efectivo = 0, nequi = 0, daviplata = 0, tarjeta = 0, transferencia = 0;
-          for (const pago of venta.pagos) {
-            const monto = parseFloat(pago.monto);
-            if (pago.metodo === 'efectivo') efectivo += monto;
-            else if (pago.metodo === 'nequi') nequi += monto;
-            else if (pago.metodo === 'daviplata') daviplata += monto;
-            else if (pago.metodo === 'tarjeta') tarjeta += monto;
-            else if (pago.metodo === 'transferencia') transferencia += monto;
-          }
-
-          await caja.update({
-            totalVentasEfectivo: Math.max(0, parseFloat(caja.totalVentasEfectivo) - efectivo),
-            totalVentasNequi: Math.max(0, parseFloat(caja.totalVentasNequi) - nequi),
-            totalVentasDaviplata: Math.max(0, parseFloat(caja.totalVentasDaviplata) - daviplata),
-            totalVentasTarjeta: Math.max(0, parseFloat(caja.totalVentasTarjeta) - tarjeta),
-            totalVentasTransferencia: Math.max(0, parseFloat(caja.totalVentasTransferencia) - transferencia)
-          }, { transaction });
-        }
-
-        // Anular cuentas por cobrar si es crédito
-        const cpc = await CuentaPorCobrar.findOne({ where: { facturaId: factura.id }, transaction });
-        if (cpc) {
-          await Abono.destroy({ where: { cuentaPorCobrarId: cpc.id }, transaction });
-          await cpc.destroy({ transaction });
-        }
       }
     }
 
@@ -280,6 +244,7 @@ exports.anularFactura = async (req, res, next) => {
         for (const rep of orden.repuestos) {
           const stock = await StockSede.findOne({
             where: { productoId: rep.productoId, sedeId: factura.sedeId },
+            lock: transaction.LOCK.UPDATE,
             transaction
           });
 
@@ -300,11 +265,35 @@ exports.anularFactura = async (req, res, next) => {
       }
     }
 
+    if (factura.ordenInstalacionId) {
+      const orden = await OrdenInstalacion.findByPk(factura.ordenInstalacionId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (orden) {
+        await orden.update({ estado: 'cancelada' }, { transaction });
+        const materiales = await MaterialInstalacion.findAll({ where: { ordenId: orden.id }, transaction });
+        for (const material of materiales) {
+          const stock = await StockSede.findOne({ where: { productoId: material.productoId, sedeId: factura.sedeId },
+            transaction, lock: transaction.LOCK.UPDATE });
+          if (stock) await stock.update({ cantidad: stock.cantidad + material.cantidad }, { transaction });
+          if (material.series?.length) {
+            const seriales = await NumeroSerie.findAll({ where: { productoId: material.productoId,
+              sedeId: factura.sedeId, serie: { [Op.in]: material.series } }, transaction, lock: transaction.LOCK.UPDATE });
+            if (seriales.length !== material.cantidad || seriales.some((serie) => serie.estado !== 'instalado')) {
+              throw httpError(409, 'Los seriales originales de la instalación no pueden reintegrarse.');
+            }
+            for (const serie of seriales) await serie.update({ estado: 'en_stock', clienteId: null, fechaVenta: null }, { transaction });
+          }
+          await MovimientoInventario.create({ productoId: material.productoId, sedeId: factura.sedeId, tipo: 'entrada',
+            cantidad: material.cantidad, motivo: `Materiales devueltos por anulación de Factura #${factura.numeroFactura} (Instalación)`,
+            referenciaId: factura.id, usuarioId: req.usuario.userId }, { transaction });
+        }
+      }
+    }
+
     await transaction.commit();
 
     if (req.logAudit) {
       await req.logAudit({
-        accion: 'ANULACION',
+        accion: 'UPDATE',
         modulo: 'Facturas',
         registroId: id,
         valorAnterior,
@@ -314,8 +303,10 @@ exports.anularFactura = async (req, res, next) => {
 
     return res.json({ message: 'Factura y transacciones asociadas anuladas con éxito.' });
   } catch (error) {
-    await transaction.rollback();
+    if (!transaction.finished) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transaction.finished) await transaction.rollback();
   }
 };
 
@@ -365,6 +356,7 @@ exports.getFacturaPdf = async (req, res, next) => {
         }
       ]
     });
+    if (factura) assertSedeAccess(req.usuario, factura.sedeId);
 
     if (!factura) {
       return res.status(404).json({ error: 'Factura no encontrada.' });
@@ -387,6 +379,9 @@ exports.getFacturaPdf = async (req, res, next) => {
 exports.enviarFacturaEmail = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const factura = await Factura.findByPk(id);
+    if (!factura) return res.status(404).json({ error: 'Factura no encontrada.' });
+    assertSedeAccess(req.usuario, factura.sedeId);
     const result = await emailService.enviarFacturaPorEmail(id);
     if (result.skipped) {
       return res.status(400).json({ error: 'El envío por correo está desactivado en configuración.' });

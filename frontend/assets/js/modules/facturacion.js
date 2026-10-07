@@ -1,3 +1,4 @@
+import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { getUsuario } from '../auth.js';
 import { showConfirm, showToast } from '../utils/toast.js';
@@ -177,8 +178,7 @@ export async function initFacturacion(container) {
   renderFacturasTable(facturas);
 
   // Filters Submit
-  document.getElementById('form-filtros-facturacion').addEventListener('submit', async (e) => {
-    e.preventDefault();
+  async function loadFacturasFiltradas() {
     tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4"><div class="spinner-border text-primary" role="status"></div></td></tr>`;
     
     try {
@@ -189,7 +189,7 @@ export async function initFacturacion(container) {
       const hasta = document.getElementById('filtro-hasta').value;
 
       const params = [];
-      if (buscar) params.push(`buscar=${buscar}`);
+      if (buscar) params.push(`buscar=${encodeURIComponent(buscar)}`);
       if (estado) params.push(`estado=${estado}`);
       if (sede) params.push(`sede=${sede}`);
       if (desde) params.push(`desde=${desde}`);
@@ -201,6 +201,10 @@ export async function initFacturacion(container) {
     } catch (err) {
       tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
     }
+  }
+  document.getElementById('form-filtros-facturacion').addEventListener('submit', (e) => {
+    e.preventDefault();
+    loadFacturasFiltradas();
   });
 
   // Open Details Modal
@@ -302,4 +306,8 @@ export async function initFacturacion(container) {
       alert('Error al anular factura: ' + err.message);
     }
   }
+  watchDataChanges(container, ["facturas","ventas","reparaciones","instalaciones","cartera"], async () => {
+    await loadFacturasFiltradas();
+  });
+
 }

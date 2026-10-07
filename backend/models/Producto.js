@@ -47,6 +47,11 @@ const Producto = sequelize.define('Producto', {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
+  /** Combo virtual: se vende como una línea y descuenta sus componentes. */
+  esCombo: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
   /**
    * Unidad de medida del stock y precios.
    * `m` = 1 unidad de inventario equivale a 1 metro (cable, etc.).

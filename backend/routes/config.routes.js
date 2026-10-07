@@ -26,6 +26,7 @@ router.put('/sistema', authMiddleware, rolesMiddleware(['superadmin']), configCo
 router.post('/sistema/probar-smtp', authMiddleware, rolesMiddleware(['superadmin']), configController.probarSmtp);
 
 router.get('/backup', authMiddleware, rolesMiddleware(['superadmin']), configController.exportarBackup);
+router.post('/backup', authMiddleware, rolesMiddleware(['superadmin']), configController.exportarBackup);
 router.post('/restore', authMiddleware, rolesMiddleware(['superadmin']), configController.importarBackup);
 
 module.exports = router;
