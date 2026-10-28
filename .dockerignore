@@ -1,5 +1,7 @@
 # Dependencias y artefactos locales
 **/node_modules
+backend/dist
+frontend/dist
 **/.env
 **/.env.*
 !**/.env.example

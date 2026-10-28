@@ -1,0 +1,25 @@
+const {convert}=require('./ts-conversion-tools.cjs');const dom=require('./ts-dom-conversion.cjs');
+convert('modules/compras',s=>{
+s=dom(s);s=`import { apiRequired } from '../utils/api-required.js';
+import type { ProductoDTO, ProveedorDTO, SedeDTO } from '../../../../shared/contracts.js';
+import type { PagoCompraColumns } from '../types/model-columns.js';
+import type { CompraDTO, CompraCart, RecepcionCompra, DevolucionCompra } from '../types/purchases.js';
+`+s;
+for(const [n,t] of [['compras','CompraDTO'],['proveedores','ProveedorDTO'],['productos','ProductoDTO'],['sedes','SedeDTO'],['cartItems','CompraCart'],['pickerMatches','ProductoDTO']]) s=s.replace('let '+n+' = []','let '+n+': '+t+'[] = []');
+for(const [url,t] of [['/compras','CompraDTO[]'],['/proveedores','ProveedorDTO[]'],['/productos','ProductoDTO[]'],['/config/sedes','SedeDTO[]']]) s=s.replaceAll(`apiFetch('${url}')`,`apiRequired<${t}>('${url}')`);
+s=s.replace('const found = await apiFetch(', 'const found = await apiRequired<ProductoDTO>(').replace('const res = await apiFetch(', 'const res = await apiRequired<{message: string}>(');
+s=s.replace('let comprasKeydownHandler = null','let comprasKeydownHandler: ((event: KeyboardEvent) => void) | null = null').replace('let modalSelectedProd = null','let modalSelectedProd: ProductoDTO | null = null').replace('FUENTE_FONDOS_LABELS = {','FUENTE_FONDOS_LABELS: Record<string,string> = {');
+for(const [n,param] of [['badgeOrigen',"fuente: string, monto: number | null, extraTitle = ''"],['renderOrigenPagoCell','pagos: PagoCompraColumns[] | undefined, estadoPago: string'],['renderHistorialPagosHtml','pagos: PagoCompraColumns[] | undefined'],['estadoMercPill','estado: string'],['estadoPagoPill','estadoPago: string'],['cppMoraMeta','fechaVencimientoPago: string | null'],['escapeOcHtml','value: unknown'],['normalizeOcSearch','value: unknown'],['findProductoByBarcode','barcode: string'],['productoCategoriaNombre','prod: ProductoDTO'],['productoCategoriaId','prod: ProductoDTO'],['categoriaChipLabel','nombre: string'],['productoSearchHaystack','prod: ProductoDTO'],['scoreProductoMatch','prod: ProductoDTO, queryNorm: string, tokens: string[]'],['highlightOcMatch','text: string, query: string'],['highlightPickerItem','idx: number'],['renderProductoPickerRows','matches: ProductoDTO[], query: string'],['selectProductoEnFormulario','prod: ProductoDTO'],['chooseProductoFromPicker','prod: ProductoDTO'],['aplicarCodigoEscaneado','codigoRaw: string'],['openRecibirMercancia','id: string'],['openDevolverMercancia','id: string'],['openVerCompra','id: string'],['openAbonarCuenta','id: string']]) s=s.replace(new RegExp('(function '+n+')\\([^)]*\\)'),'$1('+param+')');
+s=s.replace('function addProductoAlCarrito({ productoId, nombre, cantidadPedida, precioUnitario })','function addProductoAlCarrito({ productoId, nombre, cantidadPedida, precioUnitario }: CompraCart)');
+s=s.replace('const map = new Map()','const map = new Map<string,string>()').replace('let best = null','let best: {idx: number; len: number} | null = null');
+s=s.replace(/tokens.forEach\(\(token\) => \{([\s\S]*?)\n    \}\);/,(_,body)=>'for (const token of tokens) {'+body.replace('if (idx < 0) return;','if (idx < 0) continue;')+'\n    }');
+s=s.replace(/document.getElementById\('([^']+)'\)\?\.value/g,(_,id)=>`document.querySelector<HTMLInputElement | HTMLSelectElement>('#${id}')?.value`);
+s=s.replace(/parseInt\((\w+\.dataset\.\w+), 10\)/g,"parseInt($1 || '0', 10)");
+s=s.replaceAll('let series = []','let series: string[] = []').replaceAll('const items = []','const items: RecepcionCompra[] = []');
+s=s.replace(/const items: RecepcionCompra\[\] = \[\];([\s\S]*?totalDevuelto = 0)/,'const items: DevolucionCompra[] = [];$1');
+for(const cl of ['oc-cart-qty','oc-cart-costo','input-recibir-cant','switch-recibir-seriales','input-devolver-cant','switch-devolver-seriales']) s=s.replaceAll(`querySelectorAll<HTMLElement>('.${cl}')`,`querySelectorAll<HTMLInputElement>('.${cl}')`);
+for(const cl of ['input-recibir-series','input-devolver-series']) s=s.replaceAll(`querySelectorAll<HTMLElement>('.${cl}')`,`querySelectorAll<HTMLTextAreaElement>('.${cl}')`);
+s=s.replace(/parseInt\((input\.value) \|\| 0\)/g,"parseInt($1 || '0')");
+s=s.replaceAll('p.id === prod.id', 'p.id === found.id');
+return s;
+});

@@ -5,7 +5,7 @@ const root = path.resolve(__dirname, '../..');
 require(path.join(root, 'backend/node_modules/dotenv')).config({ path: path.join(root, 'backend/.env'), quiet: true });
 const jwt = require(path.join(root, 'backend/node_modules/jsonwebtoken'));
 const { chromium } = require(path.join(root, 'backend/node_modules/@playwright/test'));
-const { sequelize, Usuario, Sede } = require(path.join(root, 'backend/models'));
+const { sequelize, Usuario, Sede } = require(path.join(root, 'backend/dist/models'));
 
 (async () => {
   let browser;
@@ -99,7 +99,14 @@ const { sequelize, Usuario, Sede } = require(path.join(root, 'backend/models'));
     console.log('OK catálogo entre pestañas y preservación de búsqueda');
     // Un formulario abierto permanece intacto durante una actualización de otra pestaña.
     await page.evaluate(() => { location.hash = '#/clientes'; });
-    await page.waitForSelector('#crm-search-input');
+    await page.waitForSelector('#crm-search-input').catch(async error => {
+      console.error('Diagnóstico de navegación:', await page.evaluate(() => ({
+        hash: location.hash,
+        contenido: document.getElementById('main-content')?.textContent?.slice(0, 300),
+        modales: [...document.querySelectorAll('.modal.show')].map(element => element.id)
+      })), errors);
+      throw error;
+    });
     await page.locator('#crm-search-input').fill('buscar sin perder filtro');
     await writer.evaluate(async () => {
       const { notifyDataChange } = await import('/assets/js/utils/live-data.js');

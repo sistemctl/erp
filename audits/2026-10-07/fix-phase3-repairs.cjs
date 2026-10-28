@@ -1,0 +1,18 @@
+const fs=require('node:fs'); const p='frontend/assets/js/modules/reparaciones.ts'; let s=fs.readFileSync(p,'utf8');
+for(const [id,kind] of [['eq-mod-domicilio','HTMLInputElement'],['eq-sede','HTMLSelectElement'],['eq-direccion','HTMLInputElement'],['kanban-search','HTMLInputElement']]) s=s.replaceAll(`document.getElementById('${id}')?.`,`document.querySelector<${kind}>('#${id}')?.`);
+s=s.replace("document.querySelector('input[name=\"eq-modalidad\"]:checked')", "document.querySelector<HTMLInputElement>('input[name=\"eq-modalidad\"]:checked')");
+s=s.replace('const btnSubmit = e.submitter;', "const btnSubmit = e.submitter;\n    if (!(btnSubmit instanceof HTMLButtonElement)) return;");
+s=s.replace('const cliPayload = { nombre, documento, telefono, email };', 'const cliPayload: {nombre: string; documento: string; telefono: string; email: string; sedeId?: string} = { nombre, documento, telefono, email };');
+s=s.replace('const payload = {\n        clienteId,', 'const payload = {\n        sedeId: undefined as string | undefined,\n        clienteId,');
+s=s.replaceAll('fileInput.files.length','(fileInput.files?.length || 0)').replace("if ((fileInput.files?.length || 0) > 0)","if (fileInput.files && fileInput.files.length > 0)");
+s=s.replace(/\((r|row)\.costoUnitario \|\| 0\) \* (r|row)\.cantidad/g,'Number($1.costoUnitario || 0) * $2.cantidad');
+s=s.replace("querySelectorAll<HTMLElement>('.btn-guardar-costo')","querySelectorAll<HTMLButtonElement>('.btn-guardar-costo')");
+s=s.replace("button.closest('td').querySelector('.repuesto-costo')", "requireSelector('.repuesto-costo', HTMLInputElement, button.closest('td') || button)");
+s=s.replace('hiddenInput.value = id;',"hiddenInput.value = id || '';").replace('searchInput.value = text;',"searchInput.value = text || '';");
+s=s.replace('repuestos.map((p) => [catId(p), catName(p)])','repuestos.map((p): [string,string] => [catId(p), catName(p)])');
+s=s.replace("composeEl.querySelector('#rep-modal-add')", "requireSelector('#rep-modal-add', HTMLButtonElement, composeEl)").replace("composeEl.querySelector('#rep-modal-quantity')", "requireSelector('#rep-modal-quantity', HTMLInputElement, composeEl)");
+s=s.replace('productoId: selected.id, cantidad',"productoId: selected?.id, cantidad");
+s=s.replace('if (files.length === 0) return;', 'if (!files || files.length === 0) return;');
+s=s.replace("const popup = window.open('', '_blank', 'width=350,height=300');", "const popup = window.open('', '_blank', 'width=350,height=300');\n          if (!popup) throw new Error('Permita las ventanas emergentes para imprimir.');");
+s=s.replace('function openEntregarReparacionModal(orderId)', 'function openEntregarReparacionModal(orderId: string)');
+fs.writeFileSync(p,s);

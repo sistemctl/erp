@@ -1,0 +1,264 @@
+import type { ProveedorDTO } from '../../../../shared/contracts';
+import { requireElement } from '../utils/dom.js';
+import { errorMessage } from '../utils/errors.js';
+import { watchDataChanges } from '../utils/live-data.js';
+import { apiFetch } from '../api.js';
+import { requireUsuario } from '../auth.js';
+import { showConfirm } from '../utils/toast.js';
+import { erpHeader } from '../utils/module-shell.js';
+import { erpAction, erpActions } from '../utils/action-buttons.js';
+
+export async function initProveedores(container: HTMLElement) {
+  const usuario = requireUsuario();
+  const isAdminOrContador = ['admin', 'superadmin', 'contador'].includes(usuario.rol);
+  let proveedores: ProveedorDTO[] = [];
+
+  async function loadProveedores() {
+    try {
+      proveedores = (await apiFetch<ProveedorDTO[]>('/proveedores')) ?? [];
+    } catch (e) {
+      console.error('Error al cargar proveedores:', e);
+    }
+  }
+
+  await loadProveedores();
+
+  container.innerHTML = `
+    <div class="container-xl erp-module">
+      ${erpHeader({
+        eyebrow: 'Proveedores',
+        title: 'Directorio comercial',
+        subtitle: 'Contactos y datos bancarios para compras y cuentas por pagar',
+        actionsHtml: isAdminOrContador ? `
+          <button id="btn-nuevo-proveedor" class="btn btn-primary">
+            <i class="ti ti-plus me-2"></i> Nuevo proveedor
+          </button>
+        ` : ''
+      })}
+
+      <div class="erp-list-workspace">
+      <div class="card erp-filter-card d-print-none" role="search">
+        <div class="card-body">
+          <div class="row g-2 align-items-end">
+            <div class="col-12 col-md-6 col-lg-5">
+              <label class="form-label" for="prov-search-input">Buscar</label>
+              <input type="text" id="prov-search-input" class="form-control" placeholder="Nombre, NIT o contacto…" spellcheck="false" autocomplete="off">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card erp-table-panel">
+        <div class="table-responsive">
+          <table class="table table-vcenter card-table table-hover mb-0">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>NIT</th>
+                <th>Contacto Principal</th>
+                <th>Teléfono / Correo</th>
+                <th>Información Bancaria</th>
+                ${isAdminOrContador ? `<th class="text-end">Acciones</th>` : ''}
+              </tr>
+            </thead>
+            <tbody id="prov-table-body">
+              <!-- Carga dinámica -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      </div>
+    </div>
+
+    <!-- Modal Formulario Proveedor -->
+    <div class="modal modal-blur fade" id="modal-form-proveedor" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+          <form id="form-proveedor">
+            <input type="hidden" id="prov-id">
+            <div class="modal-header">
+              <h5 class="modal-title" id="modal-title-proveedor">Registrar Proveedor</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-3">
+                <label class="form-label required">Nombre Comercial / Razón Social</label>
+                <input type="text" id="form-prov-nombre" class="form-control" required placeholder="Ej: Distribuidora Tecnológica SAS">
+              </div>
+              <div class="mb-3">
+                <label class="form-label required">NIT</label>
+                <input type="text" id="form-prov-nit" class="form-control" required placeholder="Ej: 900.123.456-7">
+              </div>
+              <div class="row">
+                <div class="col-6 mb-3">
+                  <label class="form-label">Nombre Contacto</label>
+                  <input type="text" id="form-prov-contacto" class="form-control" placeholder="Ej: Pedro Infante">
+                </div>
+                <div class="col-6 mb-3">
+                  <label class="form-label">Teléfono</label>
+                  <input type="text" id="form-prov-telefono" class="form-control" placeholder="Ej: 3007654321">
+                </div>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Correo Electrónico</label>
+                <input type="email" id="form-prov-email" class="form-control" placeholder="Ej: ventas@proveedor.com" spellcheck="false">
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Dirección</label>
+                <input type="text" id="form-prov-direccion" class="form-control" placeholder="Ej: Zona Industrial, Bogotá">
+              </div>
+              <div class="row">
+                <div class="col-6 mb-3">
+                  <label class="form-label">Banco</label>
+                  <input type="text" id="form-prov-banco" class="form-control" placeholder="Bancolombia">
+                </div>
+                <div class="col-6 mb-3">
+                  <label class="form-label">Cuenta de Ahorros/Corriente</label>
+                  <input type="text" id="form-prov-cuenta" class="form-control" placeholder="123-456789-01">
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Cancelar</button>
+              <button type="submit" class="btn btn-primary ms-auto">Guardar Proveedor</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const tbody = requireElement('prov-table-body', HTMLTableSectionElement);
+  const modalForm = new bootstrap.Modal(requireElement('modal-form-proveedor', HTMLDivElement));
+
+  function renderProveedoresTable(data: readonly ProveedorDTO[]) {
+    if (data.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-secondary">No hay proveedores registrados en el sistema.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = data.map(p => `
+      <tr>
+        <td><strong>${p.nombre}</strong><div class="small text-secondary">${p.direccion || 'N/A'}</div></td>
+        <td>${p.nit}</td>
+        <td>${p.contacto || '<span class="text-secondary small">N/A</span>'}</td>
+        <td>${p.telefono || ''}<div class="small text-secondary">${p.email || ''}</div></td>
+        <td>
+          ${p.cuentaBancaria ? `<strong>${p.banco || 'Banco'}</strong> - Ahorros: ${p.cuentaBancaria}` : '<span class="text-secondary small">Sin registrar</span>'}
+        </td>
+        ${isAdminOrContador ? `
+          <td class="text-end erp-td-actions">
+            ${erpActions(`
+              ${erpAction('edit', { className: 'btn-edit-prov', attrs: { 'data-id': p.id } })}
+              ${erpAction('delete', { className: 'btn-delete-prov', attrs: { 'data-id': p.id } })}
+            `)}
+          </td>
+        ` : ''}
+      </tr>
+    `).join('');
+
+    // Attach listeners
+    if (isAdminOrContador) {
+      document.querySelectorAll('.btn-edit-prov').forEach(btn => {
+      if (!(btn instanceof HTMLButtonElement)) return;
+        btn.addEventListener('click', () => openEditForm(btn.dataset.id));
+      });
+
+      document.querySelectorAll('.btn-delete-prov').forEach(btn => {
+      if (!(btn instanceof HTMLButtonElement)) return;
+        btn.addEventListener('click', () => deleteProveedor(btn.dataset.id));
+      });
+    }
+  }
+
+  renderProveedoresTable(proveedores);
+
+  // Search input filter
+  requireElement('prov-search-input', HTMLInputElement).addEventListener('input', (e) => {
+    if (!(e.currentTarget instanceof HTMLInputElement)) return;
+    const val = e.currentTarget.value.toLowerCase().trim();
+    const filtered = proveedores.filter(p => 
+      p.nombre.toLowerCase().includes(val) || 
+      p.nit.includes(val) || 
+      (p.contacto && p.contacto.toLowerCase().includes(val))
+    );
+    renderProveedoresTable(filtered);
+  });
+
+  // Open Create Form
+  const btnNuevo = requireElement('btn-nuevo-proveedor', HTMLButtonElement);
+  if (btnNuevo) {
+    btnNuevo.addEventListener('click', () => {
+      requireElement('form-proveedor', HTMLFormElement).reset();
+      requireElement('prov-id', HTMLInputElement).value = '';
+      requireElement('modal-title-proveedor', HTMLHeadingElement).textContent = 'Registrar Proveedor';
+      modalForm.show();
+    });
+  }
+
+  // Open Edit Form
+  function openEditForm(id: string | undefined) {
+    const p = proveedores.find(prov => prov.id === id);
+    if (!p) return;
+
+    requireElement('prov-id', HTMLInputElement).value = p.id;
+    requireElement('form-prov-nombre', HTMLInputElement).value = p.nombre;
+    requireElement('form-prov-nit', HTMLInputElement).value = p.nit;
+    requireElement('form-prov-contacto', HTMLInputElement).value = p.contacto || '';
+    requireElement('form-prov-telefono', HTMLInputElement).value = p.telefono || '';
+    requireElement('form-prov-email', HTMLInputElement).value = p.email || '';
+    requireElement('form-prov-direccion', HTMLInputElement).value = p.direccion || '';
+    requireElement('form-prov-banco', HTMLInputElement).value = p.banco || '';
+    requireElement('form-prov-cuenta', HTMLInputElement).value = p.cuentaBancaria || '';
+    requireElement('modal-title-proveedor', HTMLHeadingElement).textContent = 'Editar Proveedor';
+    modalForm.show();
+  }
+
+  // Submit Proveedor
+  requireElement('form-proveedor', HTMLFormElement).addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = requireElement('prov-id', HTMLInputElement).value;
+    const payload = {
+      nombre: requireElement('form-prov-nombre', HTMLInputElement).value,
+      nit: requireElement('form-prov-nit', HTMLInputElement).value,
+      contacto: requireElement('form-prov-contacto', HTMLInputElement).value,
+      telefono: requireElement('form-prov-telefono', HTMLInputElement).value,
+      email: requireElement('form-prov-email', HTMLInputElement).value,
+      direccion: requireElement('form-prov-direccion', HTMLInputElement).value,
+      banco: requireElement('form-prov-banco', HTMLInputElement).value,
+      cuentaBancaria: requireElement('form-prov-cuenta', HTMLInputElement).value
+    };
+
+    try {
+      if (id) {
+        await apiFetch(`/proveedores/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      } else {
+        await apiFetch('/proveedores', { method: 'POST', body: JSON.stringify(payload) });
+      }
+      modalForm.hide();
+      await loadProveedores();
+      renderProveedoresTable(proveedores);
+    } catch (err) {
+      alert('Error al guardar proveedor: ' + errorMessage(err));
+    }
+  });
+
+  async function deleteProveedor(id: string | undefined) {
+    if (!id) return;
+    const verificado = await showConfirm('Eliminar Proveedor', '¿Está seguro de que desea eliminar a este proveedor? Esta acción no se puede deshacer.');
+    if (!verificado) {
+      return;
+    }
+    try {
+      await apiFetch(`/proveedores/${id}`, { method: 'DELETE' });
+      await loadProveedores();
+      renderProveedoresTable(proveedores);
+    } catch (err) {
+      alert('Error al eliminar proveedor: ' + errorMessage(err));
+    }
+  }
+  watchDataChanges(container, ["proveedores","compras"], async () => {
+    await loadProveedores(); document.getElementById('prov-search-input')?.dispatchEvent(new Event('input'));
+  });
+
+}

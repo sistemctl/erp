@@ -30,6 +30,9 @@ const {
 } = require('../utils/combo');
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === '1';
+if (RUN_DB_TESTS && (!/_test$/.test(process.env.DB_NAME || '') || !process.env.TEST_BASE_URL)) {
+  throw new Error('Las pruebas de integración requieren DB_NAME terminado en _test y TEST_BASE_URL explícito para el servidor aislado.');
+}
 const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3000/api';
 
 async function api(path, token, options = {}) {

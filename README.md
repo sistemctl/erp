@@ -4,12 +4,14 @@ Sistema ERP monolítico para tiendas de tecnología: ventas, inventario, reparac
 
 | Capa | Tecnología |
 |------|------------|
-| Backend | Node.js 20+, Express 5, Sequelize |
+| Backend | Node.js 20+, Express 5, Sequelize; TypeScript estricto compilado a CommonJS |
 | Base de datos | PostgreSQL 16 |
-| Frontend | JavaScript vanilla (ES modules), Tabler UI, Bootstrap 5 |
+| Frontend | TypeScript estricto vanilla, compilado a ES modules para navegador; Tabler UI y Bootstrap 5 |
 | Infra opcional | Docker Compose, Dokploy, Cloudflare Tunnel, Nginx, systemd |
 
 El backend sirve la API REST (`/api/*`), archivos subidos (`/uploads`) y el frontend estático desde un solo proceso.
+
+Las fases 3 y 4 están completas: frontend y backend se escriben en TypeScript estricto, sin `allowJs`. Las siete pruebas JavaScript heredadas se copian por separado a la salida de pruebas. La fase 5 tiene preparada la compilación de producción y CI; el contenedor y el despliegue quedan pendientes de ejecución en un equipo con Docker. Consulta [comandos y estado](docs/migracion-typescript.md) y [despliegue y reversión](docs/despliegue-typescript.md). Instala dependencias de desarrollo para compilar; en producción ejecuta los artefactos de `dist`.
 
 **Producción:** despliegue con Dokploy/Docker en la rama `3.0` (configura tu dominio en Environment).
 
@@ -58,10 +60,10 @@ El backend sirve la API REST (`/api/*`), archivos subidos (`/uploads`) y el fron
 ```
 erp/
 ├── backend/              # API Express + modelos Sequelize
-│   ├── server.js         # Punto de entrada
+│   ├── server.ts         # Fuente; ejecutar dist/server.js después de compilar
 │   ├── .env.example      # Variables para instalación nativa
 │   └── seeders/          # Datos de prueba
-├── frontend/             # SPA estática (sin build)
+├── frontend/             # SPA ES modules; compilación en frontend/dist
 ├── Dockerfile            # Imagen del ERP
 ├── docker-compose.yml    # Dokploy (postgres + erp)
 └── .env.docker.example   # Variables para Environment de Dokploy
@@ -183,7 +185,7 @@ Volúmenes persistentes: `pgdata` (PostgreSQL) y `erp_uploads` (archivos). Puede
 ### 5. Seed opcional
 
 ```bash
-docker compose exec erp node seeders/seeder.js
+docker compose exec erp node dist/seeders/seeder.js
 ```
 
 Credenciales iniciales del seeder (tras ejecutarlo):
@@ -283,9 +285,11 @@ CORS_ORIGINS=https://erp.tudominio.com,http://IP_DEL_VPS:8080
 
 ```bash
 cd /opt/erp/backend
-npm ci --omit=dev
+npm ci
+npm run typecheck
+npm run build
 mkdir -p uploads/reparaciones
-node server.js
+node dist/server.js
 ```
 
 En otra terminal:
@@ -311,7 +315,7 @@ User=www-data
 Group=www-data
 WorkingDirectory=/opt/erp/backend
 EnvironmentFile=/opt/erp/backend/.env
-ExecStart=/usr/bin/node server.js
+ExecStart=/usr/bin/node dist/server.js
 Restart=on-failure
 RestartSec=5
 
@@ -371,7 +375,7 @@ Certbot renovará el certificado automáticamente.
 
 ```bash
 cd /opt/erp/backend
-node seeders/seeder.js
+node dist/seeders/seeder.js
 ```
 
 ### Comandos de mantenimiento en Linux
@@ -386,7 +390,7 @@ sudo systemctl restart erp
 # Actualizar la aplicación
 cd /opt/erp
 git pull
-cd backend && npm ci --omit=dev
+cd backend && npm ci && npm run typecheck && npm run build
 sudo systemctl restart erp
 
 # Respaldo de PostgreSQL
@@ -401,10 +405,10 @@ El seeder **borra datos existentes** y carga sedes, usuarios, productos y config
 
 ```bash
 # Instalación nativa
-cd backend && node seeders/seeder.js
+cd backend && node dist/seeders/seeder.js
 
 # Docker (Dokploy)
-docker compose exec erp node seeders/seeder.js
+docker compose exec erp node dist/seeders/seeder.js
 ```
 
 | Rol | Email | Contraseña |
@@ -448,20 +452,20 @@ ODOO_DB_PASS=tu_contraseña
 
 ```bash
 cd backend
-node scripts/migrate-odoo.js --dry-run
+node dist/scripts/migrate-odoo.js --dry-run
 ```
 
 ### 4. Migración real
 
 ```bash
-node scripts/migrate-odoo.js --execute
+node dist/scripts/migrate-odoo.js --execute
 ```
 
 Con Docker (si el contenedor alcanza ambas bases):
 
 ```bash
-docker compose exec erp node scripts/migrate-odoo.js --dry-run
-docker compose exec erp node scripts/migrate-odoo.js --execute
+docker compose exec erp node dist/scripts/migrate-odoo.js --dry-run
+docker compose exec erp node dist/scripts/migrate-odoo.js --execute
 ```
 
 > Si Odoo y el ERP están en el mismo PostgreSQL del host, desde Docker usa `DB_HOST=host.docker.internal` (o la IP del host) y lo mismo en `ODOO_DB_HOST`.

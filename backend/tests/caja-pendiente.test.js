@@ -49,7 +49,9 @@ function fixture({ compartida = true, cajaFecha = '2020-01-01' } = {}) {
   const controller = load('controllers/caja.controller.js', {
     '../models': models, sequelize: { Op: { lt: Symbol('lt') } },
     '../utils/sede': sede, '../utils/caja-abierta': abierta,
-    '../utils/caja-fecha': fechas, '../utils/cierre-pdf': {}, '../utils/caja-cobros': {}
+    '../utils/caja-fecha': fechas, '../utils/cierre-pdf': {}, '../utils/caja-cobros': {},
+    '../utils/request-user': require('../utils/request-user'),
+    '../utils/transaction-state': require('../utils/transaction-state')
   });
   const req = {
     usuario: { rol: 'admin', userId: 'admin', sedeId: 'A' }, query: {},

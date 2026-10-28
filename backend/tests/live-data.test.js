@@ -3,14 +3,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const read = (file) => fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js', file), 'utf8');
+const { FRONTEND_ROOT } = require('../utils/runtime-paths');
+const read = (file) => fs.readFileSync(path.join(FRONTEND_ROOT, 'assets/js', file), 'utf8');
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 test('API consulta sin caché y comunica solo escrituras exitosas, incluyendo 204', async () => {
   const changes = [], calls = [];
   let status = 200;
-  const apiFetch = vm.runInNewContext(`${read('api.js').replace(/^import .*;\r?\n/gm, '').replace('export async function', 'async function')}\napiFetch`, {
-    FormData, console: { error() {} }, window: { location: {} }, localStorage: { getItem() { return null; } },
+  const apiFetch = vm.runInNewContext(`${read('api.js').replace(/^import .*;\r?\n/gm, '').replace(/export (async )?function/g, '$1function')}\napiFetch`, {
+    FormData, Headers, console: { error() {} }, window: { location: {} }, localStorage: { getItem() { return null; } },
     notifyDataChange: endpoint => changes.push(endpoint),
     fetch: async (_url, config) => {
       calls.push(config);

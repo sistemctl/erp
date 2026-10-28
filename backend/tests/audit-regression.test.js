@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { FRONTEND_ROOT } = require('../utils/runtime-paths');
 const { calculateSale, normalizePayments, amount } = require('../utils/venta-totales');
 const { encryptBackup, decryptBackup } = require('../utils/backup');
 const { assertSedeAccess, resolveQuerySede } = require('../utils/sede');
@@ -64,10 +65,10 @@ test('respaldo cifra datos y detecta contraseña incorrecta o modificación', ()
   assert.throws(() => decryptBackup(data, password), { status: 400 });
 });
 test('PIN rechazado con 403 mantiene la sesión del cajero', async () => {
-  const source = fs.readFileSync(path.resolve(__dirname, '../../frontend/assets/js/api.js'), 'utf8').replace(/^import .*;\r?\n/gm, '').replace('export async function', 'async function');
+  const source = fs.readFileSync(path.join(FRONTEND_ROOT, 'assets/js/api.js'), 'utf8').replace(/^import .*;\r?\n/gm, '').replace(/export (async )?function/g, '$1function');
   const store = new Map([['token', 'fixture-token'], ['usuario', '{}']]);
   const window = { location: { hash: '#/pos' } };
-  const apiFetch = vm.runInNewContext(`${source}\napiFetch`, { FormData, console: { error() {} },
+  const apiFetch = vm.runInNewContext(`${source}\napiFetch`, { FormData, Headers, console: { error() {} },
     window, localStorage: { getItem: (k) => store.get(k), removeItem: (k) => store.delete(k) },
     fetch: async () => ({ status: 403, ok: false, json: async () => ({ error: 'PIN incorrecto' }) }) });
   await assert.rejects(apiFetch('/ventas', { method: 'POST' }), /PIN/);

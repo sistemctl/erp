@@ -3,7 +3,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const { chromium } = require('../../backend/node_modules/@playwright/test');
 const root = path.resolve(__dirname, '../..');
-const source = (file) => fs.readFileSync(path.join(root, file), 'utf8').replace(/^import .*;\r?\n/gm, '').replace(/export (async )?function/g, '$1function');
+const source = (file) => fs.readFileSync(path.join(root, file.replace(/^frontend\//, 'frontend/dist/')), 'utf8').replace(/^import .*;\r?\n/gm, '').replace(/export (async )?function/g, '$1function');
 (async () => {
   const browser = await chromium.launch({ headless: true });
   try {
@@ -13,6 +13,7 @@ const source = (file) => fs.readFileSync(path.join(root, file), 'utf8').replace(
     await page.evaluate(() => {
       location.hash = '#/pos';
       window.watchDataChanges = () => () => {};
+      window.bindQuickAction = () => {};
       window.fixture = { id: 'pending', estado: 'abierta', cierrePendiente: true, fecha: '2026-10-06', createdAt: '2026-10-06T13:00:00Z', usuarioApertura: { nombre: 'Cajero anterior' }, montoApertura: 100, totalVentasEfectivo: 50, totalVentasNequi: 0, totalVentasDaviplata: 0, totalVentasTarjeta: 0, totalVentasTransferencia: 0, totalEgresos: 20 };
       window.calls = [];
       window.apiFetch = async (url, opts = {}) => {
@@ -23,6 +24,7 @@ const source = (file) => fs.readFileSync(path.join(root, file), 'utf8').replace(
         return [];
       };
       window.getUsuario = () => ({ rol: 'admin', sedeId: 'A', nombre: 'Administrador' });
+      window.requireUsuario = window.getUsuario;
       window.getLocalDateStr = () => '2026-10-07';
       window.initBarcodeScanner = () => {}; window.destroyBarcodeScanner = () => {};
       window.showToast = () => {};
@@ -30,6 +32,12 @@ const source = (file) => fs.readFileSync(path.join(root, file), 'utf8').replace(
       window.printCierreTicket = () => {};
       window.bootstrap = { Modal: class { constructor(el) { this.el = el; } show() { this.el.style.display = 'block'; this.el.classList.add('show'); } hide() { this.el.style.display = 'none'; this.el.classList.remove('show'); } } };
     });
+    await page.evaluate(async () => {
+      Object.assign(window, await import('/assets/js/utils/dom.js'), await import('/assets/js/utils/errors.js'));
+    });
+    await page.evaluate(code => {
+      window.apiRequired = new Function(`${code}\nreturn apiRequired;`)();
+    }, source('frontend/assets/js/utils/api-required.js'));
     await page.evaluate(async code => { await new Function(`${code}\nreturn initPos;`)()(document.getElementById('app')); }, source('frontend/assets/js/modules/pos.js'));
     assert.match(await page.locator('.pos-gate-card').innerText(), /cierre pendiente del día anterior/);
     assert.match(await page.locator('.pos-gate-card').innerText(), /2026-10-06/);

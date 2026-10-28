@@ -1,0 +1,53 @@
+name: Verify ERP
+on:
+  push:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-isolated-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - run: npm run typecheck
+        working-directory: backend
+      - run: npm test
+        working-directory: backend
+      - run: node audits/2026-10-07/verify.typescript-isolated.cjs --phase4
+        env:
+          DB_HOST: localhost
+          DB_PORT: '5432'
+          DB_NAME: postgres
+          DB_USER: postgres
+          DB_PASS: ci-isolated-only
+          JWT_SECRET: ci-typescript-isolated-tests-only-32chars
+      - run: docker build -t erp:verify .
+      - name: Verify production container with isolated PostgreSQL
+        run: node audits/2026-10-07/verify.typescript-isolated.cjs --phase4
+        env:
+          ERP_TEST_IMAGE: erp:verify
+          DB_HOST: 127.0.0.1
+          DB_PORT: '5432'
+          DB_NAME: postgres
+          DB_USER: postgres
+          DB_PASS: ci-isolated-only
+          JWT_SECRET: ci-typescript-isolated-tests-only-32chars

@@ -2,11 +2,20 @@
 node_modules/
 backend/node_modules/
 frontend/node_modules/
+backend/dist/
+frontend/dist/
 
 # Environment files
 .env
 backend/.env
 frontend/.env
+.env.*
+!.env.docker.example
+!**/.env.example
+
+# Runtime data stays on the machine, never in the public repository.
+backend/uploads/
+backend/logs/
 
 # Temporary and log files
 *.log
@@ -44,3 +53,13 @@ temp_deploy/
 .agents/
 .cursor/skills/
 skills-lock.json
+
+# Generated audit evidence may contain local business data.
+# Keep the reproducible scripts and written reports in Git.
+audits/**/*.png
+audits/**/*.jpg
+audits/**/*.jpeg
+audits/**/*.webp
+audits/**/*.pdf
+audits/**/*.json
+audits/**/*.txt

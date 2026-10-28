@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { nextDocumentNumber } = require('../../backend/utils/document-number');
+const { nextDocumentNumber } = require('../../backend/dist/utils/document-number');
 
 module.exports = async ({ check, m, request, adminToken, cashToken, A, B, caja, service, product, cliente, saleBody, url }) => {
   async function open(name, montoApertura = 100000) {
@@ -364,7 +364,7 @@ module.exports = async ({ check, m, request, adminToken, cashToken, A, B, caja, 
   });
 
   await check('CF23: migración de caja es aditiva e idempotente sobre tablas existentes', async () => {
-    const migrar = require('../../backend/migrations/caja-facturas-2026-10').migrateCajaFacturasSchema;
+    const migrar = require('../../backend/dist/migrations/caja-facturas-2026-10').migrateCajaFacturasSchema;
     await m.sequelize.query('ALTER TABLE "Cajas" DROP COLUMN "arqueoDeclarado"');
     await m.sequelize.query('ALTER TABLE "Abonos" DROP COLUMN "anuladoAt"');
     await migrar(m.sequelize); await migrar(m.sequelize);

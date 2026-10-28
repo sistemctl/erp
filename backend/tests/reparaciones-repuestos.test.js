@@ -28,6 +28,8 @@ function fixture() {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../controllers/reparaciones.controller.js'), 'utf8'), {
     module, exports: module.exports,
     require: id => id === '../models' ? models : id === '../utils/sede' ? sede : id === '../utils/http-error' ? { httpError }
+      : id === '../utils/request-user' ? require('../utils/request-user')
+      : id === '../utils/transaction-state' ? require('../utils/transaction-state')
       : id === 'sequelize' ? { Op: { ne: Symbol('ne') } } : {}
   });
   const req = { params: { id: 'order', repuestoId: 'part' }, usuario: { userId: 'tech', rol: 'tecnico', sedeId: 'A' }, logAudit: async value => audits.push(value) };

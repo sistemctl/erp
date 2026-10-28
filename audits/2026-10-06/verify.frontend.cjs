@@ -3,7 +3,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '../..');
 const { chromium } = require(path.join(root, 'backend/node_modules/@playwright/test'));
-const source = (file) => fs.readFileSync(path.join(root, file), 'utf8')
+const source = (file) => fs.readFileSync(path.join(root, file.replace(/^frontend\//, 'frontend/dist/')), 'utf8')
   .replace(/^import .*;\r?\n/gm, '').replace(/export (async )?function/g, '$1function');
 const results = [];
 async function check(name, fn) {
@@ -66,6 +66,7 @@ async function check(name, fn) {
         window.getUsuario = () => ({ rol: 'cajero', sedeId: 'A', nombre: 'Cajero' });
         window.getLocalDateStr = () => '2026-10-06';
         window.initBarcodeScanner = () => {}; window.destroyBarcodeScanner = () => {};
+        window.bindQuickAction = () => {};
         window.showToast = (...args) => window.toasts.push(args);
         window.formatStockUnidad = (qty) => String(qty); window.labelUnidadMedida = () => 'und';
         window.renderPosReceipt = new Function(`${receipt}\nreturn renderPosReceipt;`)();

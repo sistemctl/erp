@@ -3,7 +3,7 @@ const root=path.resolve(__dirname,'../..');
 require(path.join(root,'backend/node_modules/dotenv')).config({path:path.join(root,'backend/.env'),quiet:true});
 const jwt=require(path.join(root,'backend/node_modules/jsonwebtoken'));
 const {chromium}=require(path.join(root,'backend/node_modules/@playwright/test'));
-const {sequelize,Usuario,Sede}=require(path.join(root,'backend/models'));
+const {sequelize,Usuario,Sede}=require(path.join(root,'backend/dist/models'));
 (async()=>{
  let browser;const results=[],errors=[];
  try{

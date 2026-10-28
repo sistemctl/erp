@@ -1,0 +1,25 @@
+const {convert,base}=require('./ts-conversion-tools.cjs');
+convert('modules/config',s=>{
+s=base(s);
+s=`import { apiRequired } from '../utils/api-required.js';
+import { requireSelector } from '../utils/dom.js';
+import type { ConfigSistema, SedeConfig, UsuarioConfig, UsuarioEditor, NotificacionConfig } from '../types/config.js';
+import type { MedioPago } from '../types/finance.js';
+type MedioEditor = MedioPago & { fijo: boolean; activo: boolean };
+`+s;
+s=s.replace('let mediosPago = []','let mediosPago: MedioEditor[] = []').replace('let sedesList = []','let sedesList: SedeConfig[] = []').replace('let sistemaConfig = {}','let sistemaConfig: Partial<ConfigSistema> = {}');
+s=s.replace('renderServidorEstado(data)','renderServidorEstado(data: ConfigSistema)').replace('const slugMetodo = (nombre)','const slugMetodo = (nombre: string)').replace('normalizarMediosPago = (lista)','normalizarMediosPago = (lista: MedioPago[] | null | undefined)');
+s=s.replaceAll("apiFetch('/config/sistema'", "apiRequired<ConfigSistema>('/config/sistema'").replace("apiFetch('/config/sedes')", "apiRequired<SedeConfig[]>('/config/sedes')").replace("apiFetch('/config/usuarios')", "apiRequired<UsuarioConfig[]>('/config/usuarios')").replace("apiFetch('/notificaciones')", "apiRequired<NotificacionConfig[]>('/notificaciones')");
+s=s.replaceAll('const resultado = await apiFetch(', 'const resultado = await apiRequired<{message: string}>(').replaceAll('const res = await apiFetch(', 'const res = await apiRequired<{message: string}>(');
+s=s.replace("querySelectorAll('.cfg-medio-activo')","querySelectorAll<HTMLInputElement>('.cfg-medio-activo')").replace("querySelectorAll('.btn-eliminar-medio')","querySelectorAll<HTMLButtonElement>('.btn-eliminar-medio')");
+s=s.replaceAll('e.message','errorMessage(e)').replace('openSedeModal = (sede = null)','openSedeModal = (sede: SedeConfig | null = null)').replace('openUsuarioModal = (user = null)','openUsuarioModal = (user: UsuarioEditor | null = null)').replace('sedesList[index]','sedesList[Number(index)]');
+s=s.replace(/(requireElement\('[^']+', \w+\)\.value = )([^;]+);/g,'$1String($2);').replace('portEl.value = 465','portEl.value = \'465\'').replace('portEl.value = 587','portEl.value = \'587\'');
+for(const attr of ['id','nombre','email','rol']) s=s.replace(`btn.getAttribute('data-${attr}'),`,`btn.getAttribute('data-${attr}') || '',`);
+s=s.replace('const body = {\n      nombre: requireElement(\'usr-nombre\'', 'const body = {\n      password: undefined as string | undefined,\n      nombre: requireElement(\'usr-nombre\'');
+s=s.replace('const body = {\n      notificacionesActivas:', 'const body = {\n      smtpPass: undefined as string | undefined, twilioAuthToken: undefined as string | undefined,\n      notificacionesActivas:');
+s=s.replace('const payload = {','const payload = {\n      smtpPass: undefined as string | undefined,');
+s=s.replace("document.getElementById('cfg-empresa')?.value?.trim()", "requireElement('cfg-empresa', HTMLInputElement).value.trim()");
+s=s.replace('JSON.parse(evt.target.result)', "JSON.parse(typeof reader.result === 'string' ? reader.result : '') as unknown");
+for(const id of ['sedes','usuarios','log']) s=s.replace(`document.querySelector('a[href="#tab-config-${id}"]')`, `requireSelector('a[href="#tab-config-${id}"]', HTMLAnchorElement)`);
+return s;
+});

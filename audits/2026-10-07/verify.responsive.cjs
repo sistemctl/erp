@@ -3,7 +3,7 @@ const root=path.resolve(__dirname,'../..');
 require(path.join(root,'backend/node_modules/dotenv')).config({path:path.join(root,'backend/.env'),quiet:true});
 const jwt=require(path.join(root,'backend/node_modules/jsonwebtoken'));
 const {chromium}=require(path.join(root,'backend/node_modules/@playwright/test'));
-const {sequelize,Usuario,Sede}=require(path.join(root,'backend/models'));
+const {sequelize,Usuario,Sede}=require(path.join(root,'backend/dist/models'));
 const stage=process.argv.includes('--after')?'after':'before';
 const modules=['dashboard','pos','ventas','cotizaciones','clientes','tradein','reparaciones','rma','instalaciones','inventario','series','caja','facturacion','cartera','compras','proveedores','nomina','rentabilidad','reportes','config'];
 const requested=process.argv.find(arg=>arg.startsWith('--modules='))?.split('=')[1].split(',');

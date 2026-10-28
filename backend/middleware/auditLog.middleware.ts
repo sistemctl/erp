@@ -1,0 +1,26 @@
+import models = require('../models');
+const { AuditLog } = models;
+import type { RequestHandler } from 'express';
+
+const auditLogMiddleware: RequestHandler = (req, res, next) => {
+  // Adjuntar la función logAudit a req para uso manual en controladores
+  req.logAudit = async ({ accion, modulo, registroId, valorAnterior, valorNuevo }) => {
+    try {
+      await AuditLog.create({
+        usuarioId: req.usuario ? req.usuario.userId : null,
+        accion,
+        modulo,
+        registroId: registroId ? String(registroId) : null,
+        valorAnterior: valorAnterior || null,
+        valorNuevo: valorNuevo || null,
+        sedeId: req.usuario ? req.usuario.sedeId : null,
+        ip: req.ip || String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')
+      }, { transaction: req.auditTransaction && !req.auditTransaction.finished ? req.auditTransaction : undefined });
+    } catch (err) {
+      console.error('Error al registrar log de auditoría:', err);
+    }
+  };
+
+  next();
+};
+export = auditLogMiddleware;

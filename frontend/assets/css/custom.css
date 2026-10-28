@@ -1405,48 +1405,6 @@ body.card-style-elevated .card {
   max-width: 32ch;
 }
 
-@media (max-width: 799px) {
-  .login-panel {
-    grid-template-columns: 1fr;
-    min-height: auto;
-  }
-
-  .login-panel__stage {
-    order: -1;
-    min-height: 260px;
-    padding: 1.75rem 1.5rem 1.5rem;
-  }
-
-  .login-inv {
-    min-height: 200px;
-    padding: 0.5rem 0 1rem;
-  }
-
-  .login-inv__warehouse {
-    max-width: 200px;
-  }
-
-  .login-inv__float {
-    display: none;
-  }
-
-  .login-panel__stage-text {
-    max-width: none;
-  }
-
-  .login-panel__form {
-    padding: 1.75rem 1.5rem 1.5rem;
-  }
-
-  .login-panel__form::before {
-    left: 1.5rem;
-  }
-
-  .login-panel__subtitle {
-    max-width: none;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .login-panel__stage-glow,
   .login-inv__live-dot,
@@ -1949,78 +1907,19 @@ body.card-style-elevated .card {
   background: var(--border-subtle);
 }
 
+.erp-topbar .erp-quick-actions-trigger { min-height: 44px; gap: 6px; white-space: nowrap; }
+.erp-quick-actions-menu { width: 280px; max-width: calc(100vw - 24px); padding: 8px; }
+.erp-quick-action { gap: 12px; padding: 12px; white-space: normal; }
+.erp-quick-action > i { color: var(--accent-color); font-size: 20px; }
+.erp-quick-action strong, .erp-quick-action small { display: block; }
+.erp-quick-action small { color: var(--ink-secondary); font-size: 12px; margin-top: 2px; }
+.quick-abono-account { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 12px; }
+.quick-abono-account > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.quick-abono-account small { display: block; color: var(--ink-secondary); margin-top: 4px; }
+.quick-abono-account > span:last-child { white-space: nowrap; }
+
 /* Topbar m?vil: t?tulo visible, chip compacto */
-@media (max-width: 991.98px) {
-  #sidebar-container.navbar-vertical.navbar-expand-lg {
-    width: 100% !important;
-    min-height: 56px;
-  }
-  #sidebar-container > .container-fluid { padding-inline: var(--erp-shell-gutter); }
-  #sidebar-container .navbar-brand {
-    height: 56px;
-    min-height: 56px;
-    margin-bottom: 0 !important;
-    padding-inline: 0 !important;
-    border-bottom: 0;
-  }
-  #sidebar-container .navbar-toggler { width: 44px; height: 44px; }
-  #sidebar-container .navbar-collapse { max-height: calc(100dvh - 56px); overflow-y: auto; }
-  .page-wrapper > .navbar.erp-topbar {
-    --erp-shell-header-height: 3.35rem;
-  }
-
-  .erp-topbar-inner {
-    gap: 0.65rem;
-  }
-
-  .erp-topbar-kicker {
-    display: none;
-  }
-
-  .erp-topbar-title {
-    font-size: 0.9375rem;
-  }
-
-  .erp-topbar-divider {
-    display: none;
-  }
-
-  .erp-topbar .erp-theme-btn { width: 40px; height: 40px; }
-
-  .erp-topbar .erp-user-meta {
-    display: none;
-  }
-
-  .erp-user-chevron {
-    display: none;
-  }
-
-  .erp-user-chip {
-    padding: 0.25rem;
-    min-height: 44px;
-    min-width: 44px;
-    justify-content: center;
-  }
-
-  .navbar-vertical .navbar-nav .nav-link {
-    min-height: 44px;
-    padding: 0.65rem 0.85rem !important;
-    font-size: 0.875rem !important;
-  }
-
-  .navbar-vertical .navbar-nav .nav-link-icon .ti {
-    font-size: 1.25rem !important;
-  }
-
-  .erp-header__title {
-    font-size: 1rem;
-  }
-
-  .erp-module .erp-filter-card .card-body {
-    padding: 0.55rem 0.7rem;
-  }
-}
-
+/* Navegación adaptable centralizada en mobile.css. */
 .erp-theme-switch {
   display: inline-flex;
   align-items: center;
@@ -13503,6 +13402,26 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
 .pos-client-empty .ti { font-size: 1.6rem; }
 @media (max-width: 575.98px) { .modal-dialog.pos-client-search-dialog { width: auto; height: calc(100vh - 1rem) !important; max-height: 620px !important; margin: 0.5rem; } .pos-client-search-body { padding: 1rem; } .checkout-cliente-opcion { min-height: 68px; padding: 0.72rem 0.8rem; } .checkout-cliente-titulo { font-size: 0.9rem; } }
 
+/* Inventario: valor actual de las existencias, sin mezclarlo con ingresos. */
+.inv-investment { min-width: 0; }
+.inv-investment [hidden] { display: none !important; }
+.inv-investment-toolbar { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+.inv-investment-scope { width: min(100%, 280px); }
+.inv-investment-summary { display: grid; grid-template-columns: minmax(0,2fr) repeat(2,minmax(0,1fr)); gap: 16px; }
+.inv-investment-summary .card { min-width: 0; }
+.inv-investment-main { border-top: 3px solid var(--accent-color); }
+.inv-investment-total { display: block; margin-top: 8px; color: var(--accent-color); font-size: clamp(24px,3vw,36px); line-height: 1.25; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.inv-investment-count { display: block; font-size: 28px; margin-top: 12px; font-variant-numeric: tabular-nums; }
+.inv-investment-total[data-long="true"] { font-size: 26px; }
+.inv-investment-sites { list-style: none; padding: 0; margin: 0; }
+.inv-investment-sites li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; padding: 12px 0; border-bottom: 1px solid var(--border-subtle); overflow-wrap: anywhere; }
+.inv-investment-sites li:last-child { border-bottom: 0; }
+.inv-investment-sites strong { font-variant-numeric: tabular-nums; }
+.inv-investment-table { table-layout: fixed; width: 100%; }
+.inv-investment-table th:first-child { width: 28%; }
+.inv-investment-table :is(th,td) { white-space: normal; overflow-wrap: anywhere; }
+.inv-investment-pagination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 12px; padding: 16px; }
+
 /* Acceso: superficie de trabajo sobria, enfocada en identificación y operación. */
 .login-page-wrap {
   padding: clamp(1rem, 4vw, 4rem);
@@ -13657,14 +13576,6 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
 .login-panel__stage-text {
   font-size: 0.84rem;
   max-width: 36ch;
-}
-
-@media (max-width: 799px) {
-  .login-page-wrap { padding: 0.75rem; }
-  .login-panel { min-height: 0; border-radius: 10px; }
-  .login-panel__stage { min-height: 250px; padding: 1.5rem; border-left: 0; }
-  .login-panel__form { padding: 2rem 1.5rem 1.5rem; }
-  .login-panel__footer { text-align: center; }
 }
 
 /* Factura: documento de servicio claro para lectura en pantalla e impresión. */
@@ -13895,4 +13806,65 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   .cot-doc--factura .cot-doc__doc-id { order: -1; }
   .cot-doc--factura .cot-doc__doc-id-inner { min-height: auto; }
   .cot-doc--factura .cot-doc__page-bar { margin: 0 -1rem; padding: 0.45rem 1rem; }
+}
+
+/* Mostrador: el catálogo acompaña al carrito y el pago ocupa el mismo panel. */
+.pos-panel--sale { position: relative; }
+.pos-panel--sale > .pos-panel__head { gap: 8px; padding: 16px; }
+.pos-panel--sale .pos-panel__step { display: none; }
+.pos-panel--sale .pos-step-badge { display: none; }
+.pos-panel--sale .pos-cart-count { font-size: 11px; white-space: nowrap; }
+.pos-panel--sale .pos-panel__body--sale { min-height: 0; flex: 1; }
+.pos-panel--sale .pos-cart-scroll { padding: 16px; }
+.pos-panel--sale .pos-cart-line { padding-block: 16px; border-radius: 0; box-shadow: none; }
+.pos-panel--sale .pos-cart-line__action.btn-override-item { width: auto; min-width: 96px; padding: 8px; gap: 8px; font-variant-numeric: tabular-nums; border: 1px solid var(--border-subtle); }
+.pos-panel--sale .pos-qty-btn, .pos-panel--sale .pos-cart-line__action { min-height: 44px; min-width: 44px; }
+.pos-panel--sale .pos-qty-input { min-height: 44px; }
+.pos-panel--sale .pos-cart-line__foot { flex-wrap: wrap; gap: 12px; }
+.pos-panel--sale .pos-totals { padding: 16px; border-top: 1px solid var(--border-subtle); background: var(--surface); }
+.pos-panel--sale .pos-checkout-btn { min-height: 48px; display: flex; justify-content: space-between; gap: 8px; font-variant-numeric: tabular-nums; }
+.pos-panel--sale[data-step="payment"] > .pos-panel__head,
+.pos-panel--sale[data-step="payment"] > .pos-panel__body--sale { display: none; }
+.pos-payment-step[hidden], .pos-payment-amount[hidden] { display: none !important; }
+.pos-payment-step, .pos-payment-layout, .pos-payment-content { display: flex; flex: 1; flex-direction: column; min-height: 0; height: 100%; }
+.pos-payment-header { display: flex; align-items: center; gap: 12px; padding: 16px; border-bottom: 1px solid var(--border-subtle); }
+.pos-payment-header .btn { min-height: 44px; min-width: 44px; }
+.pos-payment-step #form-checkout { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.pos-payment-step #form-checkout > .modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+.pos-payment-step #form-checkout > .modal-footer { flex-shrink: 0; padding: 12px 16px; border-top: 1px solid var(--border-subtle); background: var(--surface); }
+.pos-payment-step .col-md-6 { width: 100%; border-right: 0 !important; }
+.pos-payment-step #checkout-submit-btn { min-height: 48px; flex: 1; }
+.pos-payment-step .pos-payment-summary { width: 100%; padding: 0 0 8px; margin: 0 !important; background: transparent !important; border: 0; }
+.pos-payment-summary .h2 { font-size: 20px; font-variant-numeric: tabular-nums; }
+.pos-payment-summary .fs-4 { font-size: 12px !important; }
+.pos-payment-step textarea { min-height: 64px; }
+.pos-payment-step #checkout-payment-methods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
+.pos-payment-method { border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.pos-payment-method.is-selected { border-color: var(--accent-color); background: color-mix(in srgb, var(--accent-color) 5%, var(--surface)); }
+.pos-payment-choice { display: flex; align-items: center; justify-content: flex-start; width: 100%; min-height: 52px; gap: 8px; padding: 10px; border: 0; background: transparent; color: var(--ink); font: inherit; font-weight: 600; text-align: left; }
+.pos-payment-choice:focus-visible { outline: 2px solid var(--accent-color); outline-offset: -3px; }
+.pos-payment-choice > i { flex-shrink: 0; }
+.pos-payment-label { min-width: 0; overflow-wrap: anywhere; }
+.pos-payment-check { margin-left: auto; visibility: hidden; color: var(--accent-color); }
+.is-selected .pos-payment-check { visibility: visible; }
+.pos-payment-amount { padding: 0 10px 10px; }
+.pos-payment-amount .form-label { font-size: 11px; }
+.pos-mobile-summary, .pos-mobile-close { display: none; }
+@media (min-width: 992px) {
+  .pos-workspace { grid-template-columns: minmax(0, 1fr) minmax(380px, 420px); }
+}
+@media (max-width: 991.98px) {
+  .pos-module { padding-bottom: 86px; }
+  .pos-workspace { grid-template-rows: minmax(280px, 1fr); }
+  .pos-panel--sale { display: none; }
+  .pos-panel--sale[data-mobile-open="true"] { display: flex; position: fixed; inset: 64px 8px calc(var(--erp-mobile-nav-height) + env(safe-area-inset-bottom) + 8px); z-index: 1030; height: auto; max-height: none; min-height: 0; background: var(--surface); box-shadow: var(--shadow-lg); }
+  .pos-panel--sale .pos-cart-scroll { max-height: none; flex: 1; overflow-y: auto; }
+  .pos-panel--sale .pos-panel__body--sale { overflow: hidden; }
+  .pos-mobile-close { display: inline-flex; min-height: 44px; min-width: 44px; }
+  .pos-mobile-summary { display: flex; position: fixed; left: 12px; right: 12px; bottom: calc(var(--erp-mobile-nav-height) + env(safe-area-inset-bottom) + 12px); z-index: 1025; justify-content: space-between; gap: 12px; min-height: 60px; padding: 12px 16px; box-shadow: var(--shadow-lg); text-align: left; }
+  .pos-mobile-summary small { display: block; font-size: 11px; font-weight: 400; }
+  .pos-workspace:has(.pos-panel--sale[data-mobile-open="true"]) ~ .pos-mobile-summary { display: none; }
+  .pos-panel--sale > .pos-panel__head { padding: 12px; gap: 6px; flex-wrap: wrap; }
+  .pos-panel--sale .pos-cart-count { padding: 4px; }
+  .pos-panel--sale .pos-cart-line__media { display: none; }
 }

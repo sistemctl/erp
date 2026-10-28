@@ -7,8 +7,8 @@ const root = path.resolve(__dirname, '../..');
 const dependency = (name) => require(path.join(root, 'backend/node_modules', name));
 const { Client } = dependency('pg');
 const env = dependency('dotenv').parse(fs.readFileSync(path.join(root, 'backend/.env')));
-const databaseName = `erp_audit_${Date.now()}_${process.pid}`;
-if (!/^erp_audit_\d+_\d+$/.test(databaseName)) throw new Error('Nombre de base temporal inválido.');
+const databaseName = `erp_audit_${Date.now()}_${process.pid}_test`;
+if (!/^erp_audit_\d+_\d+_test$/.test(databaseName)) throw new Error('Nombre de base temporal inválido.');
 const admin = new Client({ host: env.DB_HOST || 'localhost', port: env.DB_PORT || 5432,
   user: env.DB_USER || 'postgres', password: env.DB_PASS, database: env.DB_NAME || 'erp_techstore' });
 const results = [];
@@ -26,19 +26,19 @@ async function check(name, fn) {
     Object.assign(process.env, { ...env, DB_NAME: databaseName, NODE_ENV: 'test', JWT_SECRET: randomUUID() + randomUUID(),
       SMTP_HOST: '', SMTP_PASS: '', TWILIO_AUTH_TOKEN: '', GEMINI_API_KEY: '',
       PGOPTIONS: '-c statement_timeout=12000 -c lock_timeout=8000' });
-    models = require(path.join(root, 'backend/models'));
+    models = require(path.join(root, 'backend/dist/models'));
     const m = models, { sequelize } = m;
     assert.equal(sequelize.config.database, databaseName);
     await sequelize.sync({ force: true });
-    await require(path.join(root, 'backend/migrations/audit-2026-10')).migrateAuditSchema(sequelize);
-    await require(path.join(root, 'backend/migrations/caja-facturas-2026-10')).migrateCajaFacturasSchema(sequelize);
+    await require(path.join(root, 'backend/dist/migrations/audit-2026-10')).migrateAuditSchema(sequelize);
+    await require(path.join(root, 'backend/dist/migrations/caja-facturas-2026-10')).migrateCajaFacturasSchema(sequelize);
     const express = dependency('express'), app = express();
     app.use(express.json({ limit: '50mb' }));
-    app.use(require(path.join(root, 'backend/middleware/auditLog.middleware')));
+    app.use(require(path.join(root, 'backend/dist/middleware/auditLog.middleware')));
     for (const route of ['auth', 'config', 'ventas', 'facturas', 'reparaciones', 'instalaciones', 'inventario', 'series', 'compras', 'cartera', 'cotizaciones', 'productos', 'caja']) {
-      app.use(`/api/${route}`, require(path.join(root, `backend/routes/${route}.routes`)));
+      app.use(`/api/${route}`, require(path.join(root, `backend/dist/routes/${route}.routes`)));
     }
-    app.use(require(path.join(root, 'backend/middleware/errorHandler')));
+    app.use(require(path.join(root, 'backend/dist/middleware/errorHandler')));
     server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
     const url = `http://127.0.0.1:${server.address().port}/api`;
     const A = await m.Sede.create({ nombre: 'Auditoría A', direccion: 'Temporal A' });
@@ -55,7 +55,7 @@ async function check(name, fn) {
     const config = await m.ConfiguracionSistema.create({ empresa: 'Auditoría temporal', cobrarIvaPos: false, ivaDefecto: 19,
       descuentoMaximoPct: 15, emailActivo: false, smsActivo: false, whatsappActivo: false, emailFacturaAuto: false });
     const caja = await m.Caja.create({ sedeId: A.id, usuarioAperturaId: cashier.id, montoApertura: 1000000,
-      fecha: '2026-10-06', estado: 'abierta' });
+      fecha: require(path.join(root, 'backend/dist/utils/caja-fecha')).fechaOperativa(), estado: 'abierta' });
     const service = await m.Producto.create({ nombre: 'Servicio temporal', codigoBarras: 'AUD-SVC', categoriaId: category.id,
       precioVenta: 10000, precioCosto: 1000, esServicio: true, tieneIVA: true });
     const product = await m.Producto.create({ nombre: 'Producto temporal', codigoBarras: 'AUD-PROD', categoriaId: category.id,
@@ -228,7 +228,7 @@ async function check(name, fn) {
       try {
         const { promisify } = require('node:util');
         const { execFile } = require('node:child_process');
-        const result = await promisify(execFile)(process.execPath, ['--test', 'tests/combo.integration.test.js'], {
+        const result = await promisify(execFile)(process.execPath, ['--test', 'dist/tests/combo.integration.test.js'], {
           cwd: path.join(root, 'backend'), env: { ...process.env, RUN_DB_TESTS: '1', TEST_BASE_URL: url }, timeout: 60000
         });
         fs.writeFileSync(path.join(__dirname, 'combo-test-results.txt'), result.stdout);
@@ -237,8 +237,8 @@ async function check(name, fn) {
     await check('A16: migración aditiva funciona sobre tablas existentes', async () => {
       await sequelize.query('ALTER TABLE "Productos" DROP COLUMN "esCombo"');
       await sequelize.query('ALTER TABLE "Usuarios" DROP COLUMN "sessionVersion"');
-      await require(path.join(root, 'backend/migrations/audit-2026-10')).migrateAuditSchema(sequelize);
-      await require(path.join(root, 'backend/migrations/audit-2026-10')).migrateAuditSchema(sequelize);
+      await require(path.join(root, 'backend/dist/migrations/audit-2026-10')).migrateAuditSchema(sequelize);
+      await require(path.join(root, 'backend/dist/migrations/audit-2026-10')).migrateAuditSchema(sequelize);
       const columns = await sequelize.getQueryInterface().describeTable('Productos');
       assert.ok(columns.esCombo);
       await combo.update({ esCombo: true });
@@ -249,7 +249,7 @@ async function check(name, fn) {
       const exported = await request('/config/backup', adminToken, { password: backupPassword });
       assert.equal(exported.status, 200, JSON.stringify(exported.body));
       assert.equal(exported.body.version, 2);
-      const helper = require(path.join(root, 'backend/utils/backup'));
+      const helper = require(path.join(root, 'backend/dist/utils/backup'));
       const data = helper.decryptBackup(exported.body, backupPassword);
       for (const name of ['ComboComponente', 'ItemVentaComponente', 'ItemDevolucion', 'DevolucionVenta', 'ReclamoGarantia']) assert.ok(Array.isArray(data[name]));
       assert.ok(data.Usuario[0].password.startsWith('$2'));
