@@ -403,14 +403,14 @@ export async function initInventario(container: HTMLElement) {
                     </header>
                     <div class="prod-price-grid">
                       <div class="prod-price-field">
-                        <label class="prod-price-field__label" for="prod-costo">Costo</label>
+                        <label class="prod-price-field__label" for="prod-costo" id="prod-costo-label">Costo por unidad</label>
                         <div class="input-group">
                           <span class="input-group-text">$</span>
                           <input type="number" id="prod-costo" class="form-control" required step="0.01" min="0" placeholder="0">
                         </div>
                       </div>
                       <div class="prod-price-field prod-price-field--highlight">
-                        <label class="prod-price-field__label" for="prod-venta">Venta</label>
+                        <label class="prod-price-field__label" for="prod-venta" id="prod-venta-label">Venta por unidad</label>
                         <div class="input-group">
                           <span class="input-group-text">$</span>
                           <input type="number" id="prod-venta" class="form-control fw-semibold" required step="0.01" min="0" placeholder="0">
@@ -431,6 +431,23 @@ export async function initInventario(container: HTMLElement) {
                     <p class="prod-form-card__desc mb-0 mt-2" id="prod-unidad-hint">
                       En metros, 1 und de stock = 1 metro. Precio costo/venta es por metro.
                     </p>
+                    <div id="prod-roll-calculator" class="border rounded p-2 mt-3 d-none">
+                      <p class="small mb-2">Si compras por rollo, calcula el costo de 1 metro antes de guardar.</p>
+                      <div class="row g-2 align-items-end">
+                        <div class="col-sm-5">
+                          <label class="form-label small mb-1" for="prod-roll-costo">Costo del rollo ($)</label>
+                          <input type="number" id="prod-roll-costo" class="form-control" min="0.01" step="0.01" placeholder="Ej. 300000">
+                        </div>
+                        <div class="col-sm-4">
+                          <label class="form-label small mb-1" for="prod-roll-metros">Metros del rollo</label>
+                          <input type="number" id="prod-roll-metros" class="form-control" min="1" step="1" placeholder="Ej. 305">
+                        </div>
+                        <div class="col-sm-3">
+                          <button type="button" id="prod-calcular-costo-metro" class="btn btn-outline-primary w-100">Calcular</button>
+                        </div>
+                      </div>
+                      <p class="small text-secondary mb-0 mt-2" id="prod-costo-metro-resultado"></p>
+                    </div>
                     <div class="prod-stock-block d-none" id="prod-stock-wrapper">
                       <label class="prod-price-field__label" for="prod-stock-actual">Existencias (sede actual)</label>
                       <input type="number" id="prod-stock-actual" class="form-control prod-form-stock-input" readonly>
@@ -1120,9 +1137,13 @@ export async function initInventario(container: HTMLElement) {
     const hint = requireElement('prod-unidad-hint', HTMLParagraphElement);
     const unidad = normalizeUnidadMedida(document.querySelector<HTMLInputElement | HTMLSelectElement>('#prod-unidad')?.value);
     if (!hint) return;
-    hint.textContent = String(unidad === 'm'
-      ? 'En metros, 1 und de stock = 1 metro. Precio costo/venta es por metro.'
-      : 'Unidad por pieza. El stock y los precios son por und.');
+    const esMetro = unidad === 'm';
+    hint.textContent = String(esMetro
+      ? '1 unidad de stock = 1 metro. El costo y la venta se registran por metro.'
+      : 'Unidad por pieza. El stock y los precios son por unidad.');
+    requireElement('prod-costo-label', HTMLLabelElement).textContent = esMetro ? 'Costo por metro' : 'Costo por unidad';
+    requireElement('prod-venta-label', HTMLLabelElement).textContent = esMetro ? 'Venta por metro' : 'Venta por unidad';
+    requireElement('prod-roll-calculator', HTMLDivElement).classList.toggle('d-none', !esMetro);
   };
 
   document.getElementById('prod-nombre')?.addEventListener('input', () => {
@@ -1134,6 +1155,18 @@ export async function initInventario(container: HTMLElement) {
   });
   document.getElementById('prod-codigo')?.addEventListener('input', syncProdFormMeta);
   document.getElementById('prod-unidad')?.addEventListener('change', syncProdUnidadHint);
+  document.getElementById('prod-calcular-costo-metro')?.addEventListener('click', () => {
+    const costoRollo = Number(requireElement('prod-roll-costo', HTMLInputElement).value);
+    const metrosRollo = Number(requireElement('prod-roll-metros', HTMLInputElement).value);
+    const resultado = requireElement('prod-costo-metro-resultado', HTMLParagraphElement);
+    if (!Number.isFinite(costoRollo) || costoRollo <= 0 || !Number.isInteger(metrosRollo) || metrosRollo <= 0) {
+      resultado.textContent = 'Ingresa un costo positivo y la cantidad entera de metros del rollo.';
+      return;
+    }
+    const costoMetro = Math.round((costoRollo / metrosRollo) * 100) / 100;
+    requireElement('prod-costo', HTMLInputElement).value = costoMetro.toFixed(2);
+    resultado.textContent = `Costo por metro: $${new Intl.NumberFormat('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(costoMetro)}. Revisa y guarda el producto.`;
+  });
   document.getElementById('prod-combo')?.addEventListener('change', syncProductKind);
   document.getElementById('btn-prod-combo-agregar')?.addEventListener('click', () => {
     const select = requireElement('prod-combo-producto', HTMLSelectElement);
@@ -1860,6 +1893,9 @@ export async function initInventario(container: HTMLElement) {
       }));
       requireElement('prod-imagen-url', HTMLInputElement).value = String(item.producto.imagenUrl || '');
       requireElement('prod-unidad', HTMLSelectElement).value = String(normalizeUnidadMedida(item.producto.unidadMedida));
+      requireElement('prod-roll-costo', HTMLInputElement).value = '';
+      requireElement('prod-roll-metros', HTMLInputElement).value = '';
+      requireElement('prod-costo-metro-resultado', HTMLParagraphElement).textContent = '';
       syncProdUnidadHint();
 
       const stockInput = requireElement('prod-stock-actual', HTMLInputElement);

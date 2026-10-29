@@ -17,7 +17,7 @@ COPY frontend ./frontend
 COPY shared ./shared
 
 WORKDIR /app/backend
-RUN npm run typecheck && npm test
+RUN npm run typecheck && npm test && node scripts/version-frontend-assets.cjs
 
 FROM node:20-alpine AS runtime
 WORKDIR /app/backend
