@@ -29,8 +29,8 @@ export async function initInventario(container: HTMLElement) {
   } as Record<string,string>)[char] || char);
 
   const parseStockInput = (val: unknown) => {
-    const n = parseInt(String(val ?? '').replace(/[^\d-]/g, ''), 10);
-    return Number.isNaN(n) ? 0 : Math.max(0, n);
+    const n = Number(val ?? 0);
+    return Number.isSafeInteger(n) && n >= 0 ? n : 0;
   };
 
   const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
@@ -618,6 +618,7 @@ export async function initInventario(container: HTMLElement) {
                 <code>nombre,codigoBarras,descripcion,precioVenta,precioCosto,tieneIVA,stockMinimo,tieneNumeroSerie,esReacondicionado,categoriaNombre</code><br>
                 <span class="small">La columna <code>codigoBarras</code> es opcional; si falta, se asigna un código interno (29…).</span>
               </div>
+              <p class="small">Para cables use <code>unidadMedida=m</code>: stock y precios por metro. El stock se asigna solo a la sede seleccionada. Para costo de rollo use <code>presentacionCosto=rollo,costoTotalRollo,metrosPorRollo</code> y deje precioCosto vacío. Venta siempre por metro; no se convierten productos existentes.</p>
               <div class="mb-3">
                 <label class="form-label">Seleccionar Archivo CSV</label>
                 <input type="file" id="csv-file" class="form-control" accept=".csv" required>
@@ -1141,8 +1142,8 @@ export async function initInventario(container: HTMLElement) {
     hint.textContent = String(esMetro
       ? '1 unidad de stock = 1 metro. El costo y la venta se registran por metro.'
       : 'Unidad por pieza. El stock y los precios son por unidad.');
-    requireElement('prod-costo-label', HTMLLabelElement).textContent = esMetro ? 'Costo por metro' : 'Costo por unidad';
-    requireElement('prod-venta-label', HTMLLabelElement).textContent = esMetro ? 'Venta por metro' : 'Venta por unidad';
+    requireElement('prod-costo-label', HTMLLabelElement).textContent = esMetro ? 'Costo por metro ($/m)' : 'Costo por unidad';
+    requireElement('prod-venta-label', HTMLLabelElement).textContent = esMetro ? 'Venta por metro ($/m)' : 'Venta por unidad';
     requireElement('prod-roll-calculator', HTMLDivElement).classList.toggle('d-none', !esMetro);
   };
 
@@ -1934,7 +1935,7 @@ export async function initInventario(container: HTMLElement) {
     document.querySelectorAll<HTMLElement>('.btn-editar').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        abrirEdicionProducto(eventElement(e).getAttribute('data-id'));
+        abrirEdicionProducto(btn.getAttribute('data-id'));
       });
     });
 
@@ -2461,6 +2462,10 @@ export async function initInventario(container: HTMLElement) {
         return;
       }
       rememberRecentCat(categoriaId);
+      const stockEntered = Number(requireElement('prod-stock-actual', HTMLInputElement).value || 0);
+      if (!Number.isSafeInteger(stockEntered) || stockEntered < 0 || stockEntered > 2147483647) {
+        showToast('Existencias inválidas', 'Indique metros o unidades completos, sin fracciones.', 'warning'); return;
+      }
       const data = {
         codigoBarras: undefined as string | undefined,
         nombre: requireElement('prod-nombre', HTMLInputElement).value,
@@ -2605,6 +2610,7 @@ export async function initInventario(container: HTMLElement) {
 
       const formData = new FormData();
       formData.append('archivo', fileInput.files[0]);
+      formData.append('sedeId', selectSede.value);
 
       // Fetch normal porque es un FormData (no JSON)
       const token = localStorage.getItem('token');

@@ -75,7 +75,7 @@ export function mountInventarioInversion(container: HTMLElement, usuario: Sessio
     requireElement('inv-inversion-sedes', HTMLElement).innerHTML = data.sedes.map(sede => `<li><span>${escapeHtml(sede.nombre)}</span><strong>${formatInversionMoney(sede.inversionTotal)}</strong></li>`).join('');
     requireElement('inv-inversion-rows', HTMLTableSectionElement).innerHTML = data.items.length ? data.items.map(item => `<tr data-id="inversion-${escapeHtml(item.id)}">
       <td><strong>${escapeHtml(item.nombre)}</strong>${!item.activo ? ' <span class="badge bg-secondary-lt">Inactivo</span>' : ''}${item.sinCosto ? ' <span class="badge bg-warning-lt">Sin costo registrado</span>' : ''}</td><td>${escapeHtml(item.codigoBarras || '—')}</td><td>${escapeHtml(item.sedeNombre)}</td>
-      <td class="text-end">${new Intl.NumberFormat('es-CO').format(item.cantidad)} ${escapeHtml(item.unidadMedida)}</td><td class="text-end">${formatInversionMoney(item.costoUnitario)}</td><td class="text-end fw-bold">${formatInversionMoney(item.inversionTotal)}</td>
+      <td class="text-end">${new Intl.NumberFormat('es-CO').format(item.cantidad)} ${escapeHtml(item.unidadMedida)}</td><td class="text-end">${formatInversionMoney(item.costoUnitario)}/${escapeHtml(item.unidadMedida)}</td><td class="text-end fw-bold">${formatInversionMoney(item.inversionTotal)}</td>
     </tr>`).join('') : '<tr><td colspan="6" class="text-center text-secondary py-4">No hay mercancía con existencias en este alcance.</td></tr>';
     page = data.pagination.page; pages = data.pagination.totalPages;
     previous.disabled = page <= 1; next.disabled = page >= pages;

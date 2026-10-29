@@ -12,6 +12,9 @@ import { erpAction, erpActions } from '../utils/action-buttons.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { initBarcodeScanner, destroyBarcodeScanner } from '../utils/barcode.js';
 import { showToast } from '../utils/toast.js';
+import { mountRolloCalculator } from '../utils/compra-rollo.js';
+import { normalizeCompraUnidad, moneyCents } from '../utils/compra-unidad.js';
+import { labelUnidadMedida } from '../utils/unidad-medida.js';
 
 let comprasKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
 
@@ -286,7 +289,7 @@ export async function initCompras(container: HTMLElement) {
                           <label class="form-label" for="oc-producto-costo">Costo</label>
                           <div class="input-group">
                             <span class="input-group-text">$</span>
-                            <input type="number" id="oc-producto-costo" class="form-control" placeholder="0" min="0" step="1" inputmode="numeric">
+                            <input type="number" id="oc-producto-costo" class="form-control" placeholder="0" min="0" step="0.01" inputmode="decimal">
                           </div>
                         </div>
                         <div class="oc-field oc-field--qty">
@@ -434,7 +437,7 @@ export async function initCompras(container: HTMLElement) {
                     <label class="form-label" for="oc-modal-costo">Costo</label>
                     <div class="input-group">
                       <span class="input-group-text">$</span>
-                      <input type="number" id="oc-modal-costo" class="form-control" placeholder="0" min="0" step="1" inputmode="numeric">
+                      <input type="number" id="oc-modal-costo" class="form-control" placeholder="0" min="0" step="0.01" inputmode="decimal">
                     </div>
                   </div>
                   <div class="oc-field oc-field--qty">
@@ -516,7 +519,7 @@ export async function initCompras(container: HTMLElement) {
               </div>
               <div class="mb-3">
                 <label class="form-label required">Monto del Pago / Abono ($ COP)</label>
-                <input type="number" id="pago-monto-input" class="form-control" required min="1">
+                <input type="number" id="pago-monto-input" class="form-control" required min="0.01" step="0.01" inputmode="decimal">
               </div>
               <div class="mb-3">
                 <label class="form-label required">Origen del dinero</label>
@@ -806,6 +809,8 @@ export async function initCompras(container: HTMLElement) {
   const modalAddBtn = requireElement('oc-modal-add', HTMLButtonElement);
   const modalCartSummary = requireElement('oc-modal-cart-summary', HTMLDivElement);
   const modalCartList = requireElement('oc-modal-cart-list', HTMLDivElement);
+  const rolloMain = mountRolloCalculator(inputCosto, inputCant, requireElement('oc-product-picker', HTMLDivElement).closest('.oc-add-panel') as HTMLElement);
+  const rolloModal = mountRolloCalculator(modalCosto, modalCant, modalCompose);
   let pickerMatches: ProductoDTO[] = [];
   let pickerActiveIdx = -1;
   let pickerCategoriaId = '';
@@ -972,7 +977,7 @@ export async function initCompras(container: HTMLElement) {
       const codigo = p.codigoBarras || 's/c';
       const cat = productoCategoriaNombre(p);
       const catShort = categoriaChipLabel(cat);
-      const costo = Math.round(Number(p.precioCosto) || 0);
+      const costo = (Number(p.precioCosto) || 0);
       return `
         <button type="button" class="oc-product-picker__item" role="option" id="oc-prod-opt-${idx}" data-id="${escapeOcHtml(p.id)}" aria-selected="false">
           <span class="oc-product-picker__main">
@@ -1051,6 +1056,7 @@ export async function initCompras(container: HTMLElement) {
   }
 
   function clearProductoPicker({ keepFocus = false } = {}) {
+    rolloMain.selectProduct(null);
     if (selectProd) selectProd.value = String('');
     if (displayProd) displayProd.value = String('');
     if (inputCosto) inputCosto.value = String('');
@@ -1092,8 +1098,8 @@ export async function initCompras(container: HTMLElement) {
             </button>
           </div>
           <div class="oc-product-modal__added-meta">
-            <span>× ${item.cantidadPedida}</span>
-            <span>${formatter.format(Number(item.precioUnitario))}</span>
+            <span>× ${item.cantidadPedida} ${labelUnidadMedida(item.unidadMedida)}</span>
+            <span>${formatter.format(Number(item.precioUnitario))}/${labelUnidadMedida(item.unidadMedida)}</span>
             <span class="oc-product-modal__added-sub">${formatter.format(Number(sub))}</span>
           </div>
         </div>
@@ -1102,6 +1108,7 @@ export async function initCompras(container: HTMLElement) {
   }
 
   function clearModalCompose({ clearForm = false } = {}) {
+    rolloModal.selectProduct(null);
     modalSelectedProd = null;
     if (modalCompose) modalCompose.hidden = true;
     if (modalProdName) modalProdName.textContent = String('—');
@@ -1122,12 +1129,13 @@ export async function initCompras(container: HTMLElement) {
     if (!prod) return;
     if (selectProd) selectProd.value = String(prod.id);
     if (displayProd) displayProd.value = String(prod.nombre || '');
-    if (inputCosto) inputCosto.value = String(Math.round(Number(prod.precioCosto) || 0));
+    if (inputCosto) inputCosto.value = String((Number(prod.precioCosto) || 0));
     if (inputCant && (!inputCant.value || parseInt(inputCant.value, 10) < 1)) {
       inputCant.value = String(1);
     }
     syncPickerClearBtn();
     selectProd?.dispatchEvent(new Event('change', { bubbles: true }));
+    rolloMain.selectProduct(prod);
   }
 
   function chooseProductoFromPicker(prod: ProductoDTO) {
@@ -1136,9 +1144,10 @@ export async function initCompras(container: HTMLElement) {
     selectProductoEnFormulario(prod);
     if (modalCompose) modalCompose.hidden = false;
     if (modalProdName) modalProdName.textContent = String(prod.nombre || 'Producto');
-    const costo = Math.round(Number(prod.precioCosto) || 0);
+    const costo = (Number(prod.precioCosto) || 0);
     if (modalCosto) modalCosto.value = String(costo > 0 ? costo : '');
     if (modalCant) modalCant.value = String(1);
+    rolloModal.selectProduct(prod);
     modalCompose?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     // Keep modal open for multi-add
     if (costo <= 0) {
@@ -1157,19 +1166,19 @@ export async function initCompras(container: HTMLElement) {
       return;
     }
     const costo = Number(modalCosto?.value || 0);
-    const cant = parseInt(String(modalCant?.value || 0), 10);
+    const cant = Number(modalCant?.value || 0);
     if (costo <= 0 || cant <= 0) {
       showToast('Datos incompletos', 'Indique costo y cantidad válidos.', 'warning');
       modalCosto?.focus();
       return;
     }
 
-    addProductoAlCarrito({
+    if (!addProductoAlCarrito({
       productoId: prod.id,
       nombre: prod.nombre,
       cantidadPedida: cant,
       precioUnitario: costo
-    });
+    })) return;
     showToast('Producto agregado', `${prod.nombre} × ${cant}`, 'success');
     updateModalCartSummary();
     clearModalCompose();
@@ -1186,19 +1195,27 @@ export async function initCompras(container: HTMLElement) {
   }
 
   function addProductoAlCarrito({ productoId, nombre, cantidadPedida, precioUnitario }: CompraCart) {
+    const product = productos.find(item => item.id === productoId);
+    try {
+      const canonical = normalizeCompraUnidad({ cantidadPedida, precioUnitario }, product?.unidadMedida || 'und');
+      cantidadPedida = canonical.cantidadPedida; precioUnitario = Number(canonical.precioUnitario);
+    } catch (error) { showToast('Datos inválidos', errorMessage(error), 'warning'); return false; }
     const exist = cartItems.find((item) => item.productoId === productoId);
     if (exist) {
+      if (moneyCents(exist.precioUnitario) !== moneyCents(precioUnitario)) { showToast('Costo diferente', 'El producto ya está agregado con otro costo. Edite o retire esa línea antes de agregarlo nuevamente.', 'warning'); return false; }
       exist.cantidadPedida += cantidadPedida;
     } else {
       cartItems.push({
         productoId,
         nombre,
         cantidadPedida,
-        precioUnitario
+        precioUnitario,
+        unidadMedida: product?.unidadMedida || 'und'
       });
     }
     renderCart();
     updateModalCartSummary();
+    return true;
   }
 
   async function aplicarCodigoEscaneado(codigoRaw: string) {
@@ -1229,8 +1246,8 @@ export async function initCompras(container: HTMLElement) {
     selectProductoEnFormulario(prod);
     if (ocScan) ocScan.value = String('');
 
-    const costo = Math.round(Number(inputCosto?.value || prod.precioCosto) || 0);
-    const cant = parseInt(String(inputCant?.value || 1), 10) || 1;
+    const costo = (Number(inputCosto?.value || prod.precioCosto) || 0);
+    const cant = Number(inputCant?.value || 1);
 
     if (costo <= 0) {
       showToast('Producto encontrado', `${prod.nombre}: indique el costo y pulse Agregar.`, 'warning');
@@ -1239,12 +1256,12 @@ export async function initCompras(container: HTMLElement) {
       return;
     }
 
-    addProductoAlCarrito({
+    if (!addProductoAlCarrito({
       productoId: prod.id,
       nombre: prod.nombre,
       cantidadPedida: cant,
       precioUnitario: costo
-    });
+    })) return;
     if (inputCant) inputCant.value = String(1);
     clearProductoPicker();
     showToast('Producto agregado', `${prod.nombre} × ${cant}`, 'success');
@@ -1355,14 +1372,14 @@ export async function initCompras(container: HTMLElement) {
       if (!pId) return;
       const prod = productos.find((p) => p.id === pId);
       if (prod && inputCosto) {
-        inputCosto.value = String(Math.round(Number(prod.precioCosto) || 0));
+        inputCosto.value = String((Number(prod.precioCosto) || 0));
       }
     });
 
     btnAddItem?.addEventListener('click', () => {
       const pId = selectProd.value;
       const costo = Number(inputCosto?.value || 0);
-      const cant = parseInt(String(inputCant?.value || 0), 10);
+      const cant = Number(inputCant?.value || 0);
 
       if (!pId || costo <= 0 || cant <= 0) {
         showToast('Datos incompletos', 'Seleccione producto, costo y cantidad válidos.', 'warning');
@@ -1373,12 +1390,12 @@ export async function initCompras(container: HTMLElement) {
       const prod = productos.find((p) => p.id === pId);
       if (!prod) return;
 
-      addProductoAlCarrito({
+      if (!addProductoAlCarrito({
         productoId: pId,
         nombre: prod.nombre,
         cantidadPedida: cant,
         precioUnitario: costo
-      });
+      })) return;
       if (inputCant) inputCant.value = String(1);
       clearProductoPicker({ keepFocus: true });
     });
@@ -1410,12 +1427,12 @@ export async function initCompras(container: HTMLElement) {
       tot += sub;
       return `
         <tr>
-          <td><strong>${item.nombre}</strong></td>
+          <td><strong>${item.nombre}</strong><small class="d-block text-secondary">${labelUnidadMedida(item.unidadMedida)}</small></td>
           <td class="text-center">
             <input type="number" class="form-control form-control-sm text-center oc-cart-qty" data-idx="${idx}" min="1" value="${item.cantidadPedida}" aria-label="Cantidad">
           </td>
           <td class="text-end">
-            <input type="number" class="form-control form-control-sm text-end oc-cart-costo" data-idx="${idx}" min="0" step="1" value="${item.precioUnitario}" aria-label="Costo unitario">
+            <input type="number" class="form-control form-control-sm text-end oc-cart-costo" data-idx="${idx}" min="0" step="0.01" value="${item.precioUnitario}" aria-label="Costo por ${labelUnidadMedida(item.unidadMedida)}">
           </td>
           <td class="text-end fw-bold text-primary oc-cart-sub" data-idx="${idx}">${formatter.format(Number(sub))}</td>
           <td>
@@ -1433,8 +1450,8 @@ export async function initCompras(container: HTMLElement) {
     tbodyCart.querySelectorAll<HTMLInputElement>('.oc-cart-qty').forEach((input) => {
       input.addEventListener('change', () => {
         const i = parseInt(input.dataset.idx || '0', 10);
-        const val = parseInt(input.value, 10);
-        if (!Number.isFinite(val) || val < 1) {
+        const val = Number(input.value);
+        if (!Number.isSafeInteger(val) || val < 1 || val > 2147483647) {
           input.value = String(cartItems[i].cantidadPedida);
           return;
         }
@@ -1495,7 +1512,7 @@ export async function initCompras(container: HTMLElement) {
           sedeId,
           fechaEsperada: requireElement('oc-fecha-esperada', HTMLInputElement).value || null,
           observaciones: requireElement('oc-observaciones', HTMLInputElement).value || '',
-          items: cartItems
+          items: cartItems.map(({ productoId, cantidadPedida, precioUnitario }) => ({ productoId, presentacion: 'unidad', cantidadPedida, precioUnitario }))
         };
 
         await apiFetch('/compras', {
@@ -1593,7 +1610,7 @@ export async function initCompras(container: HTMLElement) {
                           <div class="small text-secondary mt-1"><span class="badge bg-blue-lt counter-series-rec" data-pid="${item.productoId}">0</span> de <span class="badge bg-secondary-lt max-series-rec" data-pid="${item.productoId}">${maxPosible}</span> seriales requeridos</div>
                         </div>
                       </td>
-                      <td class="text-center">${item.cantidadPedida}</td>
+                      <td class="text-center">${item.cantidadPedida} ${labelUnidadMedida(item.producto?.unidadMedida)}</td>
                       <td class="text-center text-blue">${item.cantidadRecibida}</td>
                       <td class="text-center">
                         <input type="number" class="form-control form-control-sm input-recibir-cant" 
@@ -1667,7 +1684,8 @@ export async function initCompras(container: HTMLElement) {
 
         inputs.forEach(input => {
           const pid = input.dataset.pid;
-          const cant = parseInt(input.value || '0');
+          const cant = Number(input.value || '0');
+          if (!Number.isSafeInteger(cant) || cant < 0) { validationError = 'Indique cantidades enteras; para cables son metros completos.'; return; }
           
           const switchSeries = requireSelector(`.switch-recibir-seriales[data-pid="${pid}"]`, HTMLInputElement, modalForm);
           const seriesTextarea = requireSelector(`.input-recibir-series[data-pid="${pid}"]`, HTMLTextAreaElement, modalForm);
@@ -1840,7 +1858,8 @@ export async function initCompras(container: HTMLElement) {
 
         inputs.forEach(input => {
           const pid = input.dataset.pid;
-          const cant = parseInt(input.value || '0');
+          const cant = Number(input.value || '0');
+          if (!Number.isSafeInteger(cant) || cant < 0) { validationError = 'Indique cantidades enteras; para cables son metros completos.'; return; }
           if (cant > 0) {
             totalDevuelto += cant;
             const switchSeries = requireSelector(`.switch-devolver-seriales[data-pid="${pid}"]`, HTMLInputElement, modalForm);
@@ -1970,7 +1989,7 @@ export async function initCompras(container: HTMLElement) {
                     <div><strong>${item.producto ? item.producto.nombre : 'N/A'}</strong></div>
                     ${item.producto && item.producto.codigoBarras ? `<div class="text-secondary small">${item.producto.codigoBarras}</div>` : ''}
                   </td>
-                  <td class="text-center">${item.cantidadPedida}</td>
+                  <td class="text-center">${item.cantidadPedida} ${labelUnidadMedida(item.producto?.unidadMedida)}</td>
                   <td class="text-center text-blue fw-bold">${item.cantidadRecibida}</td>
                   <td class="text-end">${formatter.format(Number(item.precioUnitario))}</td>
                   <td class="text-end fw-bold">${formatter.format(Number(item.cantidadPedida * Number(item.precioUnitario)))}</td>
@@ -2013,7 +2032,7 @@ export async function initCompras(container: HTMLElement) {
     requireElement('pago-prov-nombre', HTMLInputElement).value = String(oc.proveedor ? oc.proveedor.nombre : 'N/A');
     requireElement('pago-total-compra', HTMLInputElement).value = String(formatter.format(Number(oc.total)));
     requireElement('pago-saldo-actual', HTMLInputElement).value = String(formatter.format(Number(oc.saldoPendiente)));
-    requireElement('pago-monto-input', HTMLInputElement).value = String(Math.round(Number(oc.saldoPendiente)));
+    requireElement('pago-monto-input', HTMLInputElement).value = String(oc.saldoPendiente);
     requireElement('pago-monto-input', HTMLInputElement).setAttribute('max', oc.saldoPendiente);
     requireElement('pago-fuente-fondos', HTMLSelectElement).value = String('transferencia_empresa');
     requireElement('pago-pagado-por', HTMLInputElement).value = String('');

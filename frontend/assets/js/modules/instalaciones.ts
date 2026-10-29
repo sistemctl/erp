@@ -12,7 +12,7 @@ import { erpHeader } from '../utils/module-shell.js';
 import { showToast } from '../utils/toast.js';
 import { labelUnidadMedida } from '../utils/unidad-medida.js';
 
-const fmt = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+const fmt = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 2 });
 
 const ESTADO_LABEL: Record<string,string> = {
   borrador: 'Borrador',
@@ -773,7 +773,7 @@ export async function initInstalaciones(container: HTMLElement) {
       const codigo = p.codigoBarras || 's/c';
       const cat = productoCategoriaNombre(p);
       const catShort = categoriaChipLabel(cat);
-      const precio = Math.round(Number(p.precioVenta) || 0);
+      const precio = (Number(p.precioVenta) || 0);
       const ud = labelUnidadMedida(p.unidadMedida);
       return `
         <button type="button" class="oc-product-picker__item" role="option" id="inst-prod-opt-${idx}" data-id="${escapeInstHtml(p.id)}" aria-selected="false">
@@ -861,7 +861,7 @@ export async function initInstalaciones(container: HTMLElement) {
     if (idInput) idInput.value = prod.id;
     if (display) display.value = prod.nombre || '';
     if (desc) desc.value = prod.nombre || '';
-    if (precio) precio.value = fmt.format(Math.round(Number(prod.precioVenta) || 0));
+    if (precio) precio.value = fmt.format((Number(prod.precioVenta) || 0));
     if (cant) cant.value = String(Math.max(1, Math.trunc(cantidad) || 1));
     if (serieFlag) serieFlag.value = prod.tieneNumeroSerie ? '1' : '0';
     if (unidadInput) unidadInput.value = ud;
@@ -903,7 +903,7 @@ export async function initInstalaciones(container: HTMLElement) {
     const nameEl = requireElement('inst-modal-prod-name', HTMLElement);
     if (nameEl) nameEl.textContent = prod.nombre || 'Producto';
     const precioEl = requireElement('inst-modal-precio', HTMLInputElement);
-    if (precioEl) precioEl.value = String(Math.round(Number(prod.precioVenta) || 0));
+    if (precioEl) precioEl.value = String((Number(prod.precioVenta) || 0));
     const cantEl = requireElement('inst-modal-cant', HTMLInputElement);
     if (cantEl) cantEl.value = '1';
     const udEl = requireElement('inst-modal-ud', HTMLSpanElement);
@@ -981,7 +981,8 @@ export async function initInstalaciones(container: HTMLElement) {
 
     document.getElementById('inst-modal-usar')?.addEventListener('click', () => {
       if (!modalSelectedProd) return;
-      const cant = parseInt(document.querySelector<HTMLInputElement>('#inst-modal-cant')?.value || '1', 10) || 1;
+      const cant = Number(document.querySelector<HTMLInputElement>('#inst-modal-cant')?.value || '1');
+      if (!Number.isSafeInteger(cant) || cant < 1) { showToast('Cantidad inválida', 'Indique metros o unidades completos.', 'warning'); return; }
       fillMaterialForm(modalSelectedProd, { cantidad: cant });
       modalProd?.hide();
       const seriesWrap = requireElement('mat-series-wrap', HTMLDivElement);
@@ -1151,7 +1152,7 @@ export async function initInstalaciones(container: HTMLElement) {
                         ${canWrite && !locked ? `
                           <label class="visually-hidden" for="mat-precio-${m.id}">Precio de venta de ${m.producto?.nombre || 'material'}</label>
                           <input type="number" id="mat-precio-${m.id}" class="form-control form-control-sm text-end mx-auto mat-price-input inst-detalle__price"
-                            data-mid="${m.id}" data-prev="${parseFloat(m.precioUnitario) || 0}" min="0" step="1" value="${parseFloat(m.precioUnitario) || 0}" inputmode="decimal" title="Cambie el precio de venta y presione Enter">
+                            data-mid="${m.id}" data-prev="${parseFloat(m.precioUnitario) || 0}" min="0" step="0.01" value="${parseFloat(m.precioUnitario) || 0}" inputmode="decimal" title="Cambie el precio de venta y presione Enter">
                         ` : fmt.format(parseFloat(m.precioUnitario) || 0)}
                       </td>
                       <td class="text-end">${fmt.format(parseFloat(m.costoUnitario) || 0)}</td>
@@ -1356,10 +1357,10 @@ export async function initInstalaciones(container: HTMLElement) {
       document.getElementById('btn-add-mat')?.addEventListener('click', async () => {
         const btn = requireElement('btn-add-mat', HTMLButtonElement);
         const productoId = document.querySelector<HTMLInputElement>('#mat-producto')?.value;
-        const cantidad = parseInt(document.querySelector<HTMLInputElement>('#mat-cantidad')?.value || '0', 10);
+        const cantidad = Number(document.querySelector<HTMLInputElement>('#mat-cantidad')?.value || '0');
         const seriesRaw = document.querySelector<HTMLInputElement>('#mat-series')?.value || '';
         const series = seriesRaw.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean);
-        if (!productoId || !cantidad) {
+        if (!productoId || !Number.isSafeInteger(cantidad) || cantidad <= 0) {
           showToast('Aviso', 'Busque un producto del catálogo y indique cantidad.', 'warning');
           return;
         }
@@ -1402,8 +1403,8 @@ export async function initInstalaciones(container: HTMLElement) {
         const commitQty = async () => {
           const mid = input.dataset.mid;
           const prev = parseInt(input.dataset.prev || '0', 10);
-          const next = parseInt(input.value, 10);
-          if (!mid || !next || next <= 0) {
+          const next = Number(input.value);
+          if (!mid || !Number.isSafeInteger(next) || next <= 0) {
             input.value = String(prev);
             showToast('Aviso', 'La cantidad debe ser un entero mayor a 0.', 'warning');
             return;

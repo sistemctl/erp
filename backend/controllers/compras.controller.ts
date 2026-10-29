@@ -4,7 +4,9 @@ import { transactionFinished } from '../utils/transaction-state';
 import type { Attributes, WhereOptions } from 'sequelize';
 import type CompraModel = require('../models/OrdenCompra');
 import type PagoModel = require('../models/PagoCompra');
-interface CompraItem { productoId: string; cantidadPedida?: number | string; precioUnitario?: number | string; cantidadRecibida?: number | string; cantidadDevolver?: number | string; series?: string[]; }
+import { normalizeCompraUnidad, inventoryQuantity, moneyCents, moneyText, type CompraUnidadInput } from '../utils/compra-unidad';
+import { httpError } from '../utils/http-error';
+interface CompraItem extends CompraUnidadInput { productoId: string; cantidadRecibida?: number | string; cantidadDevolver?: number | string; series?: string[]; }
 interface Body { proveedorId?: string; sedeId?: string; fechaEsperada?: string; observaciones?: string; items?: CompraItem[]; monto?: number | string; fuenteFondos?: Attributes<PagoModel>['fuenteFondos']; pagadoPor?: string; referencia?: string; }
 import { assertSedeAccess } from '../utils/sede';
 import models = require('../models');
@@ -54,7 +56,7 @@ export const getCompras: Handler<Body> = async (req, res, next) => {
         {
           model: ItemOrdenCompra,
           as: 'items',
-          include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras', 'tieneNumeroSerie'] }]
+          include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras', 'tieneNumeroSerie', 'unidadMedida'] }]
         },
         {
           model: PagoCompra,
@@ -78,11 +80,11 @@ export const createCompra: Handler<Body> = async (req, res, next) => {
   const transaction = await sequelize.transaction();
   req.auditTransaction = transaction;
   try {
-    const { proveedorId, fechaEsperada, observaciones, items, sedeId: bodySedeId } = req.body;
+    const { proveedorId, fechaEsperada, observaciones, items: rawItems, sedeId: bodySedeId } = req.body;
     const sedeId = await resolveActionSede(bodySedeId, requireUser(req), Sede, transaction);
     const usuarioId = requireUser(req).userId;
 
-    if (!proveedorId || !items || items.length === 0) {
+    if (!proveedorId || !Array.isArray(rawItems) || rawItems.length === 0) {
       return res.status(400).json({ error: 'Faltan parámetros obligatorios para registrar la compra.' });
     }
 
@@ -91,19 +93,24 @@ export const createCompra: Handler<Body> = async (req, res, next) => {
     }
 
     // Calcular total
-    let total = 0;
-    for (const item of items) {
-      if (!item.productoId || !item.cantidadPedida || parseFloat(String(item.precioUnitario)) <= 0) {
-        throw new Error('Artículos incompletos o precio unitario inválido.');
-      }
+    let totalCents = 0n;
+    const items: { productoId: string; cantidadPedida: number; precioUnitario: string }[] = [];
+    for (const item of rawItems) {
+      if (!item?.productoId || items.some(existing => existing.productoId === item.productoId)) throw httpError(400, 'Los productos deben ser válidos y no repetirse en la orden.');
       const producto = await Producto.findByPk(item.productoId, { transaction });
       if (!producto || producto.esCombo) {
-        throw new Error(producto?.esCombo
+        throw httpError(400, producto?.esCombo
           ? `El combo ${producto.nombre} no se puede comprar directamente; compre sus componentes.`
           : 'Uno de los productos de la compra no existe.');
       }
-      total += parseInt(String(item.cantidadPedida)) * parseFloat(String(item.precioUnitario));
+      try {
+        const normalized = normalizeCompraUnidad(item, producto.unidadMedida);
+        items.push({ productoId: item.productoId, ...normalized });
+        totalCents += moneyCents(normalized.precioUnitario) * BigInt(normalized.cantidadPedida);
+        moneyCents(moneyText(totalCents));
+      } catch (error) { throw httpError(400, error instanceof Error ? error.message : 'Artículo de compra inválido.'); }
     }
+    const total = moneyText(totalCents);
 
     const fechaVencimientoPago = new Date();
     fechaVencimientoPago.setDate(fechaVencimientoPago.getDate() + 30); // 30 días de plazo por defecto
@@ -127,9 +134,9 @@ export const createCompra: Handler<Body> = async (req, res, next) => {
       await ItemOrdenCompra.create({
         ordenCompraId: orden.id,
         productoId: item.productoId,
-        cantidadPedida: parseInt(String(item.cantidadPedida)),
+        cantidadPedida: item.cantidadPedida,
         cantidadRecibida: 0,
-        precioUnitario: parseFloat(String(item.precioUnitario))
+        precioUnitario: item.precioUnitario
       }, { transaction });
     }
 
@@ -186,14 +193,17 @@ export const recibirCompra: Handler<Body> = async (req, res, next) => {
       const dbItem = orden.items.find(i => i.productoId === recItem.productoId);
       if (!dbItem) continue;
 
-      const nuevaCantidadRecibida = parseInt(String(dbItem.cantidadRecibida)) + parseInt(String(recItem.cantidadRecibida));
+      let cantidadRecibida: number;
+      try { cantidadRecibida = inventoryQuantity(recItem.cantidadRecibida); }
+      catch (error) { throw httpError(400, error instanceof Error ? error.message : 'Cantidad inválida.'); }
+      const nuevaCantidadRecibida = Number(dbItem.cantidadRecibida) + cantidadRecibida;
       if (nuevaCantidadRecibida > dbItem.cantidadPedida) {
         throw new Error(`La cantidad recibida total supera la cantidad pedida para el producto ID: ${recItem.productoId}.`);
       }
 
       const producto = await Producto.findByPk(recItem.productoId, { transaction });
       if (producto && recItem.series && Array.isArray(recItem.series) && recItem.series.length > 0) {
-        const cant = parseInt(String(recItem.cantidadRecibida));
+        const cant = cantidadRecibida;
         if (recItem.series.length !== cant) {
           throw new Error(`Debe especificar exactamente ${cant} seriales para el producto ${producto.nombre}.`);
         }
@@ -228,12 +238,12 @@ export const recibirCompra: Handler<Body> = async (req, res, next) => {
       });
 
       if (stock) {
-        await stock.update({ cantidad: stock.cantidad + parseInt(String(recItem.cantidadRecibida)) }, { transaction });
+        await stock.update({ cantidad: stock.cantidad + cantidadRecibida }, { transaction });
       } else {
         await StockSede.create({
           productoId: recItem.productoId,
           sedeId: orden.sedeId,
-          cantidad: parseInt(String(recItem.cantidadRecibida))
+          cantidad: cantidadRecibida
         }, { transaction });
       }
 
@@ -242,7 +252,7 @@ export const recibirCompra: Handler<Body> = async (req, res, next) => {
         productoId: recItem.productoId,
         sedeId: orden.sedeId,
         tipo: 'entrada',
-        cantidad: parseInt(String(recItem.cantidadRecibida)),
+        cantidad: cantidadRecibida,
         motivo: `Recepción de Orden de Compra ID: ${orden.id}`,
         referenciaId: orden.id,
         usuarioId: requireUser(req).userId
@@ -456,8 +466,10 @@ export const devolverMercancia: Handler<Body> = async (req, res, next) => {
       const dbItem = orden.items.find(i => i.productoId === devItem.productoId);
       if (!dbItem) continue;
 
-      const cantidadDev = parseInt(String(devItem.cantidadDevolver || 0));
-      if (cantidadDev <= 0) continue;
+      if (devItem.cantidadDevolver === undefined || Number(devItem.cantidadDevolver) === 0) continue;
+      let cantidadDev: number;
+      try { cantidadDev = inventoryQuantity(devItem.cantidadDevolver); }
+      catch (error) { throw httpError(400, error instanceof Error ? error.message : 'Cantidad inválida.'); }
 
       if (cantidadDev > Number(dbItem.cantidadRecibida)) {
         throw new Error(`La cantidad a devolver supera la cantidad recibida para el producto ID: ${devItem.productoId}.`);

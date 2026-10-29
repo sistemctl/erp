@@ -28,7 +28,7 @@ El router cierra modales antes de desmontar la vista y destruye observadores, ev
 
 La barra inferior incluye todos los módulos permitidos por el rol en una fila desplazable. Se recorre deslizando o usando las flechas; Más permanece fijo como acceso al listado agrupado y su buscador. Los accesos conservan icono, etiqueta y un mínimo táctil de 44 px. Al navegar o cambiar de tamaño, el módulo activo se revela desplazando únicamente la barra. El controlador de navegación pertenece a la sesión y limpia sus eventos y observador al salir.
 
-Los recursos HTML, CSS y módulos usan la revisión `3.0.113`. Se ejecutan desde los artefactos de `dist`, mediante los comandos existentes del backend.
+Los recursos HTML, CSS y módulos usan la revisión `3.0.114`. Se ejecutan desde los artefactos de `dist`, mediante los comandos existentes del backend.
 
 ## Comprobaciones
 

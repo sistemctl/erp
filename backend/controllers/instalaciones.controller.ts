@@ -282,9 +282,9 @@ export const addMaterial: Handler<Body> = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { productoId, cantidad, series } = req.body;
-    const qty = parseInt(String(cantidad), 10);
+    const qty = Number(cantidad);
 
-    if (!productoId || !qty || qty <= 0) {
+    if (!productoId || !Number.isSafeInteger(qty) || qty <= 0 || qty > 2147483647) {
       await transaction.rollback();
       return res.status(400).json({ error: 'Producto y cantidad válida son obligatorios.' });
     }
@@ -452,10 +452,10 @@ export const updateMaterial: Handler<Body> = async (req, res, next) => {
 
     const oldQty = parseInt(String(material.cantidad), 10);
     const oldPrecio = parseFloat(String(material.precioUnitario)) || 0;
-    const newQty = hasCantidad ? parseInt(String(req.body.cantidad), 10) : oldQty;
+    const newQty = hasCantidad ? Number(req.body.cantidad) : oldQty;
     const newPrecio = hasPrecio ? parseFloat(String(req.body.precioUnitario)) : oldPrecio;
 
-    if (!Number.isInteger(newQty) || newQty <= 0) {
+    if (!Number.isSafeInteger(newQty) || newQty <= 0 || newQty > 2147483647) {
       await transaction.rollback();
       return res.status(400).json({ error: 'La cantidad debe ser un entero mayor a 0.' });
     }

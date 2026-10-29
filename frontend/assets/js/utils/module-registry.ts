@@ -2,7 +2,7 @@ export type ModuleInit = (container: HTMLElement, rawHash: string) => void | Pro
 export interface ModuleLifecycle { init: ModuleInit; destroy?: () => void; }
 type FunctionKey<T, F> = { [K in keyof T]: T[K] extends F ? K : never }[keyof T] & string;
 export interface ModuleLoader { load(): Promise<ModuleLifecycle>; }
-export const ASSET_V = '3.0.113';
+export const ASSET_V = '3.0.114';
 
 /** Los nombres y firmas se comprueban contra los exports del archivo fuente. */
 export function defineModule<T>(path: string, init: FunctionKey<T, ModuleInit>, destroy?: FunctionKey<T, () => void>): ModuleLoader {

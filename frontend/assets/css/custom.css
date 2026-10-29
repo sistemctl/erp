@@ -13412,6 +13412,12 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
 .inv-investment-main { border-top: 3px solid var(--accent-color); }
 .inv-investment-total { display: block; margin-top: 8px; color: var(--accent-color); font-size: clamp(24px,3vw,36px); line-height: 1.25; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .inv-investment-count { display: block; font-size: 28px; margin-top: 12px; font-variant-numeric: tabular-nums; }
+.oc-rollo-calculator { margin-top: 12px; padding: 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--accent-soft); }
+.oc-rollo-calculator[hidden], .oc-rollo-calculator [hidden] { display: none !important; }
+.oc-rollo-calculator .form-label { white-space: normal; }
+.oc-product-modal__compose input[readonly] { appearance: textfield; -moz-appearance: textfield; }
+.oc-product-modal__compose input[readonly]::-webkit-inner-spin-button,
+.oc-product-modal__compose input[readonly]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .inv-investment-total[data-long="true"] { font-size: 26px; }
 .inv-investment-sites { list-style: none; padding: 0; margin: 0; }
 .inv-investment-sites li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; padding: 12px 0; border-bottom: 1px solid var(--border-subtle); overflow-wrap: anywhere; }

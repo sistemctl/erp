@@ -8,9 +8,14 @@ import type CategoriaModel = require('../models/Categoria');
 type Body = CreationAttributes<ProductModel> & { componentes?: unknown; ajusteStock?: number | string | null; sedeId?: string; reasignarA?: string };
 import models = require('../models');
 const { Producto, Categoria, Sede, StockSede, NumeroSerie, MovimientoInventario, ComboComponente, sequelize } = models;
+const { ItemOrdenCompra, ItemVenta, MaterialInstalacion, RepuestoOrden } = models;
 import { Op } from 'sequelize';
 import { generateInternalBarcode, normalizeCodigoBarras } from '../utils/internal-barcode';
 import { normalizeUnidadMedida } from '../utils/unidad-medida';
+import { importProductPrices, parseCsvRecord } from '../utils/producto-importacion';
+import { moneyCents, moneyText } from '../utils/compra-unidad';
+import { httpError } from '../utils/http-error';
+import { resolveActionSede } from '../utils/sede';
 import { validateComboComponents, replaceComboComponents, recalculateParentComboCosts, getComboAvailability } from '../utils/combo';
 
 const comboInclude: IncludeOptions = {
@@ -65,8 +70,8 @@ export const createProducto: Handler<Body> = async (req, res, next) => {
       nombre,
       codigoBarras,
       descripcion,
-      precioVenta,
-      precioCosto,
+      precioVenta: rawPrecioVenta,
+      precioCosto: rawPrecioCosto,
       tieneIVA,
       stockMinimo,
       tieneNumeroSerie,
@@ -80,6 +85,9 @@ export const createProducto: Handler<Body> = async (req, res, next) => {
     } = req.body;
     const combo = !!esCombo;
     const unidad = combo ? 'und' : normalizeUnidadMedida(unidadMedida);
+    let precioCosto: string, precioVenta: string;
+    try { precioCosto = moneyText(moneyCents(rawPrecioCosto === undefined ? 0 : rawPrecioCosto)); precioVenta = moneyText(moneyCents(rawPrecioVenta === undefined ? 0 : rawPrecioVenta)); }
+    catch (error) { throw httpError(400, error instanceof Error ? error.message : 'Precios inválidos.'); }
     const comboData = combo
       ? await validateComboComponents({ componentes, transaction })
       : null;
@@ -259,12 +267,25 @@ export const updateProducto: Handler<Body> = async (req, res, next) => {
 
     if (productData.unidadMedida !== undefined) {
       productData.unidadMedida = normalizeUnidadMedida(productData.unidadMedida);
+      if (productData.unidadMedida !== normalizeUnidadMedida(producto.unidadMedida)) {
+        const references = await Promise.all([
+          StockSede.count({ where: { productoId: id, cantidad: { [Op.ne]: 0 } }, transaction }),
+          ItemOrdenCompra.count({ where: { productoId: id }, transaction }), ItemVenta.count({ where: { productoId: id }, transaction }),
+          MaterialInstalacion.count({ where: { productoId: id }, transaction }), RepuestoOrden.count({ where: { productoId: id }, transaction }),
+          MovimientoInventario.count({ where: { productoId: id }, transaction }), NumeroSerie.count({ where: { productoId: id }, transaction })
+        ]);
+        if (usadoComoComponente || references.some(count => count > 0)) throw httpError(400, 'No cambie la unidad de un producto con existencias o historial: no se conoce la longitud real de los registros antiguos. Cree un producto con la unidad correcta.');
+      }
     }
+    try {
+      if (productData.precioCosto !== undefined) productData.precioCosto = moneyText(moneyCents(productData.precioCosto));
+      if (productData.precioVenta !== undefined) productData.precioVenta = moneyText(moneyCents(productData.precioVenta));
+    } catch (error) { throw httpError(400, error instanceof Error ? error.message : 'Precios inválidos.'); }
 
     const rolesAjusteStock = ['admin', 'superadmin'];
     if (!combo && rolesAjusteStock.includes(requireUser(req).rol) && sedeId && ajusteStock !== undefined && ajusteStock !== null) {
-      const stockNuevo = parseInt(String(ajusteStock), 10);
-      if (Number.isNaN(stockNuevo) || stockNuevo < 0) {
+      const stockNuevo = Number(ajusteStock);
+      if (!Number.isSafeInteger(stockNuevo) || stockNuevo < 0 || stockNuevo > 2147483647) {
         await transaction.rollback();
         return res.status(400).json({ error: 'La cantidad de existencias debe ser un número mayor o igual a 0.' });
       }
@@ -445,8 +466,10 @@ export const importarCSV: Handler<Body> = async (req, res, next) => {
     }
 
     // Cabecera: nombre,codigoBarras,descripcion,precioVenta,precioCosto,tieneIVA,stockMinimo,tieneNumeroSerie,esReacondicionado,categoriaNombre
-    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+    const headers = parseCsvRecord(lines[0].replace(/^\uFEFF/, ''));
     const sedes = await Sede.findAll();
+    const sedeDestinoId = await resolveActionSede(req.body.sedeId, requireUser(req), Sede, transaction);
+    if (!sedeDestinoId || !sedes.some(sede => sede.id === sedeDestinoId)) throw httpError(400, 'Seleccione una sede destino válida para importar las existencias.');
     const productosCreados = [];
 
     for (let i = 1; i < lines.length; i++) {
@@ -454,8 +477,8 @@ export const importarCSV: Handler<Body> = async (req, res, next) => {
       if (!line) continue;
 
       // Soporte simple para comas dentro de comillas
-      const matches = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || line.split(',');
-      const values = matches.map(v => v.trim().replace(/^"|"$/g, ''));
+      let values: string[];
+      try { values = parseCsvRecord(line); } catch (error) { throw httpError(400, `Fila ${i + 1}: ${error instanceof Error ? error.message : 'CSV inválido.'}`); }
 
       // Mapear campos
       const row: Record<string, string | undefined> = {};
@@ -463,7 +486,7 @@ export const importarCSV: Handler<Body> = async (req, res, next) => {
         row[header] = values[idx];
       });
 
-      if (!row.nombre || !row.precioVenta || !row.precioCosto || !row.categoriaNombre) {
+      if (!row.nombre || !row.precioVenta || (!row.precioCosto && row.presentacionCosto !== 'rollo') || !row.categoriaNombre) {
         continue; // Saltar filas incompletas
       }
 
@@ -488,30 +511,33 @@ export const importarCSV: Handler<Body> = async (req, res, next) => {
       }
 
       const esServicioBool = row.esServicio === 'true' || row.esServicio === '1';
+      let prices: ReturnType<typeof importProductPrices>;
+      try { prices = importProductPrices(row); } catch (error) { throw httpError(400, `Fila ${i + 1}: ${error instanceof Error ? error.message : 'Precios inválidos.'}`); }
 
       const producto = await Producto.create({
         nombre: row.nombre,
         codigoBarras: codigoFila,
         descripcion: row.descripcion || '',
-        precioVenta: parseFloat(String(row.precioVenta)),
-        precioCosto: parseFloat(String(row.precioCosto)),
+        precioVenta: prices.precioVenta,
+        precioCosto: prices.precioCosto,
         tieneIVA: row.tieneIVA === 'true' || row.tieneIVA === '1',
         stockMinimo: parseInt(String(row.stockMinimo || 0)),
         tieneNumeroSerie: esServicioBool ? false : (row.tieneNumeroSerie === 'true' || row.tieneNumeroSerie === '1'),
         esReacondicionado: row.esReacondicionado === 'true' || row.esReacondicionado === '1',
         esServicio: esServicioBool,
-        unidadMedida: normalizeUnidadMedida(row.unidadMedida),
+        unidadMedida: prices.unidadMedida,
         categoriaId: categoria.id,
         imagenUrl: row.imagenUrl || null
       }, { transaction });
 
       // Inicializar Stock para todas las sedes (soportando stock / stockInicial del CSV)
-      const stockInicial = parseInt(String(row.stock || row.stockInicial || row.cantidadInicial || 0));
+      const stockInicial = Number(row.stock || row.stockInicial || row.cantidadInicial || 0);
+      if (!Number.isSafeInteger(stockInicial) || stockInicial < 0 || stockInicial > 2147483647) throw httpError(400, `Fila ${i + 1}: el stock debe indicar metros o unidades completos, sin decimales.`);
       for (const sede of sedes) {
         await StockSede.create({
           productoId: producto.id,
           sedeId: sede.id,
-          cantidad: stockInicial
+          cantidad: sede.id === sedeDestinoId ? stockInicial : 0
         }, { transaction });
       }
 
