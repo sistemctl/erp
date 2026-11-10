@@ -1863,7 +1863,7 @@ export async function initInventario(container: HTMLElement) {
     document.querySelectorAll<HTMLElement>('.btn-etiqueta').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const id = eventElement(e).getAttribute('data-id');
+        const id = btn.getAttribute('data-id');
         const item = stockCache.find(s => s.productoId === id);
         if (item?.producto) openEtiquetaModal(item.producto);
       });
@@ -1942,7 +1942,11 @@ export async function initInventario(container: HTMLElement) {
     document.querySelectorAll<HTMLElement>('.btn-eliminar').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        const id = eventElement(e).getAttribute('data-id');
+        const id = btn.getAttribute('data-id');
+        if (!id) {
+          showToast('Error', 'No se pudo identificar el producto.', 'error');
+          return;
+        }
         const verificado = await showConfirm('Eliminar Producto', '¿Está seguro de eliminar este producto del catálogo de forma permanente?');
         if (verificado) {
           try {
