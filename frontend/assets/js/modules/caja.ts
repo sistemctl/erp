@@ -1591,13 +1591,13 @@ export async function initCaja(container: HTMLElement) {
   });
 
   // Carga inicial
-  await loadLimites();
-  await loadCategorias();
+  // El estado de caja usa los medios de pago de loadLimites; las categorías van en paralelo.
   setDefaultHistorialFechas();
-  await loadCajaStatus();
+  await Promise.all([loadCategorias(), loadLimites().then(loadCajaStatus)]);
 
   bindQuickAction(container, 'egreso', abrirModalEgreso);
-  watchDataChanges(container, ["caja","ventas","compras","cartera","facturas","reparaciones","instalaciones","nomina","config"], async () => {
+  watchDataChanges(container, ["caja","ventas","compras","cartera","facturas","reparaciones","instalaciones","nomina","config"], async (changed) => {
+    if (changed.has('config')) await loadLimites();
     await loadCajaStatus();
   });
 

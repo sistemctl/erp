@@ -13,6 +13,7 @@ import { showToast } from '../utils/toast.js';
 import { renderPosReceipt } from '../utils/pos-receipt.js';
 import { formatStockUnidad, labelUnidadMedida } from '../utils/unidad-medida.js';
 import { nombreCortoCategoria } from '../utils/categoria-nombre.js';
+import { debounce } from '../utils/debounce.js';
 
 let posKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
 let cart: CartItem[] = [];
@@ -141,44 +142,35 @@ export async function initPos(container: HTMLElement) {
       posKeydownHandler = null;
     }
     
-    // 1. Cargar datos básicos y verificar si la caja está abierta
+    // 1. Cargar datos básicos en paralelo: caja, configuración, clientes y categorías.
     let cajaAbierta: CajaPos | null = null;
     let cajaCompartida = true;
-    try {
-      cajaAbierta = await apiFetch<CajaPos>(`/caja/reporte?sede=${currentSedeId}`, { silent: true }).catch(() => null);
-    
-    // Obtener configuración del sistema para el descuento máximo e IVA
-    let config: PosConfig | null = null;
-    try {
-      config = await apiFetch<PosConfig>('/config/sistema');
-    } catch (err) {
-      showToast('Aviso', errorMessage(err) || 'No se pudo cargar la configuración; se usan valores por defecto.', 'warning');
+    let categories: CategoriaDTO[] = [];
+    const [cajaRes, configRes, clientesRes, categoriasRes] = await Promise.allSettled([
+      apiFetch<CajaPos>(`/caja/reporte?sede=${currentSedeId}`, { silent: true }),
+      apiFetch<PosConfig>('/config/sistema'),
+      apiFetch<ClienteDTO[]>('/clientes'),
+      apiFetch<CategoriaDTO[]>('/productos/categorias')
+    ]);
+    cajaAbierta = cajaRes.status === 'fulfilled' ? cajaRes.value : null;
+    // Configuración del sistema: descuento máximo, IVA y medios de pago
+    const config = configRes.status === 'fulfilled' ? configRes.value : null;
+    if (configRes.status === 'rejected') {
+      showToast('Aviso', errorMessage(configRes.reason) || 'No se pudo cargar la configuración; se usan valores por defecto.', 'warning');
     }
     aplicarConfigPos(config);
     cajaCompartida = !config || config.cajaCompartidaSede !== false;
-
-    // Cargar clientes para ventas a crédito
-    try {
-      clientes = (await apiFetch<ClienteDTO[]>('/clientes')) ?? [];
-    } catch (err) {
-      showToast('Error', errorMessage(err) || 'No se pudieron cargar los clientes.', 'error');
+    // Clientes para ventas a crédito
+    if (clientesRes.status === 'fulfilled') clientes = clientesRes.value ?? [];
+    else {
+      showToast('Error', errorMessage(clientesRes.reason) || 'No se pudieron cargar los clientes.', 'error');
       clientes = [];
     }
-  } catch (e) {
-    console.error('Error al inicializar POS:', e);
-    showToast('Error', errorMessage(e) || 'Error al inicializar el punto de venta.', 'error');
-  }
-
-  // Cargar categorías del catálogo directamente de la base de datos
-  let categories: CategoriaDTO[] = [];
-  try {
-    categories = (await apiFetch<CategoriaDTO[]>('/productos/categorias')) ?? [];
-  } catch (e) {
-    console.error('Error al obtener categorías:', e);
-    showToast('Error', errorMessage(e) || 'No se pudieron cargar las categorías.', 'error');
-    categories = [];
-  }
-
+    if (categoriasRes.status === 'fulfilled') categories = categoriasRes.value ?? [];
+    else {
+      console.error('Error al obtener categorías:', categoriasRes.reason);
+      showToast('Error', errorMessage(categoriasRes.reason) || 'No se pudieron cargar las categorías.', 'error');
+    }
 
     if (!container.isConnected || window.location.hash.split('?')[0] !== '#/pos') return;
     if (!cajaAbierta || cajaAbierta.estado !== 'abierta' || cajaAbierta.cierrePendiente) {
@@ -636,22 +628,32 @@ export async function initPos(container: HTMLElement) {
     }
   });
 
-  // Búsqueda de productos en catálogo
-  const searchProducts = async () => {
-    const q = searchInput.value.trim();
+  // Búsqueda de productos en catálogo. El stock de la sede se pide una vez y se filtra en
+  // el navegador; solo se vuelve a pedir cuando otro equipo o pantalla cambia los datos.
+  const POS_PAGE = 60;
+  let stockCache: StockPos[] | null = null;
+  let filtered: StockPos[] = [];
+  let visibles = POS_PAGE;
 
-    resultsContainer.innerHTML = `<div class="pos-empty"><div class="spinner-border text-primary" role="status" aria-label="Buscando"></div></div>`;
+  const loadStock = async () => {
+    stockCache = (await apiFetch<StockPos[]>(`/inventario/stock?sedeId=${currentSedeId}`)) ?? [];
+  };
+
+  const searchProducts = async ({ reload = false, keepPage = false }: { reload?: boolean; keepPage?: boolean } = {}) => {
+    const q = searchInput.value.trim().toLowerCase();
+    if (!keepPage) visibles = POS_PAGE;
 
     try {
-      // Buscar productos activos que coincidan con la consulta en la sede actual
-      const stock = await apiFetch<StockPos[]>(`/inventario/stock?sedeId=${currentSedeId}`);
-      const filtered = (stock ?? []).filter(item => {
-        if (selectedCategoryId && item.producto.categoriaId !== selectedCategoryId) {
-          return false;
-        }
+      if (reload || !stockCache) {
+        if (!stockCache) resultsContainer.innerHTML = `<div class="pos-empty"><div class="spinner-border text-primary" role="status" aria-label="Cargando productos"></div></div>`;
+        else resultsContainer.setAttribute('aria-busy', 'true');
+        await loadStock();
+        resultsContainer.removeAttribute('aria-busy');
+      }
+      filtered = (stockCache ?? []).filter(item => {
+        if (selectedCategoryId && item.producto.categoriaId !== selectedCategoryId) return false;
         if (!q) return true;
-        const query = q.toLowerCase();
-        return item.producto.nombre.toLowerCase().includes(query) || item.producto.codigoBarras.toLowerCase().includes(query);
+        return item.producto.nombre.toLowerCase().includes(q) || String(item.producto.codigoBarras || '').toLowerCase().includes(q);
       });
 
       if (filtered.length === 0) {
@@ -664,9 +666,10 @@ export async function initPos(container: HTMLElement) {
         return;
       }
 
+      const restantes = filtered.length - visibles;
       resultsContainer.innerHTML = `
         <div class="pos-product-grid">
-          ${filtered.map(item => {
+          ${filtered.slice(0, visibles).map(item => {
             const brandName = item.producto.categoria ? nombreCortoCategoria(item.producto.categoria.nombre, categories) : 'GENÉRICO';
             const comboSummary = item.producto.esCombo
               ? (item.producto.componentes || []).map((row) => `${row.cantidad}× ${row.nombre || row.producto?.nombre || 'Producto'}`).join(' · ')
@@ -695,38 +698,46 @@ export async function initPos(container: HTMLElement) {
             `;
           }).join('')}
         </div>
+        ${restantes > 0 ? `<div class="pos-more"><button type="button" class="btn btn-outline-secondary btn-sm" data-pos-more>Ver ${Math.min(restantes, POS_PAGE)} más <span class="text-secondary">(${restantes} restantes)</span></button></div>` : ''}
       `;
-
-      // Click listener para añadir
-      document.querySelectorAll('.btn-add-prod').forEach(btn => {
-      if (!(btn instanceof HTMLButtonElement)) return;
-        btn.addEventListener('click', (e) => {
-          const id = btn.getAttribute('data-id');
-          const item = filtered.find(s => s.productoId === id);
-          if (item) {
-            // Verificar stock (los servicios no consumen inventario)
-            const cartItem = cart.find(c => c.productoId === id);
-            const qty = cartItem ? cartItem.cantidad + 1 : 1;
-            if (!item.producto.esServicio && qty > item.cantidad) {
-              const ud = labelUnidadMedida(item.producto.unidadMedida);
-              showToast('Stock Insuficiente', `No puedes agregar más ${ud} de las disponibles en stock.`, 'error');
-              return;
-            }
-
-            addToCart({ ...item.producto, disponibilidadCombo: item.cantidad });
-            searchInput.value = '';
-            searchInput.focus();
-            searchProducts();
-          }
-        });
-      });
-
     } catch (e) {
+      resultsContainer.removeAttribute('aria-busy');
       resultsContainer.innerHTML = `<div class="text-center py-5 text-danger">${escapeHtml(errorMessage(e))}</div>`;
     }
   };
 
-  searchInput.addEventListener('input', searchProducts);
+  // Un solo listener para todas las tarjetas (no se reenlaza en cada búsqueda).
+  resultsContainer.addEventListener('click', (e) => {
+    const target = e.target instanceof Element ? e.target : null;
+    if (target?.closest('[data-pos-more]')) {
+      visibles += POS_PAGE;
+      void searchProducts({ keepPage: true });
+      return;
+    }
+    const btn = target?.closest<HTMLButtonElement>('.btn-add-prod');
+    if (!btn) return;
+    const id = btn.getAttribute('data-id');
+    const item = filtered.find(s => s.productoId === id);
+    if (!item) return;
+    // Verificar stock (los servicios no consumen inventario)
+    const cartItem = cart.find(c => c.productoId === id);
+    const qty = cartItem ? cartItem.cantidad + 1 : 1;
+    if (!item.producto.esServicio && qty > item.cantidad) {
+      const ud = labelUnidadMedida(item.producto.unidadMedida);
+      showToast('Stock Insuficiente', `No puedes agregar más ${ud} de las disponibles en stock.`, 'error');
+      return;
+    }
+    addToCart({ ...item.producto, disponibilidadCombo: item.cantidad });
+    if (searchInput.value) {
+      searchInput.value = '';
+      void searchProducts();
+    }
+    searchInput.focus();
+  });
+
+  const searchDebounced = debounce(() => searchProducts(), 250);
+  searchInput.addEventListener('input', searchDebounced);
+  searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchDebounced.flush(); });
   watchDataChanges(container, ['productos', 'inventario', 'series', 'compras', 'ventas', 'clientes', 'config'], async (changed) => {
     if (changed.has('config')) {
       // Descuento máximo, IVA y medios de pago cambiados por un administrador.
@@ -734,7 +745,7 @@ export async function initPos(container: HTMLElement) {
       if (config) { aplicarConfigPos(config); renderCart(); }
       if (changed.size === 1) return;
     }
-    await searchProducts();
+    await searchProducts({ reload: true, keepPage: true });
     clientes = (await apiFetch<ClienteDTO[]>('/clientes')) ?? [];
     if (document.getElementById('modal-buscar-cliente-checkout')?.classList.contains('show')) {
       renderClientesCheckout(document.querySelector<HTMLInputElement>('#checkout-cliente-busqueda')?.value || '');
@@ -767,17 +778,15 @@ export async function initPos(container: HTMLElement) {
     });
 
     catsContainer.innerHTML = buttonsHtml;
-
-    document.querySelectorAll('.btn-cat-filter').forEach(btn => {
-      if (!(btn instanceof HTMLButtonElement)) return;
-      btn.addEventListener('click', () => {
-        const catId = btn.getAttribute('data-id');
-        selectedCategoryId = catId === 'all' ? null : catId;
-        renderCategoryButtons();
-        searchProducts();
-      });
-    });
   };
+  requireElement('pos-categories-container', HTMLDivElement).addEventListener('click', (e) => {
+    const btn = e.target instanceof Element ? e.target.closest<HTMLButtonElement>('.btn-cat-filter') : null;
+    if (!btn) return;
+    const catId = btn.getAttribute('data-id');
+    selectedCategoryId = catId === 'all' ? null : catId;
+    renderCategoryButtons();
+    void searchProducts();
+  });
 
   // Renderizar botones e iniciar catálogo por defecto
   renderCategoryButtons();

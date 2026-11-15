@@ -472,6 +472,17 @@ export async function initRentabilidad(container: HTMLElement) {
     }
   }
 
+  // Ventas y Caja piden /ventas con los mismos filtros al refrescar juntas: una sola consulta.
+  const ventasRecientes = new Map<string, { at: number; promesa: Promise<VentaMargen[]> }>();
+  function fetchVentas(query: string): Promise<VentaMargen[]> {
+    const hit = ventasRecientes.get(query);
+    if (hit && Date.now() - hit.at < 3000) return hit.promesa;
+    const promesa = apiFetch<VentaMargen[]>(`/ventas${query}`).then(v => v ?? []);
+    ventasRecientes.set(query, { at: Date.now(), promesa });
+    promesa.catch(() => ventasRecientes.delete(query));
+    return promesa;
+  }
+
   async function loadVentasReport() {
     tbodyVentas.innerHTML = `<tr><td colspan="10" class="rentab-table__loading"><span class="spinner-border spinner-border-sm text-primary" role="status"></span> Cargando…</td></tr>`;
     kpisVentas.innerHTML = '';
@@ -489,7 +500,7 @@ export async function initRentabilidad(container: HTMLElement) {
       if (hasta) params.push(`hasta=${hasta}`);
       const query = params.length ? `?${params.join('&')}` : '';
 
-      const ventas = (await apiFetch<VentaMargen[]>(`/ventas${query}`)) ?? [];
+      const ventas = await fetchVentas(query);
       const ventasValidas = (ventas ?? []).filter(v => v.estado !== 'anulada');
 
       if (ventasValidas.length === 0) {
@@ -564,7 +575,7 @@ export async function initRentabilidad(container: HTMLElement) {
         : '?estado=entregada';
 
       const [ventas, reparaciones, instalaciones] = await Promise.all([
-        apiFetch<VentaMargen[]>(`/ventas${query}`).catch(() => []),
+        fetchVentas(query).catch(() => []),
         apiFetch<OrdenMargen[]>(`/reparaciones${query}`).catch(() => []),
         apiFetch<OrdenMargen[]>(`/instalaciones${queryInst}`).catch(() => [])
       ]);

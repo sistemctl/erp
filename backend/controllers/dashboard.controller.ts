@@ -30,7 +30,7 @@ const {
   MovimientoInventario,
   sequelize
 } = models;
-import { Op } from 'sequelize';
+import { Op, QueryTypes } from 'sequelize';
 import { inicioDiaBogota, finDiaBogota } from '../utils/rango-bogota';
 import cajaFechaUtil = require('../utils/caja-fecha');
 const hoyBogotaDe = (d: Date) => cajaFechaUtil.fechaOperativa(d);
@@ -140,6 +140,14 @@ const ordenIncludeForSede = (querySedeId: string | null) => ({
   ...(querySedeId ? { where: { sedeId: querySedeId } } : {})
 });
 
+/** Productos activos cuyo stock sumado en todas las sedes está bajo su mínimo (en SQL). */
+const contarStockBajoTodasLasSedes = () => sequelize.query<{ n: number }>(
+  `SELECT count(*)::int AS n FROM "Productos" p
+    WHERE p.activo = true
+      AND COALESCE((SELECT sum(s.cantidad) FROM "StockSedes" s WHERE s."productoId" = p.id), 0) < p."stockMinimo"`,
+  { type: QueryTypes.SELECT }
+).then(([row]) => Number(row?.n || 0));
+
 /** Gastos del período sin doble conteo: operativos de caja + pagos de compra */
 const computeGastosEmpresa = async (startDate: Date, endDate: Date, querySedeId: string | null) => {
   const whereFecha = { createdAt: { [Op.between]: [startDate, endDate] } };
@@ -248,111 +256,66 @@ export const getKPIs: Handler<Body> = async (req, res, next) => {
       whereCajas.sedeId = querySedeId;
     }
 
-    // 1. Total Ventas (COP)
-    const ventasTotal = await sumIncluding(Venta, 'total', { where: whereVentas }) || 0;
-
-    // 2. Unidades Vendidas
-    const itemVentas = await sumIncluding(ItemVenta, 'cantidad', {
-      include: [{
-        model: Venta,
-        as: 'venta',
-        where: whereVentas,
-        attributes: []
-      }]
-    }) || 0;
-
-    // 3. Reparaciones Activas
-    const reparacionesActivas = await OrdenReparacion.count({ where: whereReparaciones });
-
-    // 4. Tiempo promedio de reparación (Simulado si no hay registros completados)
-    const reparacionesEntregadas = await OrdenReparacion.findAll({
-      where: {
-        estado: 'entregado',
-        ...(querySedeId ? { sedeId: querySedeId } : {})
-      },
-      attributes: ['createdAt', 'updatedAt']
-    });
-    let tiempoPromedio: string | number = 1.5; // por defecto 1.5 días
-    if (reparacionesEntregadas.length > 0) {
-      const diffs = reparacionesEntregadas.map(r => (new Date(r.updatedAt).getTime() - new Date(r.createdAt).getTime()) / (1000 * 60 * 60 * 24)); // en días
-      tiempoPromedio = (diffs.reduce((a, b) => a + b, 0) / diffs.length).toFixed(1);
-    }
-
-    // 5. Dinero en Caja (Efectivo de Cajas Abiertas)
-    const cajaAbierta = await Caja.findAll({ where: whereCajas });
-    let dineroEnCaja = 0;
-    cajaAbierta.forEach(c => {
-      dineroEnCaja += parseFloat(String(c.montoApertura)) + parseFloat(String(c.totalVentasEfectivo)) - parseFloat(String(c.totalEgresos));
-    });
-
-    // 6. Productos en Stock Bajo (Stock de Sede menor que el stock mínimo)
-    let stockBajoCount = 0;
-    if (querySedeId) {
-      stockBajoCount = await StockSede.count({
-        where: {
-          sedeId: querySedeId,
-          cantidad: { [Op.lt]: sequelize.col('producto.stockMinimo') }
-        },
-        include: [{ model: Producto, as: 'producto', where: { activo: true } }]
-      });
-    } else {
-      // Sumar stock de todas las sedes y comparar con el stockMinimo del producto
-      const productosBajos = await Producto.findAll({
-        where: { activo: true },
-        include: [{ model: StockSede, as: 'stocks', attributes: ['cantidad'] }]
-      });
-      productosBajos.forEach(p => {
-        const totalStock = (p.stocks || []).reduce((acc, curr) => acc + Number(curr.cantidad), 0);
-        if (totalStock < Number(p.stockMinimo)) {
-          stockBajoCount++;
-        }
-      });
-    }
-
-    // 7. Cuentas Por Cobrar (Cartera pendiente)
-    const totalCartera = await sumIncluding(CuentaPorCobrar, 'saldoPendiente', {
-      where: { estado: { [Op.ne]: 'pagada' } },
-      include: [{
-        model: Cliente,
-        as: 'cliente',
-        ...(querySedeId ? { where: { sedeId: querySedeId } } : {}),
-        attributes: []
-      }]
-    }) || 0;
-
-    const totalCarteraVencida = await sumIncluding(CuentaPorCobrar, 'saldoPendiente', {
-      where: {
-        estado: 'vencida',
-        saldoPendiente: { [Op.gt]: 0 }
-      },
-      include: [{
-        model: Factura,
-        as: 'factura',
-        attributes: [],
-        required: true,
-        ...(querySedeId ? { where: { sedeId: querySedeId } } : {})
-      }]
-    }) || 0;
-
-    // 8. Clientes Nuevos
-    const clientesNuevos = await Cliente.count({ where: whereClientes });
-
-    // 9–11. Gastos, compras pagadas y deuda proveedores
-    const gastosEmpresa = await computeGastosEmpresa(startDate, endDate, querySedeId);
-
     const whereCompras: WhereOptions<Attributes<InstanceType<typeof OrdenCompra>>> = {
       createdAt: { [Op.between]: [startDate, endDate] },
       estado: { [Op.ne]: 'cancelada' }
     };
-    if (querySedeId) whereCompras.sedeId = querySedeId;
-    const totalOrdenesCompra = await sumIncluding(OrdenCompra, 'total', { where: whereCompras }) || 0;
-
     const whereCuentasPorPagar: WhereOptions<Attributes<InstanceType<typeof OrdenCompra>>> = {
       estadoPago: { [Op.ne]: 'pagado' },
       estado: { [Op.ne]: 'cancelada' }
     };
-    if (querySedeId) whereCuentasPorPagar.sedeId = querySedeId;
-    const cuentasPorPagar = await sumIncluding(OrdenCompra, 'saldoPendiente', { where: whereCuentasPorPagar }) || 0;
+    if (querySedeId) {
+      whereCompras.sedeId = querySedeId;
+      whereCuentasPorPagar.sedeId = querySedeId;
+    }
+
+    // Consultas independientes en paralelo (antes ~14 en serie).
+    const [
+      ventasTotal, itemVentas, reparacionesActivas, tiempoPromedio, dineroEnCaja, stockBajoCount,
+      totalCartera, totalCarteraVencida, clientesNuevos, gastosEmpresa, totalOrdenesCompra, cuentasPorPagar
+    ] = await Promise.all([
+      // 1. Total Ventas (COP)
+      sumIncluding(Venta, 'total', { where: whereVentas }).then(v => v || 0),
+      // 2. Unidades Vendidas
+      sumIncluding(ItemVenta, 'cantidad', {
+        include: [{ model: Venta, as: 'venta', where: whereVentas, attributes: [] }]
+      }).then(v => v || 0),
+      // 3. Reparaciones Activas
+      OrdenReparacion.count({ where: whereReparaciones }),
+      // 4. Tiempo promedio de reparación en días (1.5 por defecto si no hay entregadas), calculado en SQL
+      sequelize.query<{ dias: string | number | null }>(
+        `SELECT AVG(EXTRACT(EPOCH FROM ("updatedAt" - "createdAt"))) / 86400 AS dias
+           FROM "OrdenesReparacion"
+          WHERE estado = 'entregado' AND ($sedeId::uuid IS NULL OR "sedeId" = $sedeId::uuid)`,
+        { type: QueryTypes.SELECT, bind: { sedeId: querySedeId } }
+      ).then(([row]) => row?.dias == null ? 1.5 : Number(Number(row.dias).toFixed(1))),
+      // 5. Dinero en Caja (efectivo de cajas abiertas)
+      Caja.findAll({ where: whereCajas }).then(cajas => cajas.reduce((total, c) => total
+        + parseFloat(String(c.montoApertura)) + parseFloat(String(c.totalVentasEfectivo)) - parseFloat(String(c.totalEgresos)), 0)),
+      // 6. Productos en stock bajo
+      querySedeId
+        ? StockSede.count({
+          where: { sedeId: querySedeId, cantidad: { [Op.lt]: sequelize.col('producto.stockMinimo') } },
+          include: [{ model: Producto, as: 'producto', where: { activo: true } }]
+        })
+        // Todas las sedes: stock sumado por producto contra su mínimo, en SQL
+        : contarStockBajoTodasLasSedes(),
+      // 7. Cuentas por cobrar (cartera pendiente) y vencida
+      sumIncluding(CuentaPorCobrar, 'saldoPendiente', {
+        where: { estado: { [Op.ne]: 'pagada' } },
+        include: [{ model: Cliente, as: 'cliente', ...(querySedeId ? { where: { sedeId: querySedeId } } : {}), attributes: [] }]
+      }).then(v => v || 0),
+      sumIncluding(CuentaPorCobrar, 'saldoPendiente', {
+        where: { estado: 'vencida', saldoPendiente: { [Op.gt]: 0 } },
+        include: [{ model: Factura, as: 'factura', attributes: [], required: true, ...(querySedeId ? { where: { sedeId: querySedeId } } : {}) }]
+      }).then(v => v || 0),
+      // 8. Clientes nuevos
+      Cliente.count({ where: whereClientes }),
+      // 9–11. Gastos, compras pagadas y deuda con proveedores
+      computeGastosEmpresa(startDate, endDate, querySedeId),
+      sumIncluding(OrdenCompra, 'total', { where: whereCompras }).then(v => v || 0),
+      sumIncluding(OrdenCompra, 'saldoPendiente', { where: whereCuentasPorPagar }).then(v => v || 0)
+    ]);
 
     const ventasNum = parseFloat(String(ventasTotal));
     const resultadoNeto = ventasNum - gastosEmpresa.totalGastoEmpresa;
@@ -399,7 +362,7 @@ export const getGraficaVentas: Handler<Body> = async (req, res, next) => {
     const ventaFechaExpr = bucket === 'month'
       ? sqlLocalMonth('"Venta"."createdAt"')
       : sqlLocalDay('"Venta"."createdAt"');
-    const ventas = await findAllGrouped(Venta, {
+    const ventasP = findAllGrouped(Venta, {
       where: whereVentas,
       attributes: [
         [ventaFechaExpr, 'fecha'],
@@ -412,7 +375,7 @@ export const getGraficaVentas: Handler<Body> = async (req, res, next) => {
     const egresoFechaExpr = bucket === 'month'
       ? sqlLocalMonth('"EgresoCaja"."createdAt"')
       : sqlLocalDay('"EgresoCaja"."createdAt"');
-    const egresosOperativos = await findAllGrouped(EgresoCaja, {
+    const egresosP = findAllGrouped(EgresoCaja, {
       where: {
         createdAt: { [Op.between]: [startDate, endDate] },
         pagoCompraId: null
@@ -429,7 +392,7 @@ export const getGraficaVentas: Handler<Body> = async (req, res, next) => {
     const pagoFechaExpr = bucket === 'month'
       ? sqlLocalMonth('"PagoCompra"."createdAt"')
       : sqlLocalDay('"PagoCompra"."createdAt"');
-    const pagosCompra = await findAllGrouped(PagoCompra, {
+    const pagosP = findAllGrouped(PagoCompra, {
       where: { createdAt: { [Op.between]: [startDate, endDate] } },
       include: [ordenIncludeForSede(querySedeId)],
       attributes: [
@@ -439,6 +402,8 @@ export const getGraficaVentas: Handler<Body> = async (req, res, next) => {
       group: [pagoFechaExpr],
       order: sequelize.literal(`${pagoFechaExpr.val} ASC`)
     });
+
+    const [ventas, egresosOperativos, pagosCompra] = await Promise.all([ventasP, egresosP, pagosP]);
 
     const ventasMap: Record<string, number> = {};
     ventas.forEach(v => {
@@ -667,14 +632,7 @@ export const getActividad: Handler<Body> = async (req, res, next) => {
             include: [{ model: Producto, as: 'producto', where: { activo: true } }]
           });
         }
-        const productosBajos = await Producto.findAll({
-          where: { activo: true },
-          include: [{ model: StockSede, as: 'stocks', attributes: ['cantidad'] }]
-        });
-        return productosBajos.reduce((n, p) => {
-          const totalStock = (p.stocks || []).reduce((acc, curr) => acc + Number(curr.cantidad), 0);
-          return totalStock < Number(p.stockMinimo) ? n + 1 : n;
-        }, 0);
+        return contarStockBajoTodasLasSedes();
       })()
     ]);
 

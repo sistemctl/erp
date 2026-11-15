@@ -9,6 +9,7 @@ import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { requireUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
+import { showToast } from '../utils/toast.js';
 
 function defaultDateRange(days = 30) {
   const hasta = new Date();
@@ -160,8 +161,19 @@ export async function initReportes(container: HTMLElement) {
       else if (id.includes('flujo')) activeTab = 'flujo';
       else if (id.includes('ventas')) activeTab = 'ventas';
       else if (id.includes('inventario')) activeTab = 'inventario';
+      syncExportButton();
+      if (!cargadas.has(activeTab)) void loadTab(activeTab);
     });
   });
+
+  // Solo Cartera y Cuentas por pagar exportan CSV: el botón lo indica en vez de un alert.
+  function syncExportButton() {
+    const btn = document.getElementById('btn-rep-export');
+    if (!(btn instanceof HTMLButtonElement)) return;
+    const disponible = activeTab === 'cartera' || activeTab === 'cpp';
+    btn.disabled = !disponible;
+    btn.title = disponible ? 'Descargar CSV de esta pestaña' : 'CSV disponible en Cartera y Cuentas por pagar';
+  }
 
   async function loadCartera(q: ReportFilters) {
     const data = await apiFetch<CarteraResumen>(`/analytics/finanzas/cartera${buildQuery({ sede: q.sede })}`);
@@ -264,13 +276,24 @@ export async function initReportes(container: HTMLElement) {
     `).join('') : '<tr><td colspan="5" class="text-center py-4 text-secondary">Sin stock.</td></tr>';
   }
 
-  async function refreshAll() {
-    const q = filters();
+  // Cada pestaña se consulta al abrirla; "Actualizar" y los cambios de datos recargan la visible.
+  const cargadas = new Set<string>();
+  const loaders: Record<string, (q: ReportFilters) => Promise<void>> = {
+    cartera: loadCartera, cpp: loadCpp, flujo: loadFlujo, ventas: loadVentas, inventario: loadInventario
+  };
+  async function loadTab(tab: string) {
+    cargadas.add(tab);
     try {
-      await Promise.all([loadCartera(q), loadCpp(q), loadFlujo(q), loadVentas(q), loadInventario(q)]);
+      await loaders[tab]?.(filters());
     } catch (err) {
-      alert(errorMessage(err));
+      cargadas.delete(tab);
+      showToast('No se pudo cargar el reporte', errorMessage(err), 'error');
     }
+  }
+
+  async function refreshAll() {
+    cargadas.clear();
+    await loadTab(activeTab);
   }
 
   requireElement('btn-rep-refresh', HTMLButtonElement).addEventListener('click', refreshAll);
@@ -293,11 +316,10 @@ export async function initReportes(container: HTMLElement) {
         { label: 'Saldo', key: 'saldoPendiente' },
         { label: 'Días vencido', key: 'diasVencido' }
       ]);
-    } else {
-      alert('Exporte CSV desde las pestañas Cartera o Cuentas por pagar.');
     }
   });
 
+  syncExportButton();
   await refreshAll();
   watchDataChanges(container, ["ventas","compras","cartera","facturas","inventario","series","caja","instalaciones","reparaciones"], async () => {
     await refreshAll();

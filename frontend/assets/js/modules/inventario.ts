@@ -16,6 +16,7 @@ import { getLocalDateStr } from '../utils/date.js';
 import { inversionPanelHtml, mountInventarioInversion } from '../utils/inventario-inversion.js';
 import { escapeHtml } from '../utils/html.js';
 import { nombreCortoCategoria } from '../utils/categoria-nombre.js';
+import { debounce } from '../utils/debounce.js';
 
 let dataSedes: SedeDTO[] = [];
 let inventarioKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
@@ -1789,11 +1790,130 @@ export async function initInventario(container: HTMLElement) {
 
   await loadCategoriasList();
 
-  const applyInventarioFilters = () => {
+  // Listado por páginas: con catálogos grandes dibujar todo de una vez bloquea la pantalla.
+  const INV_PAGE = 100;
+  let invVisibles = INV_PAGE;
+
+  const abrirEdicionProducto = (id: string | null | undefined) => {
+    const item = stockCache.find(s => s.productoId === id);
+    if (!item) return;
+
+    requireElement('producto-id', HTMLInputElement).value = String(item.productoId);
+    requireElement('prod-nombre', HTMLInputElement).value = String(item.producto.nombre);
+    requireElement('prod-codigo', HTMLInputElement).value = String(item.producto.codigoBarras);
+    requireElement('prod-descripcion', HTMLTextAreaElement).value = String(item.producto.descripcion || '');
+    requireElement('prod-costo', HTMLInputElement).value = String(item.producto.precioCosto);
+    requireElement('prod-venta', HTMLInputElement).value = String(item.producto.precioVenta);
+    requireElement('prod-minimo', HTMLInputElement).value = String(item.producto.stockMinimo);
+    setProdCategoria(item.producto.categoriaId);
+    requireElement('prod-serie', HTMLInputElement).checked = item.producto.tieneNumeroSerie;
+    requireElement('prod-iva', HTMLInputElement).checked = item.producto.tieneIVA;
+    requireElement('prod-reacondicionado', HTMLInputElement).checked = item.producto.esReacondicionado;
+    requireElement('prod-servicio', HTMLInputElement).checked = !!item.producto.esServicio;
+    requireElement('prod-combo', HTMLInputElement).checked = !!item.producto.esCombo;
+    comboComponents = (item.producto.componentes || []).map((row) => ({
+      productoId: row.productoId || row.producto?.id || '',
+      cantidad: Math.trunc(row.cantidad) || 1,
+      producto: row.producto || row,
+      disponible: row.disponible
+    }));
+    requireElement('prod-imagen-url', HTMLInputElement).value = String(item.producto.imagenUrl || '');
+    requireElement('prod-unidad', HTMLSelectElement).value = String(normalizeUnidadMedida(item.producto.unidadMedida));
+    requireElement('prod-roll-costo', HTMLInputElement).value = '';
+    requireElement('prod-roll-metros', HTMLInputElement).value = '';
+    requireElement('prod-costo-metro-resultado', HTMLParagraphElement).textContent = '';
+    syncProdUnidadHint();
+
+    const stockInput = requireElement('prod-stock-actual', HTMLInputElement);
+    const adminNote = requireElement('admin-stock-note', HTMLParagraphElement);
+    setStockBaseline(Number(item.cantidad) || 0);
+    requireElement('prod-stock-wrapper', HTMLDivElement).classList.remove('d-none');
+
+    if (item.producto.esCombo) {
+      stockInput.setAttribute('readonly', 'true');
+      adminNote.textContent = String('Disponibilidad calculada según el componente con menor stock.');
+      adminNote.classList.remove('d-none');
+    } else if (['admin', 'superadmin'].includes(usuario.rol)) {
+      stockInput.removeAttribute('readonly');
+      adminNote.textContent = String('Como administrador puede ajustar o poner en 0 este valor.');
+      adminNote.classList.remove('d-none');
+    } else {
+      stockInput.setAttribute('readonly', 'true');
+      adminNote.classList.add('d-none');
+    }
+
+    const secSeriales = requireElement('sec-gestion-seriales', HTMLElement);
+    clearPendingSerials();
+    if (item.producto.tieneNumeroSerie) {
+      secSeriales.classList.remove('d-none');
+      loadModalSerials(item.productoId);
+    } else {
+      secSeriales.classList.add('d-none');
+    }
+
+    requireElement('modal-producto-title', HTMLHeadingElement).textContent = String(item.producto.nombre);
+    syncProductKind();
+    syncProdFormMeta();
+    modalProd.show();
+  };
+
+  const eliminarProducto = async (id: string | null) => {
+    if (!id) {
+      showToast('Error', 'No se pudo identificar el producto.', 'error');
+      return;
+    }
+    // El nombre sale del mismo id que se enviará al servidor: así se ve exactamente
+    // qué producto se elimina.
+    const objetivo = stockCache.find(s => s.productoId === id)?.producto;
+    if (!objetivo) {
+      showToast('Error', 'No se encontró el producto en la lista actual. Recargue el inventario e intente de nuevo.', 'error');
+      return;
+    }
+    const verificado = await showConfirm('Eliminar producto', `¿Eliminar "${objetivo.nombre}"${objetivo.codigoBarras ? ` (código ${objetivo.codigoBarras})` : ''} del catálogo?`);
+    if (verificado) {
+      try {
+        await apiFetch(`/productos/${id}`, { method: 'DELETE' });
+        showToast('Éxito', `"${objetivo.nombre}" eliminado correctamente.`, 'success');
+        stockCacheSedeId = null;
+        loadInventario({ force: true });
+      } catch (err) {
+        // Componente de un combo: ofrecer abrir el combo para quitarlo de ahí.
+        const info = err as { code?: string; details?: { combos?: { id?: string; nombre?: string }[]; stockTotal?: number; sedes?: { sede: string; cantidad: number }[] } };
+        // Tiene existencias: un admin puede confirmar darlas de baja (quedan en el kardex).
+        if (info.code === 'PRODUCTO_CON_STOCK') {
+          const detalle = (info.details?.sedes || []).map(s => `${s.sede}: ${s.cantidad}`).join(', ');
+          const baja = await showConfirm('Dar de baja el stock', `"${objetivo.nombre}" tiene ${info.details?.stockTotal ?? 0} unidad(es) en inventario${detalle ? ` (${detalle})` : ''}. Al eliminarlo se dan de baja y la salida queda registrada en el kardex. ¿Continuar?`);
+          if (!baja) return;
+          try {
+            await apiFetch(`/productos/${id}?darDeBaja=1`, { method: 'DELETE' });
+            showToast('Éxito', `"${objetivo.nombre}" eliminado y su stock dado de baja.`, 'success');
+            stockCacheSedeId = null;
+            loadInventario({ force: true });
+          } catch (errBaja) {
+            showToast('No se pudo eliminar', errorMessage(errBaja), 'error');
+          }
+          return;
+        }
+        const combo = info.code === 'PRODUCTO_EN_COMBO' ? info.details?.combos?.find(c => c.id && stockCache.some(s => s.productoId === c.id)) : undefined;
+        if (combo?.id) {
+          const abrir = await showConfirm('Producto usado en un combo', `${errorMessage(err)} ¿Abrir el combo "${combo.nombre}" para quitarle este componente?`);
+          if (abrir) abrirEdicionProducto(combo.id);
+          return;
+        }
+        showToast('No se pudo eliminar', errorMessage(err), 'error');
+      }
+    }
+  };
+
+  const applyInventarioFilters = ({ keepPage = false }: { keepPage?: boolean } = {}) => {
+    if (!keepPage) invVisibles = INV_PAGE;
     const tbody = requireElement('inventario-table-body', HTMLTableSectionElement);
     const query = (searchInput.value || '').trim().toLowerCase();
     const catId = selectCategoria?.value || '';
     const stock = stockCache;
+    // Se calcula una vez por producto en cada filtrado (antes: en el filtro y otra vez al dibujar).
+    const problemas = new Map<string, string[]>();
+    const catNombres = new Map(categoriasCache.map((c) => [String(c.id), c.nombre]));
 
     const filtered = stock.filter((item) => {
       const prod = item.producto;
@@ -1806,7 +1926,11 @@ export async function initInventario(container: HTMLElement) {
       if (filtroStock === 'agotado' && status !== 'agotado') return false;
       if (filtroSerie && !prod.tieneNumeroSerie) return false;
       if (filtroInterno && !isInternalBarcode(prod.codigoBarras)) return false;
-      if (filtroCompletar && problemasCatalogo(prod).length === 0) return false;
+      if (filtroCompletar) {
+        const lista = problemasCatalogo(prod);
+        if (!lista.length) return false;
+        problemas.set(item.productoId, lista);
+      }
       if (!query) return true;
       return (prod.nombre || '').toLowerCase().includes(query) || (prod.codigoBarras || '').toLowerCase().includes(query);
     });
@@ -1824,7 +1948,7 @@ export async function initInventario(container: HTMLElement) {
 
     const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
-    tbody.innerHTML = filtered.map(item => {
+    tbody.innerHTML = filtered.slice(0, invVisibles).map(item => {
       const prod = item.producto;
       const stockMin = prod.stockMinimo;
       const stockQty = item.cantidad;
@@ -1865,9 +1989,9 @@ export async function initInventario(container: HTMLElement) {
               ${imgHtml}
               <span class="inv-product__name" title="${escapeHtml(prod.nombre)}">${escapeHtml(prod.nombre)}${prod.esCombo ? ' <span class="inv-status inv-status--combo">Combo</span>' : ''}</span>
             </div>
-            ${filtroCompletar ? `<div class="inv-problemas">${problemasCatalogo(prod).map((p) => `<span class="inv-status inv-status--low">${escapeHtml(p)}</span>`).join('')}</div>` : ''}
+            ${filtroCompletar ? `<div class="inv-problemas">${(problemas.get(item.productoId) || []).map((p) => `<span class="inv-status inv-status--low">${escapeHtml(p)}</span>`).join('')}</div>` : ''}
           </td>
-          ${(() => { const catNombre = prod.categoria?.nombre || categoriasCache.find((c) => String(c.id) === String(prod.categoriaId))?.nombre || ''; return `<td class="inv-cat" title="${escapeHtml(catNombre)}">${escapeHtml(catNombre ? nombreCortoCategoria(catNombre, categoriasCache) : '—')}</td>`; })()}
+          ${(() => { const catNombre = prod.categoria?.nombre || catNombres.get(String(prod.categoriaId)) || ''; return `<td class="inv-cat" title="${escapeHtml(catNombre)}">${escapeHtml(catNombre ? nombreCortoCategoria(catNombre, categoriasCache) : '—')}</td>`; })()}
           <td class="text-end inv-money">${formatter.format(Number(prod.precioCosto))}</td>
           <td class="text-end inv-money inv-money--sale">${formatter.format(Number(prod.precioVenta))}</td>
           <td class="text-end"><span class="inv-qty ${statusClass}">${formatStockUnidad(stockQty, prod.unidadMedida)}</span></td>
@@ -1888,155 +2012,48 @@ export async function initInventario(container: HTMLElement) {
           ` : ''}
         </tr>
       `;
-    }).join('');
+    }).join('') + (filtered.length > invVisibles
+      ? `<tr class="inv-more-row"><td colspan="9" class="text-center py-3"><button type="button" class="btn btn-outline-secondary btn-sm" data-inv-more>Mostrar ${Math.min(INV_PAGE, filtered.length - invVisibles)} más <span class="text-secondary">(${filtered.length - invVisibles} restantes)</span></button></td></tr>`
+      : '');
+  };
 
-    // Asignar click listeners
-    document.querySelectorAll<HTMLElement>('.btn-etiqueta').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const id = btn.getAttribute('data-id');
+
+  // Un solo conjunto de listeners para toda la tabla (no se reenlazan en cada filtrado).
+  const inventarioBody = requireElement('inventario-table-body', HTMLTableSectionElement);
+  inventarioBody.addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    if (target.closest('[data-inv-more]')) {
+      invVisibles += INV_PAGE;
+      applyInventarioFilters({ keepPage: true });
+      return;
+    }
+    const accion = target.closest<HTMLElement>('.btn-etiqueta, .btn-editar, .btn-eliminar');
+    if (accion) {
+      event.stopPropagation();
+      const id = accion.getAttribute('data-id');
+      if (accion.classList.contains('btn-etiqueta')) {
         const item = stockCache.find(s => s.productoId === id);
         if (item?.producto) openEtiquetaModal(item.producto);
-      });
-    });
-
-    const abrirEdicionProducto = (id: string | null | undefined) => {
-      const item = stockCache.find(s => s.productoId === id);
-      if (!item) return;
-
-      requireElement('producto-id', HTMLInputElement).value = String(item.productoId);
-      requireElement('prod-nombre', HTMLInputElement).value = String(item.producto.nombre);
-      requireElement('prod-codigo', HTMLInputElement).value = String(item.producto.codigoBarras);
-      requireElement('prod-descripcion', HTMLTextAreaElement).value = String(item.producto.descripcion || '');
-      requireElement('prod-costo', HTMLInputElement).value = String(item.producto.precioCosto);
-      requireElement('prod-venta', HTMLInputElement).value = String(item.producto.precioVenta);
-      requireElement('prod-minimo', HTMLInputElement).value = String(item.producto.stockMinimo);
-      setProdCategoria(item.producto.categoriaId);
-      requireElement('prod-serie', HTMLInputElement).checked = item.producto.tieneNumeroSerie;
-      requireElement('prod-iva', HTMLInputElement).checked = item.producto.tieneIVA;
-      requireElement('prod-reacondicionado', HTMLInputElement).checked = item.producto.esReacondicionado;
-      requireElement('prod-servicio', HTMLInputElement).checked = !!item.producto.esServicio;
-      requireElement('prod-combo', HTMLInputElement).checked = !!item.producto.esCombo;
-      comboComponents = (item.producto.componentes || []).map((row) => ({
-        productoId: row.productoId || row.producto?.id || '',
-        cantidad: Math.trunc(row.cantidad) || 1,
-        producto: row.producto || row,
-        disponible: row.disponible
-      }));
-      requireElement('prod-imagen-url', HTMLInputElement).value = String(item.producto.imagenUrl || '');
-      requireElement('prod-unidad', HTMLSelectElement).value = String(normalizeUnidadMedida(item.producto.unidadMedida));
-      requireElement('prod-roll-costo', HTMLInputElement).value = '';
-      requireElement('prod-roll-metros', HTMLInputElement).value = '';
-      requireElement('prod-costo-metro-resultado', HTMLParagraphElement).textContent = '';
-      syncProdUnidadHint();
-
-      const stockInput = requireElement('prod-stock-actual', HTMLInputElement);
-      const adminNote = requireElement('admin-stock-note', HTMLParagraphElement);
-      setStockBaseline(Number(item.cantidad) || 0);
-      requireElement('prod-stock-wrapper', HTMLDivElement).classList.remove('d-none');
-
-      if (item.producto.esCombo) {
-        stockInput.setAttribute('readonly', 'true');
-        adminNote.textContent = String('Disponibilidad calculada según el componente con menor stock.');
-        adminNote.classList.remove('d-none');
-      } else if (['admin', 'superadmin'].includes(usuario.rol)) {
-        stockInput.removeAttribute('readonly');
-        adminNote.textContent = String('Como administrador puede ajustar o poner en 0 este valor.');
-        adminNote.classList.remove('d-none');
+      } else if (accion.classList.contains('btn-editar')) {
+        abrirEdicionProducto(id);
       } else {
-        stockInput.setAttribute('readonly', 'true');
-        adminNote.classList.add('d-none');
+        void eliminarProducto(id);
       }
-
-      const secSeriales = requireElement('sec-gestion-seriales', HTMLElement);
-      clearPendingSerials();
-      if (item.producto.tieneNumeroSerie) {
-        secSeriales.classList.remove('d-none');
-        loadModalSerials(item.productoId);
-      } else {
-        secSeriales.classList.add('d-none');
-      }
-
-      requireElement('modal-producto-title', HTMLHeadingElement).textContent = String(item.producto.nombre);
-      syncProductKind();
-      syncProdFormMeta();
-      modalProd.show();
-    };
-
-    document.querySelectorAll<HTMLElement>('.btn-editar').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        abrirEdicionProducto(btn.getAttribute('data-id'));
-      });
-    });
-
-    document.querySelectorAll<HTMLElement>('.btn-eliminar').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const id = btn.getAttribute('data-id');
-        if (!id) {
-          showToast('Error', 'No se pudo identificar el producto.', 'error');
-          return;
-        }
-        // El nombre sale del mismo id que se enviará al servidor: así se ve exactamente
-        // qué producto se elimina.
-        const objetivo = stockCache.find(s => s.productoId === id)?.producto;
-        if (!objetivo) {
-          showToast('Error', 'No se encontró el producto en la lista actual. Recargue el inventario e intente de nuevo.', 'error');
-          return;
-        }
-        const verificado = await showConfirm('Eliminar producto', `¿Eliminar "${objetivo.nombre}"${objetivo.codigoBarras ? ` (código ${objetivo.codigoBarras})` : ''} del catálogo?`);
-        if (verificado) {
-          try {
-            await apiFetch(`/productos/${id}`, { method: 'DELETE' });
-            showToast('Éxito', `"${objetivo.nombre}" eliminado correctamente.`, 'success');
-            stockCacheSedeId = null;
-            loadInventario({ force: true });
-          } catch (err) {
-            // Componente de un combo: ofrecer abrir el combo para quitarlo de ahí.
-            const info = err as { code?: string; details?: { combos?: { id?: string; nombre?: string }[]; stockTotal?: number; sedes?: { sede: string; cantidad: number }[] } };
-            // Tiene existencias: un admin puede confirmar darlas de baja (quedan en el kardex).
-            if (info.code === 'PRODUCTO_CON_STOCK') {
-              const detalle = (info.details?.sedes || []).map(s => `${s.sede}: ${s.cantidad}`).join(', ');
-              const baja = await showConfirm('Dar de baja el stock', `"${objetivo.nombre}" tiene ${info.details?.stockTotal ?? 0} unidad(es) en inventario${detalle ? ` (${detalle})` : ''}. Al eliminarlo se dan de baja y la salida queda registrada en el kardex. ¿Continuar?`);
-              if (!baja) return;
-              try {
-                await apiFetch(`/productos/${id}?darDeBaja=1`, { method: 'DELETE' });
-                showToast('Éxito', `"${objetivo.nombre}" eliminado y su stock dado de baja.`, 'success');
-                stockCacheSedeId = null;
-                loadInventario({ force: true });
-              } catch (errBaja) {
-                showToast('No se pudo eliminar', errorMessage(errBaja), 'error');
-              }
-              return;
-            }
-            const combo = info.code === 'PRODUCTO_EN_COMBO' ? info.details?.combos?.find(c => c.id && stockCache.some(s => s.productoId === c.id)) : undefined;
-            if (combo?.id) {
-              const abrir = await showConfirm('Producto usado en un combo', `${errorMessage(err)} ¿Abrir el combo "${combo.nombre}" para quitarle este componente?`);
-              if (abrir) abrirEdicionProducto(combo.id);
-              return;
-            }
-            showToast('No se pudo eliminar', errorMessage(err), 'error');
-          }
-        }
-      });
-    });
-
-    // Fila completa clickeable (abre edición); botones internos ya detienen la propagación
-    document.querySelectorAll<HTMLElement>('.inv-row.is-clickable').forEach(row => {
-      row.addEventListener('click', (event) => {
-        if (event.target instanceof Element && event.target.closest('button,a,input,select,textarea,summary')) return;
-        abrirEdicionProducto(row.getAttribute('data-id'));
-      });
-      row.addEventListener('keydown', (e) => {
-        if (e.target !== row) return;
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          abrirEdicionProducto(row.getAttribute('data-id'));
-        }
-      });
-    });
-  };
+      return;
+    }
+    // Fila completa clickeable (abre edición)
+    if (target.closest('button,a,input,select,textarea,summary')) return;
+    const row = target.closest<HTMLElement>('.inv-row.is-clickable');
+    if (row) abrirEdicionProducto(row.getAttribute('data-id'));
+  });
+  inventarioBody.addEventListener('keydown', (e) => {
+    const row = e.target instanceof HTMLElement && e.target.matches('.inv-row.is-clickable') ? e.target : null;
+    if (row && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      abrirEdicionProducto(row.getAttribute('data-id'));
+    }
+  });
 
   const loadInventario = async ({ force = false } = {}) => {
     const sedeId = selectSede.value;
@@ -2052,11 +2069,14 @@ export async function initInventario(container: HTMLElement) {
     if (resultCountEl) resultCountEl.textContent = String('Cargando…');
 
     try {
-      stockCache = await apiRequired<StockInventario[]>(`/inventario/stock?sedeId=${sedeId}`);
+      const [stock] = await Promise.all([
+        apiRequired<StockInventario[]>(`/inventario/stock?sedeId=${sedeId}`),
+        loadCategoriasList()
+      ]);
+      stockCache = stock;
       stockCacheSedeId = sedeId;
-      await loadCategoriasList();
       syncStockChipCounts();
-      applyInventarioFilters();
+      applyInventarioFilters({ keepPage: force });
       if (force && document.getElementById('mov-inv-productos')?.dataset.loaded) {
         await loadMovimientoProductos(true);
         if (document.getElementById('tab-inventario-movimientos')?.classList.contains('active')) {
@@ -2078,7 +2098,9 @@ export async function initInventario(container: HTMLElement) {
     stockCacheSedeId = null;
     loadInventario({ force: true });
   });
-  searchInput.addEventListener('input', () => applyInventarioFilters());
+  const filtrarDebounced = debounce(() => applyInventarioFilters(), 250);
+  searchInput.addEventListener('input', filtrarDebounced);
+  searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') filtrarDebounced.flush(); });
   selectCategoria?.addEventListener('change', () => applyInventarioFilters());
 
   // F2 → enfocar buscar/escanear (mismo atajo que POS; no actúa si hay modal abierto)
