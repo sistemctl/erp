@@ -156,7 +156,7 @@ export async function initCaja(container: HTMLElement) {
 
               <div class="card erp-table-panel">
                 <div class="table-responsive">
-                  <table class="table table-vcenter card-table table-hover caja-historial-table mb-0">
+                  <table class="table table-vcenter card-table table-hover caja-historial-table mb-0" data-mobile-kind="analysis">
                     <thead>
                       <tr>
                         <th>Fecha</th>
@@ -727,7 +727,7 @@ export async function initCaja(container: HTMLElement) {
                   <span class="avatar bg-blue-lt me-3"><i class="ti ti-cash fs-2"></i></span>
                   <div>
                     <h3 class="mb-0">${formatter.format(Number(saldoEfectivoTeorico))}</h3>
-                    <div class="text-secondary small">Efectivo Físico Teórico en Caja</div>
+                    <div class="text-secondary small" title="Efectivo físico teórico en caja: apertura + ventas en efectivo − retiros">Efectivo esperado en caja</div>
                   </div>
                 </div>
               </div>
@@ -741,7 +741,7 @@ export async function initCaja(container: HTMLElement) {
                   <span class="avatar bg-red-lt me-3"><i class="ti ti-upload fs-2"></i></span>
                   <div>
                     <h3 class="mb-0">${formatter.format(Number(data.totalEgresos))}</h3>
-                    <div class="text-secondary small">Total Retiros de Caja (Egresos)</div>
+                    <div class="text-secondary small" title="Total de retiros de caja (egresos) de esta sesión">Retiros de la sesión</div>
                   </div>
                 </div>
               </div>
@@ -752,14 +752,14 @@ export async function initCaja(container: HTMLElement) {
         ${buildDesglosePagosHtml(data)}
 
         <div class="mb-4 btn-list text-start">
-          <button id="btn-pos-egreso" class="btn btn-danger" ${data.cierrePendiente ? 'disabled' : ''}>
+          <button id="btn-pos-egreso" class="btn btn-outline-danger" ${data.cierrePendiente ? 'disabled' : ''}>
             <i class="ti ti-plus me-2"></i> Registrar Egreso / Retiro
           </button>
           <button id="btn-pos-cierre" class="btn btn-primary">
             <i class="ti ti-lock me-2"></i> Hacer Cierre de Caja
           </button>
           ${['admin', 'superadmin'].includes(usuario.rol) ? `
-            <button id="btn-pos-liberar" class="btn btn-warning">
+            <button id="btn-pos-liberar" class="btn btn-outline-warning">
               <i class="ti ti-key me-2"></i> Cierre administrativo
             </button>
           ` : ''}

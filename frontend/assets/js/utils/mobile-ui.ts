@@ -218,7 +218,9 @@ export function mountMobileUI(root: HTMLElement, route: string): () => void {
 
   function prepareFilter(card: HTMLElement): void {
     if (filters.has(card) || card.closest('.modal')) return;
-    const fields = Array.from(card.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input:not([type="hidden"]),select,textarea'));
+    if (card.classList.contains('una-sede-oculto')) return;
+    // Los campos ocultos por el modo de una sola sede no cuentan como filtros.
+    const fields = Array.from(card.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input:not([type="hidden"]),select,textarea')).filter(field => !field.closest('.una-sede-oculto'));
     if (!fields.length) return;
     const search = fields.find(field => field instanceof HTMLInputElement && (field.type === 'search' || field.type === 'text') && /buscar|search|nombre|referencia|documento/.test(normalize(`${field.id} ${field.getAttribute('placeholder') || ''}`)));
     const groupFor = (field: HTMLElement): HTMLElement | null => {

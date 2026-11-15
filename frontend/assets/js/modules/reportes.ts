@@ -47,6 +47,12 @@ function downloadCsv<T>(filename: string, rows: readonly T[], columns: readonly 
   URL.revokeObjectURL(a.href);
 }
 
+let chartFlujo: InstanceType<typeof Chart> | null = null;
+export function destroyReportes(): void {
+  chartFlujo?.destroy();
+  chartFlujo = null;
+}
+
 export async function initReportes(container: HTMLElement) {
   const usuario = requireUsuario();
   const allowed = ['admin', 'superadmin', 'gerente_sede', 'contador'].includes(usuario.rol);
@@ -141,7 +147,6 @@ export async function initReportes(container: HTMLElement) {
     </div>
   `;
 
-  let chartFlujo: InstanceType<typeof Chart> | null = null;
   let lastCartera: CuentaDTO[] = [];
   let lastCpp: CuentaPagarDTO[] = [];
   let activeTab = 'cartera';
@@ -239,12 +244,19 @@ export async function initReportes(container: HTMLElement) {
         datasets: [{
           label: 'Ingresos',
           data: (data.serie || []).map(s => s.ingresos),
-          borderColor: '#2fb344',
+          borderColor: getComputedStyle(document.documentElement).getPropertyValue('--color-success').trim() || '#16a34a',
           tension: 0.3,
           fill: false
         }]
       },
-      options: { responsive: true, plugins: { legend: { display: false } } }
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (ctx: { parsed: { y: number } }) => ` Ingresos: ${formatter.format(Number(ctx.parsed.y) || 0)}` } }
+        },
+        scales: { y: { min: 0, ticks: { precision: 0, callback: (v: number | string) => formatter.format(Number(v)) } } }
+      }
     });
   }
 

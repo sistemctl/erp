@@ -10,6 +10,13 @@ import { requireUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { escapeHtml, safeHref } from '../utils/html.js';
 
+// Gráfica viva del módulo: se destruye al salir para no dejar instancias y listeners huérfanos.
+let chartVentasInstance: InstanceType<typeof Chart> | null = null;
+export function destroyDashboard(): void {
+  chartVentasInstance?.destroy();
+  chartVentasInstance = null;
+}
+
 export async function initDashboard(container: HTMLElement) {
   let usuario = requireUsuario();
   const isAdmin = ['admin', 'superadmin'].includes(usuario.rol);
@@ -419,7 +426,6 @@ export async function initDashboard(container: HTMLElement) {
     año: 'Último año'
   };
 
-  let chartVentasInstance: InstanceType<typeof Chart> | null = null;
 
   const ORIGEN_COLORS: Record<string,string> = {
     caja_efectivo: '#e11d48',
@@ -1136,9 +1142,12 @@ export async function initDashboard(container: HTMLElement) {
         },
         scales: {
           y: {
+            // Ingresos y gastos nunca son negativos: sin datos, el eje no muestra $-0.5.
+            min: 0,
             grid: { color: gridColor },
             ticks: {
               color: textColor,
+              precision: 0,
               callback: function(value: number) {
                 if (value >= 1000000) return '$' + (value / 1000000) + 'M';
                 if (value >= 1000) return '$' + (value / 1000) + 'K';

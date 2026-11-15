@@ -2,7 +2,7 @@ export type ModuleInit = (container: HTMLElement, rawHash: string) => void | Pro
 export interface ModuleLifecycle { init: ModuleInit; destroy?: () => void; }
 type FunctionKey<T, F> = { [K in keyof T]: T[K] extends F ? K : never }[keyof T] & string;
 export interface ModuleLoader { load(): Promise<ModuleLifecycle>; }
-export const ASSET_V = '3.0.122';
+export const ASSET_V = '3.0.123';
 
 /** Los nombres y firmas se comprueban contra los exports del archivo fuente. */
 export function defineModule<T>(path: string, init: FunctionKey<T, ModuleInit>, destroy?: FunctionKey<T, () => void>): ModuleLoader {
@@ -26,14 +26,14 @@ export function validateModule(namespace: unknown, entry: string, cleanup?: stri
 }
 
 export const moduleRegistry = {
-  '#/dashboard': defineModule<typeof import('../modules/dashboard.js')>('../modules/dashboard.js', 'initDashboard'),
+  '#/dashboard': defineModule<typeof import('../modules/dashboard.js')>('../modules/dashboard.js', 'initDashboard', 'destroyDashboard'),
   '#/pos': defineModule<typeof import('../modules/pos.js')>('../modules/pos.js', 'initPos', 'destroyPos'),
   '#/inventario': defineModule<typeof import('../modules/inventario.js')>('../modules/inventario.js', 'initInventario', 'destroyInventario'),
   '#/series': defineModule<typeof import('../modules/series.js')>('../modules/series.js', 'initSeries'),
   '#/reparaciones': defineModule<typeof import('../modules/reparaciones.js')>('../modules/reparaciones.js', 'initReparaciones'),
   '#/instalaciones': defineModule<typeof import('../modules/instalaciones.js')>('../modules/instalaciones.js', 'initInstalaciones', 'destroyInstalaciones'),
   '#/rentabilidad': defineModule<typeof import('../modules/rentabilidad.js')>('../modules/rentabilidad.js', 'initRentabilidad'),
-  '#/reportes': defineModule<typeof import('../modules/reportes.js')>('../modules/reportes.js', 'initReportes'),
+  '#/reportes': defineModule<typeof import('../modules/reportes.js')>('../modules/reportes.js', 'initReportes', 'destroyReportes'),
   '#/facturacion': defineModule<typeof import('../modules/facturacion.js')>('../modules/facturacion.js', 'initFacturacion'),
   '#/ventas': defineModule<typeof import('../modules/ventas.js')>('../modules/ventas.js', 'initVentas'),
   '#/clientes': defineModule<typeof import('../modules/clientes.js')>('../modules/clientes.js', 'initClientes'),

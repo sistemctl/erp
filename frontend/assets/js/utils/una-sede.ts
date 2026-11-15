@@ -18,6 +18,14 @@ const normalizar = (t: string) => t.trim().toLowerCase().normalize('NFD').replac
 
 function ocultar(el: Element) { el.classList.add('una-sede-oculto'); }
 
+/** Una tarjeta de filtros cuyo único campo era la sede quedaría como un recuadro vacío. */
+function ocultarTarjetaVacia(desde: Element) {
+  const tarjeta = desde.closest('.erp-filter-card');
+  if (!tarjeta) return;
+  const campos = Array.from(tarjeta.querySelectorAll('input:not([type=hidden]),select,textarea'));
+  if (campos.every((campo) => campo.closest('.una-sede-oculto'))) ocultar(tarjeta);
+}
+
 function procesarSelect(select: HTMLSelectElement) {
   if (!/sede/i.test(`${select.id} ${select.name}`)) return;
   // "Sede Global / N/A" (usuarios sin sede fija) es una elección real: no se oculta.
@@ -31,6 +39,7 @@ function procesarSelect(select: HTMLSelectElement) {
   const contenedor = select.closest(CONTENEDORES);
   if (contenedor && contenedor.querySelectorAll('input:not([type=hidden]),select,textarea').length === 1) {
     ocultar(contenedor);
+    ocultarTarjetaVacia(contenedor);
     return;
   }
   ocultar(select);
