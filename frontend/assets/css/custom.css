@@ -13900,3 +13900,11 @@ body.una-sede .pos-session-chip[title="Sede"] { display: none !important; }
 .nav-mas-modulos > details > summary::after { content: ''; margin-left: auto; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .15s ease; opacity: .55; }
 .nav-mas-modulos > details[open] > summary::after { transform: rotate(45deg); }
 .nav-mas-modulos__lista { padding-left: 0; }
+
+/* Inventario: edición rápida de catálogo (utils/catalogo-rapido.ts) */
+.cr-tabla thead.sticky-top th { background: var(--surface); z-index: 2; }
+.cr-tabla .cr-producto { max-width: 280px; }
+.cr-tabla .form-control-sm { font-variant-numeric: tabular-nums; }
+.cr-tabla .cr-cambiado { background-color: color-mix(in srgb, var(--accent-color) 8%, var(--surface)) !important; border-color: var(--accent-color) !important; }
+.cr-tabla .cr-alerta { border-color: var(--color-warning, #d97706) !important; background-color: color-mix(in srgb, #f59e0b 8%, var(--surface)) !important; }
+.cr-tabla .is-invalid { border-color: var(--color-danger, #dc2626) !important; }

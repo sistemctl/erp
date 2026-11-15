@@ -17,6 +17,7 @@ import { inversionPanelHtml, mountInventarioInversion } from '../utils/inventari
 import { escapeHtml } from '../utils/html.js';
 import { nombreCortoCategoria } from '../utils/categoria-nombre.js';
 import { debounce } from '../utils/debounce.js';
+import { abrirEdicionRapida, abrirCodigosInternos } from '../utils/catalogo-rapido.js';
 
 let dataSedes: SedeDTO[] = [];
 let inventarioKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
@@ -74,6 +75,13 @@ export async function initInventario(container: HTMLElement) {
                 </button>
                 <button type="button" class="dropdown-item" id="btn-importar-csv">
                   <i class="ti ti-file-upload me-2"></i> Importar CSV
+                </button>
+                <div class="dropdown-divider"></div>
+                <button type="button" class="dropdown-item" id="btn-edicion-rapida">
+                  <i class="ti ti-table-options me-2"></i> Edición rápida (vista actual)
+                </button>
+                <button type="button" class="dropdown-item" id="btn-codigos-internos">
+                  <i class="ti ti-barcode me-2"></i> Códigos escaneables y etiquetas
                 </button>
               </div>
             </div>
@@ -1793,6 +1801,8 @@ export async function initInventario(container: HTMLElement) {
   // Listado por páginas: con catálogos grandes dibujar todo de una vez bloquea la pantalla.
   const INV_PAGE = 100;
   let invVisibles = INV_PAGE;
+  // Productos que muestra la tabla con los filtros actuales (para las herramientas en bloque).
+  let ultimoFiltrado: StockInventario[] = [];
 
   const abrirEdicionProducto = (id: string | null | undefined) => {
     const item = stockCache.find(s => s.productoId === id);
@@ -1935,6 +1945,7 @@ export async function initInventario(container: HTMLElement) {
       return (prod.nombre || '').toLowerCase().includes(query) || (prod.codigoBarras || '').toLowerCase().includes(query);
     });
 
+    ultimoFiltrado = filtered;
     if (resultCountEl) {
       resultCountEl.textContent = String(filtered.length
         ? `${filtered.length} producto${filtered.length === 1 ? '' : 's'}`
@@ -2098,6 +2109,14 @@ export async function initInventario(container: HTMLElement) {
     stockCacheSedeId = null;
     loadInventario({ force: true });
   });
+  const recargarCatalogo = async () => { stockCacheSedeId = null; await loadInventario({ force: true }); };
+  document.getElementById('btn-edicion-rapida')?.addEventListener('click', () => {
+    abrirEdicionRapida({ productos: ultimoFiltrado, alGuardar: recargarCatalogo });
+  });
+  document.getElementById('btn-codigos-internos')?.addEventListener('click', () => {
+    abrirCodigosInternos({ productos: ultimoFiltrado, alGuardar: recargarCatalogo });
+  });
+
   const filtrarDebounced = debounce(() => applyInventarioFilters(), 250);
   searchInput.addEventListener('input', filtrarDebounced);
   searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') filtrarDebounced.flush(); });

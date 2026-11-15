@@ -706,6 +706,69 @@ export const generarCodigoInterno: Handler<Body> = async (req, res, next) => {
   }
 };
 
+/** Un código vacío o con espacios/minúsculas es una descripción, no algo que un lector pueda escanear. */
+export const codigoNoEscaneable = (codigo: unknown) => {
+  const texto = String(codigo ?? '').trim();
+  return !texto || /\s/.test(texto) || /[a-z]/.test(texto);
+};
+
+/**
+ * POST /productos/codigos-internos { productoIds }: asigna códigos internos 29… a los
+ * productos cuyo código no es escaneable. Todo en una transacción con bloqueo: los códigos
+ * se calculan como "mayor existente + 1" y en paralelo saldrían repetidos. El texto que
+ * había en el código se conserva al inicio de la descripción.
+ */
+export const asignarCodigosInternos: Handler<Body> = async (req, res, next) => {
+  const ids: unknown = (req.body as { productoIds?: unknown }).productoIds;
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 1000 || !ids.every((id) => typeof id === 'string' && UUID.test(id))) {
+    return res.status(400).json({ error: 'Indique entre 1 y 1000 productos válidos.' });
+  }
+  const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
+  try {
+    await sequelize.query('SELECT pg_advisory_xact_lock(20261116)', { transaction });
+    const productos = await Producto.findAll({
+      where: { id: { [Op.in]: [...new Set(ids as string[])] }, activo: true },
+      order: [['nombre', 'ASC']],
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
+    const cambios: { id: string; nombre: string; codigoAnterior: string; codigoBarras: string; precioVenta: string | number; valorAnterior: object }[] = [];
+    for (const producto of productos) {
+      if (!codigoNoEscaneable(producto.codigoBarras)) continue;
+      const valorAnterior = producto.toJSON();
+      const codigoAnterior = String(producto.codigoBarras ?? '').trim();
+      const codigoBarras = await generateInternalBarcode(transaction);
+      const descripcion = String(producto.descripcion ?? '').trim();
+      const nota = codigoAnterior ? `Ref. anterior: ${codigoAnterior}` : '';
+      await producto.update({
+        codigoBarras,
+        ...(nota && !descripcion.includes(nota) ? { descripcion: descripcion ? `${nota}\n${descripcion}` : nota } : {})
+      }, { transaction });
+      cambios.push({ id: producto.id, nombre: producto.nombre, codigoAnterior, codigoBarras, precioVenta: producto.precioVenta, valorAnterior });
+    }
+    await transaction.commit();
+    if (req.logAudit) {
+      for (const c of cambios) {
+        await req.logAudit({
+          accion: 'UPDATE', modulo: 'Productos', registroId: c.id,
+          valorAnterior: c.valorAnterior, valorNuevo: { codigoBarras: c.codigoBarras, motivo: 'Código interno asignado en bloque' }
+        });
+      }
+    }
+    return res.json({
+      asignados: cambios.map(({ valorAnterior: _omit, ...c }) => c),
+      omitidos: ids.length - cambios.length
+    });
+  } catch (error) {
+    if (!transactionFinished(transaction)) await transaction.rollback();
+    next(error);
+  } finally {
+    if (!transactionFinished(transaction)) await transaction.rollback();
+  }
+};
+
 // --- CATEGORÍAS ---
 
 export const getCategorias: Handler<Body> = async (req, res, next) => {
