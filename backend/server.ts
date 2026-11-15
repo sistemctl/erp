@@ -43,6 +43,8 @@ import errorHandler = require('./middleware/errorHandler');
 import { resolveStartupPort, buildAppUrl } from './utils/server-config';
 import { isAllowedCorsOrigin, getPublicOrigin } from './utils/public-url';
 import { bootstrapConsumidorFinal } from './utils/consumidor-final';
+import { difundirCambios, streamEventos } from './utils/eventos';
+import authMiddleware = require('./middleware/auth.middleware');
 
 require('dotenv').config({ path: ENV_PATH });
 
@@ -108,6 +110,10 @@ app.get('/api/health', (req, res) => {
     urlPublica: getPublicOrigin(req)
   });
 });
+
+// Avisos en tiempo real: canal de eventos y difusión tras cada escritura exitosa.
+app.get('/api/eventos', authMiddleware, streamEventos);
+app.use('/api', difundirCambios);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/public', publicRoutes);

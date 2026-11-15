@@ -42,6 +42,25 @@ let empresaConfig = {
   logoUrl: ''
 };
 
+/** Descuento máximo, IVA, medios de pago y datos de la empresa del POS. */
+function aplicarConfigPos(config: PosConfig | null) {
+  maxDescuentoPermitido = config ? parseFloat(String(config.descuentoMaximoPct)) : 15;
+  cobrarIva = config && config.cobrarIvaPos !== undefined ? !!config.cobrarIvaPos : true;
+  ivaPct = config && config.ivaDefecto !== undefined ? parseFloat(String(config.ivaDefecto)) / 100 : 0.19;
+  if (Array.isArray(config?.mediosPago)) {
+    mediosPagoActivos = config.mediosPago.filter((medio) => medio?.id && medio.activo !== false);
+  }
+  if (config) {
+    empresaConfig = {
+      empresa: config.empresa || 'TechStore Colombia',
+      nit: config.nit || '',
+      direccion: config.direccion || '',
+      telefono: config.telefono || '',
+      logoUrl: config.logoUrl || ''
+    };
+  }
+}
+
 function getSedeNombre(sedes: readonly SedeDTO[], sedeId: string | null, fallback = 'Sede') {
   const match = sedes.find((s) => String(s.id) === String(sedeId));
   return match?.nombre || fallback;
@@ -135,22 +154,8 @@ export async function initPos(container: HTMLElement) {
     } catch (err) {
       showToast('Aviso', errorMessage(err) || 'No se pudo cargar la configuración; se usan valores por defecto.', 'warning');
     }
-    maxDescuentoPermitido = config ? parseFloat(String(config.descuentoMaximoPct)) : 15;
-    cobrarIva = config && config.cobrarIvaPos !== undefined ? !!config.cobrarIvaPos : true;
-    ivaPct = config && config.ivaDefecto !== undefined ? parseFloat(String(config.ivaDefecto)) / 100 : 0.19;
+    aplicarConfigPos(config);
     cajaCompartida = !config || config.cajaCompartidaSede !== false;
-    if (Array.isArray(config?.mediosPago)) {
-      mediosPagoActivos = config.mediosPago.filter((medio) => medio?.id && medio.activo !== false);
-    }
-    if (config) {
-      empresaConfig = {
-        empresa: config.empresa || 'TechStore Colombia',
-        nit: config.nit || '',
-        direccion: config.direccion || '',
-        telefono: config.telefono || '',
-        logoUrl: config.logoUrl || ''
-      };
-    }
 
     // Cargar clientes para ventas a crédito
     try {
@@ -722,7 +727,13 @@ export async function initPos(container: HTMLElement) {
   };
 
   searchInput.addEventListener('input', searchProducts);
-  watchDataChanges(container, ['productos', 'inventario', 'series', 'compras', 'ventas', 'clientes'], async () => {
+  watchDataChanges(container, ['productos', 'inventario', 'series', 'compras', 'ventas', 'clientes', 'config'], async (changed) => {
+    if (changed.has('config')) {
+      // Descuento máximo, IVA y medios de pago cambiados por un administrador.
+      const config = await apiFetch<PosConfig>('/config/sistema').catch(() => null);
+      if (config) { aplicarConfigPos(config); renderCart(); }
+      if (changed.size === 1) return;
+    }
     await searchProducts();
     clientes = (await apiFetch<ClienteDTO[]>('/clientes')) ?? [];
     if (document.getElementById('modal-buscar-cliente-checkout')?.classList.contains('show')) {

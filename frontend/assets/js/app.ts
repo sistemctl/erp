@@ -11,6 +11,7 @@ import { mountMobileUI } from './utils/mobile-ui.js';
 import { mountMobileNavigation, revealMobileModule } from './utils/mobile-navigation.js';
 import { instalarFormatoNumerico } from './utils/numero-input.js';
 import { detectarModoUnaSede } from './utils/una-sede.js';
+import { startServerEvents } from './utils/server-events.js';
 interface NavigationLink { name: string; hash: ModuleRoute | '#/auditlog'; icon: string; }
 interface ShellConfig { empresa: string; logoUrl?: string | null; }
 interface BrandingConfig extends ShellConfig { temaInterfaz?: Record<string, unknown>; }
@@ -429,6 +430,9 @@ async function renderRoute() {
     }
     return;
   }
+
+  // Avisos en tiempo real de cambios hechos por otros usuarios o equipos.
+  startServerEvents();
 
   // 2. Renderizar contenedor base con Sidebar y Topbar (si no se ha renderizado)
   if (!document.getElementById('sidebar-container')) {

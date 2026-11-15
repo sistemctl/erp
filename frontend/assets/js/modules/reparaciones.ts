@@ -1453,7 +1453,7 @@ export async function initReparaciones(container: HTMLElement) {
       openDetalle(match.id);
     }
   }
-  watchDataChanges(container, ["productos","clientes","reparaciones"], async () => {
+  watchDataChanges(container, ["productos","clientes","reparaciones","config"], async () => {
     await loadData(); fillKanban(document.querySelector<HTMLInputElement>('#kanban-search')?.value || '');
   });
 

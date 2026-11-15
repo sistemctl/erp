@@ -12,6 +12,17 @@ function errorFields(value: unknown): Partial<ApiErrorBody> {
 }
 
 const API_URL = '/api';
+let clientId = '';
+/** Identifica este navegador: el servidor no le reenvía avisos de sus propios cambios. */
+export function erpClientId(): string {
+  if (clientId) return clientId;
+  try { clientId = localStorage.getItem('erp-client-id') || ''; } catch { /* almacenamiento bloqueado */ }
+  if (!/^[\w-]{8,64}$/.test(clientId)) {
+    clientId = `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+    try { localStorage.setItem('erp-client-id', clientId); } catch { /* id solo de esta sesión */ }
+  }
+  return clientId;
+}
 let submissionOrigin: HTMLFormElement | null = null;
 /** Safari no siempre enfoca el botón al tocarlo; conserva el origen del evento submit. */
 export function captureFormRequestOrigin(form: HTMLFormElement): void {
@@ -31,6 +42,7 @@ export async function apiFetch<T = unknown>(endpoint: string, options: ApiOption
   if (token && !skipAuth) {
     headers.set('Authorization', `Bearer ${token}`);
   }
+  headers.set('X-Client-Id', erpClientId());
 
   const config: ApiOptions = {
     ...options,

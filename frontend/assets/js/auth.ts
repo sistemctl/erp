@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { stopServerEvents } from './utils/server-events.js';
 import type { LoginResponse, SessionUser, UserDTO } from '../../../shared/contracts';
 
 function isSessionUser(value: unknown): value is SessionUser {
@@ -34,6 +35,7 @@ export async function login(email: string, password: string): Promise<UserDTO> {
 }
 
 export async function logout() {
+  stopServerEvents();
   try {
     await apiFetch('/auth/logout', { method: 'POST' }).catch(() => {});
   } finally {

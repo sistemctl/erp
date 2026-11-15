@@ -1055,7 +1055,7 @@ export async function initCotizaciones(container: HTMLElement) {
 
   // Carga inicial
   await loadCotizaciones();
-  watchDataChanges(container, ["productos","clientes","cotizaciones"], async () => {
+  watchDataChanges(container, ["productos","clientes","cotizaciones","inventario"], async () => {
     const [list, clients] = await Promise.all([apiRequired<ProductoDTO[]>('/productos'), apiRequired<ClienteDTO[]>('/clientes')]);
     productos = list.filter(p => p.activo !== false);
     clientes = clients;

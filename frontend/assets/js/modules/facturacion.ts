@@ -322,7 +322,7 @@ export async function initFacturacion(container: HTMLElement) {
       alert('Error al anular factura: ' + errorMessage(err));
     }
   }
-  watchDataChanges(container, ["facturas","ventas","reparaciones","instalaciones","cartera"], async () => {
+  watchDataChanges(container, ["facturas","ventas","reparaciones","instalaciones","cartera","config"], async () => {
     await loadFacturasFiltradas();
   });
 

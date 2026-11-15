@@ -349,6 +349,19 @@ server {
     listen 80;
     server_name erp.tudominio.com;
 
+    # Avisos en tiempo real: conexión larga sin búfer
+    location /api/eventos {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection        "";
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
@@ -520,6 +533,13 @@ La integración crea y elimina una base PostgreSQL temporal; el usuario de base 
 
 - Docker: el contenedor usa 3000; el host publica **8080**. Si 8080 está ocupado, cambia el mapeo en `docker-compose.yml`.
 - Linux: cambia `PORT` en `backend/.env` y reinicia el servicio.
+
+### Los cambios no aparecen en otros equipos
+
+Cada navegador con sesión abierta mantiene una conexión de avisos en `/api/eventos` (Server-Sent Events). Cuando alguien guarda, el servidor avisa qué área cambió y las pantallas abiertas recargan sus datos sin tocar formularios en edición. Si se corta la conexión, se reconecta sola y recarga todo. Tras desplegar con una versión nueva (`ASSET_V` en `frontend/assets/js/utils/module-registry.ts` y `?v=` en `frontend/index.html`), los navegadores abiertos muestran "Hay una versión nueva del sistema" con el botón **Recargar**.
+
+- Detrás de Nginx, `/api/eventos` necesita `proxy_buffering off;` y `proxy_read_timeout 1h;` (el servidor ya envía `X-Accel-Buffering: no` y un latido cada 25 s).
+- Cambios hechos directamente en la base de datos no generan aviso; se ven al volver a la pestaña o recargar.
 
 ### Error CORS en el navegador
 

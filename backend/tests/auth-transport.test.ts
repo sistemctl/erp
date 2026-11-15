@@ -22,7 +22,8 @@ function authFixture(response: unknown) {
     window,
     localStorage: { getItem: (key: string) => store.get(key) ?? null,
       setItem: (key: string, value: string) => store.set(key, value), removeItem: (key: string) => store.delete(key) },
-    apiFetch: async () => response
+    apiFetch: async () => response,
+    stopServerEvents: () => {}
   }) as AuthModule;
   return { auth, store, window };
 }

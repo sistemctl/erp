@@ -1597,7 +1597,7 @@ export async function initCaja(container: HTMLElement) {
   await loadCajaStatus();
 
   bindQuickAction(container, 'egreso', abrirModalEgreso);
-  watchDataChanges(container, ["caja","ventas","compras","cartera","facturas","reparaciones","instalaciones"], async () => {
+  watchDataChanges(container, ["caja","ventas","compras","cartera","facturas","reparaciones","instalaciones","nomina","config"], async () => {
     await loadCajaStatus();
   });
 

@@ -1578,7 +1578,7 @@ export async function initInstalaciones(container: HTMLElement) {
   document.addEventListener('keydown', instalacionesKeydownHandler);
 
   renderTabla();
-  watchDataChanges(container, ["productos","clientes","instalaciones"], async () => {
+  watchDataChanges(container, ["productos","clientes","instalaciones","series","config"], async () => {
     await loadData();
     renderTabla();
     syncSelectOptions(requireElement('inst-cliente', HTMLSelectElement), clientes, c => `${c.nombre}${c.documento ? ` (${c.documento})` : ''}`);

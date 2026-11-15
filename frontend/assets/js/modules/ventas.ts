@@ -803,7 +803,8 @@ export async function initVentas(container: HTMLElement) {
   if (tabReparacionesEl) {
     tabReparacionesEl.addEventListener('shown.bs.tab', () => loadReparaciones());
   }
-  watchDataChanges(container, ["ventas","facturas","reparaciones"], async () => {
+  watchDataChanges(container, ["ventas","facturas","reparaciones","cartera","config"], async (changed) => {
+    if (changed.has('config')) empresaConfig = await apiRequired<EmpresaDocumento>('/config/sistema').catch(() => empresaConfig);
     await loadVentasFiltradas();
   });
 
