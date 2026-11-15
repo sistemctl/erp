@@ -63,6 +63,8 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
+      # Proxies de confianza para X-Forwarded-For (vacío = solo redes privadas, p. ej. Traefik)
+      TRUST_PROXY: ${TRUST_PROXY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       SMTP_HOST: ${SMTP_HOST:-}

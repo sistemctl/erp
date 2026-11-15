@@ -176,8 +176,15 @@ export const registrarAbonoCartera: Handler<Body> = async (req, res, next) => {
       return res.status(400).json({ error: 'Esta cuenta ya se encuentra totalmente cancelada.' });
     }
 
-    const montoAbono = parseFloat(String(monto));
-    if (montoAbono > parseFloat(String(cpc.saldoPendiente))) {
+    // Importes en centavos: evita saldos residuales como 0.001 que dejan la cuenta
+    // sin llegar a "pagada" y rechazan el siguiente abono.
+    const montoCentavos = Math.round(Number(monto) * 100);
+    if (!Number.isFinite(montoCentavos) || montoCentavos <= 0) {
+      return res.status(400).json({ error: 'El monto del abono debe ser mayor que cero.' });
+    }
+    const saldoCentavos = Math.round((parseFloat(String(cpc.saldoPendiente)) || 0) * 100);
+    const montoAbono = montoCentavos / 100;
+    if (montoCentavos > saldoCentavos) {
       return res.status(400).json({ error: `El monto del abono supera el saldo pendiente de: ${cpc.saldoPendiente} COP.` });
     }
 
@@ -194,8 +201,8 @@ export const registrarAbonoCartera: Handler<Body> = async (req, res, next) => {
     }, { transaction });
 
     // 4. Actualizar saldos en la Cuenta Por Cobrar
-    const nuevoTotalAbonado = parseFloat(String(cpc.totalAbonado)) + montoAbono;
-    const nuevoSaldoPendiente = parseFloat(String(cpc.saldoPendiente)) - montoAbono;
+    const nuevoTotalAbonado = (Math.round((parseFloat(String(cpc.totalAbonado)) || 0) * 100) + montoCentavos) / 100;
+    const nuevoSaldoPendiente = (saldoCentavos - montoCentavos) / 100;
     const nuevoEstado = nuevoSaldoPendiente <= 0 ? 'pagada' : cpc.estado;
 
     await cpc.update({

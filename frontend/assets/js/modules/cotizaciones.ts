@@ -13,6 +13,7 @@ import { erpHeader } from '../utils/module-shell.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
 import { renderCotizacionDocumento, printCotizacionDocumento } from '../utils/cotizacion-document.js';
 import { showToast } from '../utils/toast.js';
+import { escapeHtml } from '../utils/html.js';
 
 export async function initCotizaciones(container: HTMLElement) {
   const usuario = requireUsuario();
@@ -120,14 +121,14 @@ export async function initCotizaciones(container: HTMLElement) {
                       <label class="form-label">Sede</label>
                       <select id="cot-sede" class="form-select" required>
                         <option value="">-- Seleccionar Sede --</option>
-                        ${sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                        ${sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${escapeHtml(s.nombre)}</option>`).join('')}
                       </select>
                     </div>
                     <div class="col-md-4 mb-3">
                       <label class="form-label">Cliente</label>
                       <select id="cot-cliente" class="form-select" required>
                         <option value="">-- Seleccionar Cliente --</option>
-                        ${clientes.map(c => `<option value="${c.id}">${c.nombre} (${c.documento || 'Sin doc'})</option>`).join('')}
+                        ${clientes.map(c => `<option value="${c.id}">${escapeHtml(c.nombre)} (${escapeHtml(c.documento || 'Sin doc')})</option>`).join('')}
                       </select>
                     </div>
                     <div class="col-md-4 mb-3">
@@ -139,7 +140,7 @@ export async function initCotizaciones(container: HTMLElement) {
                       <label class="form-label">Cliente</label>
                       <select id="cot-cliente" class="form-select" required>
                         <option value="">-- Seleccionar Cliente --</option>
-                        ${clientes.map(c => `<option value="${c.id}">${c.nombre} (${c.documento || 'Sin doc'})</option>`).join('')}
+                        ${clientes.map(c => `<option value="${c.id}">${escapeHtml(c.nombre)} (${escapeHtml(c.documento || 'Sin doc')})</option>`).join('')}
                       </select>
                     </div>
                     <div class="col-md-6 mb-3">
@@ -916,8 +917,8 @@ export async function initCotizaciones(container: HTMLElement) {
 
         return `
           <tr>
-            <td><strong>${c.numeroCotizacion}</strong></td>
-            <td>${c.cliente ? c.cliente.nombre : 'Cliente General'}</td>
+            <td><strong>${escapeHtml(c.numeroCotizacion)}</strong></td>
+            <td>${escapeHtml(c.cliente ? c.cliente.nombre : 'Cliente General')}</td>
             <td>${new Date(c.fechaVencimiento ?? '').toLocaleDateString()}</td>
             <td class="text-end fw-bold text-dark">${formatter.format(Number(c.total))}</td>
             <td class="text-center"><span class="badge ${statusBadge} px-2 py-1">${c.estado.toUpperCase()}</span></td>
@@ -968,7 +969,7 @@ export async function initCotizaciones(container: HTMLElement) {
       });
 
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">Error: ${errorMessage(e)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">Error: ${escapeHtml(errorMessage(e))}</td></tr>`;
     }
   };
 
@@ -988,7 +989,7 @@ export async function initCotizaciones(container: HTMLElement) {
 
       content.innerHTML = `
         <div class="modal-header d-print-none">
-          <h5 class="modal-title">Cotización <strong>${c.numeroCotizacion}</strong></h5>
+          <h5 class="modal-title">Cotización <strong>${escapeHtml(c.numeroCotizacion)}</strong></h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
         </div>
         <div class="modal-body cot-doc-modal-body">
@@ -1003,7 +1004,7 @@ export async function initCotizaciones(container: HTMLElement) {
           <button type="button" class="btn btn-outline-secondary" id="btn-imprimir-cot">
             <i class="ti ti-printer me-1"></i> Imprimir
           </button>
-          <button type="button" class="btn btn-primary" id="btn-pdf-cot-modal" data-id="${c.id}" data-num="${c.numeroCotizacion}">
+          <button type="button" class="btn btn-primary" id="btn-pdf-cot-modal" data-id="${c.id}" data-num="${escapeHtml(c.numeroCotizacion)}">
             <i class="ti ti-file-text me-1"></i> Descargar PDF
           </button>
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
@@ -1048,7 +1049,7 @@ export async function initCotizaciones(container: HTMLElement) {
         window.location.hash = '#/pos';
       });
     } catch (err) {
-      content.innerHTML = `<div class="modal-body text-danger py-4">${errorMessage(err)}</div>`;
+      content.innerHTML = `<div class="modal-body text-danger py-4">${escapeHtml(errorMessage(err))}</div>`;
     }
   }
 

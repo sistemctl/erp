@@ -184,8 +184,10 @@ Volúmenes persistentes: `pgdata` (PostgreSQL) y `erp_uploads` (archivos). Puede
 
 ### 5. Seed opcional
 
+Solo en una base de datos nueva y vacía (borra todo; ver [Datos de prueba](#datos-de-prueba-seeder)):
+
 ```bash
-docker compose exec erp node dist/seeders/seeder.js
+docker compose exec erp node dist/seeders/seeder.js --confirmar-borrado-total
 ```
 
 Credenciales iniciales del seeder (tras ejecutarlo):
@@ -401,14 +403,16 @@ pg_dump -U erp_user -h localhost erp_techstore > ~/backup_erp_$(date +%F).sql
 
 ## Datos de prueba (seeder)
 
-El seeder **borra datos existentes** y carga sedes, usuarios, productos y configuración inicial.
+El seeder **borra datos existentes** (incluidas ventas, facturas, cajas y cartera) y carga sedes, usuarios, productos y configuración inicial.
+
+Por seguridad se niega a ejecutarse si `NODE_ENV=production` o si ya existen ventas o facturas. Para forzarlo hay que añadir la bandera `--confirmar-borrado-total`. Cambie las contraseñas de prueba inmediatamente después de cargarlo.
 
 ```bash
 # Instalación nativa
 cd backend && node dist/seeders/seeder.js
 
-# Docker (Dokploy)
-docker compose exec erp node dist/seeders/seeder.js
+# Docker (Dokploy): el contenedor corre con NODE_ENV=production, requiere la bandera
+docker compose exec erp node dist/seeders/seeder.js --confirmar-borrado-total
 ```
 
 | Rol | Email | Contraseña |

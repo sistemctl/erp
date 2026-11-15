@@ -10,8 +10,34 @@ const {
   ConfiguracionSistema
 } = models;
 
+const FORCE_FLAG = '--confirmar-borrado-total';
+
+/**
+ * El seeder vacía (TRUNCATE ... CASCADE) sedes, usuarios y productos, lo que arrastra
+ * ventas, facturas, cajas y cartera. Se protege para que no se ejecute por error:
+ * - Con datos operativos (ventas o facturas) siempre exige la bandera explícita.
+ * - En producción siempre exige la bandera explícita.
+ */
+const assertSeederPermitido = async () => {
+  const forzado = process.argv.includes(FORCE_FLAG);
+  if (forzado) return;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`NODE_ENV=production: el seeder borra TODA la base de datos. Si realmente quiere hacerlo, ejecute con ${FORCE_FLAG}.`);
+  }
+  const [rows] = await sequelize.query(
+    `SELECT
+       (SELECT COUNT(*) FROM "Ventas")::int AS ventas,
+       (SELECT COUNT(*) FROM "Facturas")::int AS facturas`
+  ) as [Array<{ ventas: number; facturas: number }>, unknown];
+  const { ventas = 0, facturas = 0 } = rows[0] || {};
+  if (ventas > 0 || facturas > 0) {
+    throw new Error(`La base de datos tiene ${ventas} ventas y ${facturas} facturas; el seeder las borraría. Si realmente quiere hacerlo, ejecute con ${FORCE_FLAG}.`);
+  }
+};
+
 const runSeeder = async () => {
   try {
+    await assertSeederPermitido();
     console.log('Iniciando carga de datos semilla...');
 
     // Limpiar tablas existentes en orden de dependencia

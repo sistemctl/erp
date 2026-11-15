@@ -7,6 +7,7 @@ import { requireUsuario } from '../auth.js';
 import { showConfirm } from '../utils/toast.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
+import { escapeHtml } from '../utils/html.js';
 
 export async function initProveedores(container: HTMLElement) {
   const usuario = requireUsuario();
@@ -139,10 +140,10 @@ export async function initProveedores(container: HTMLElement) {
 
     tbody.innerHTML = data.map(p => `
       <tr>
-        <td><strong>${p.nombre}</strong><div class="small text-secondary">${p.direccion || 'N/A'}</div></td>
-        <td>${p.nit}</td>
-        <td>${p.contacto || '<span class="text-secondary small">N/A</span>'}</td>
-        <td>${p.telefono || ''}<div class="small text-secondary">${p.email || ''}</div></td>
+        <td><strong>${escapeHtml(p.nombre)}</strong><div class="small text-secondary">${escapeHtml(p.direccion || 'N/A')}</div></td>
+        <td>${escapeHtml(p.nit)}</td>
+        <td>${p.contacto ? escapeHtml(p.contacto) : '<span class="text-secondary small">N/A</span>'}</td>
+        <td>${escapeHtml(p.telefono || '')}<div class="small text-secondary">${escapeHtml(p.email || '')}</div></td>
         <td>
           ${p.cuentaBancaria ? `<strong>${p.banco || 'Banco'}</strong> - Ahorros: ${p.cuentaBancaria}` : '<span class="text-secondary small">Sin registrar</span>'}
         </td>

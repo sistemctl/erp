@@ -9,6 +9,8 @@ import { isModuleRoute, moduleRegistry, seguimientoModule, type ModuleRoute } fr
 import { requireElement, requireSelector } from './utils/dom.js';
 import { mountMobileUI } from './utils/mobile-ui.js';
 import { mountMobileNavigation, revealMobileModule } from './utils/mobile-navigation.js';
+import { instalarFormatoNumerico } from './utils/numero-input.js';
+import { detectarModoUnaSede } from './utils/una-sede.js';
 interface NavigationLink { name: string; hash: ModuleRoute | '#/auditlog'; icon: string; }
 interface ShellConfig { empresa: string; logoUrl?: string | null; }
 interface BrandingConfig extends ShellConfig { temaInterfaz?: Record<string, unknown>; }
@@ -131,6 +133,7 @@ const modulosPorRol: Record<Role, NavigationLink[]> = {
     { name: 'Caja', hash: '#/caja', icon: 'ti-building-store' },
     { name: 'Cartera', hash: '#/cartera', icon: 'ti-wallet' },
     { name: 'Garantía / RMA', hash: '#/rma', icon: 'ti-shield-check' },
+    { name: 'Reparaciones', hash: '#/reparaciones', icon: 'ti-tool' },
     { name: 'Inventario (Ver)', hash: '#/inventario', icon: 'ti-package' }
   ],
   tecnico: [
@@ -151,10 +154,23 @@ const modulosPorRol: Record<Role, NavigationLink[]> = {
   ]
 };
 
-function buildSidebarMenuHtml(modulos: readonly NavigationLink[]): string {
+/** Módulos de uso diario por rol: van arriba; el resto queda en "Más módulos". */
+const USO_DIARIO: Partial<Record<Role, string[]>> = {
+  superadmin: ['#/dashboard', '#/pos', '#/caja', '#/reparaciones', '#/inventario'],
+  admin: ['#/dashboard', '#/pos', '#/caja', '#/reparaciones', '#/inventario'],
+  gerente_sede: ['#/dashboard', '#/pos', '#/caja', '#/reparaciones', '#/inventario'],
+  cajero: ['#/pos', '#/caja', '#/clientes', '#/reparaciones', '#/ventas'],
+  contador: ['#/dashboard', '#/caja', '#/reportes', '#/rentabilidad']
+};
+const MAS_MODULOS_KEY = 'erp.sidebar.masAbierto';
+
+function buildSidebarMenuHtml(modulos: readonly NavigationLink[], rol?: Role): string {
   const byHash = new Map(modulos.map((m) => [m.hash.split('?')[0], m]));
   const used = new Set();
   const parts = [];
+  const diarios = (rol && USO_DIARIO[rol] || []).map((h) => byHash.get(h)).filter((m): m is NavigationLink => m !== undefined);
+  // Con pocos módulos (p. ej. técnico) no vale la pena separar.
+  const separar = diarios.length > 0 && modulos.length - diarios.length >= 3;
 
   const renderItem = (m: NavigationLink) => `
     <li class="nav-item">
@@ -167,10 +183,21 @@ function buildSidebarMenuHtml(modulos: readonly NavigationLink[]): string {
     </li>
   `;
 
+  if (separar) {
+    parts.push(`<li class="nav-item nav-section" aria-hidden="true"><span class="nav-section-label">Uso diario</span></li>`);
+    for (const m of diarios) {
+      used.add(m.hash.split('?')[0]);
+      parts.push(renderItem(m));
+    }
+    let abierto = false;
+    try { abierto = localStorage.getItem(MAS_MODULOS_KEY) === '1'; } catch { abierto = false; }
+    parts.push(`<li class="nav-item nav-mas-modulos"><details id="sidebar-mas-modulos"${abierto ? ' open' : ''}><summary class="nav-link nav-mas-modulos__toggle"><span class="nav-link-icon d-md-none d-lg-inline-block"><i class="ti ti-layout-grid fs-2"></i></span><span class="nav-link-title">Más módulos</span></summary><ul class="navbar-nav nav-mas-modulos__lista">`);
+  }
+
   for (const section of SIDEBAR_SECTIONS) {
     const items = section.hashes
       .map((h) => byHash.get(h))
-      .filter((item): item is NavigationLink => item !== undefined);
+      .filter((item): item is NavigationLink => item !== undefined && !used.has(item.hash.split('?')[0]));
     if (!items.length) continue;
     parts.push(`<li class="nav-item nav-section" aria-hidden="true"><span class="nav-section-label">${section.label}</span></li>`);
     for (const m of items) {
@@ -185,6 +212,7 @@ function buildSidebarMenuHtml(modulos: readonly NavigationLink[]): string {
     parts.push(renderItem(m));
   }
 
+  if (separar) parts.push('</ul></details></li>');
   return parts.join('');
 }
 
@@ -697,7 +725,7 @@ async function renderBaseShell(container: HTMLElement): Promise<void> {
   `;
 
   container.className = "page";
-  const menuItemsHtml = buildSidebarMenuHtml(modulos);
+  const menuItemsHtml = buildSidebarMenuHtml(modulos, usuario.rol);
 
   container.innerHTML = `
     <!-- Sidebar -->
@@ -795,7 +823,14 @@ async function renderBaseShell(container: HTMLElement): Promise<void> {
     e.preventDefault();
     logout();
   });
+  // Solo se recuerda cuando el usuario lo abre o cierra (no cuando se abre solo al navegar).
+  document.querySelector('#sidebar-mas-modulos > summary')?.addEventListener('click', () => {
+    const mas = document.getElementById('sidebar-mas-modulos') as HTMLDetailsElement | null;
+    const abrira = mas ? !mas.open : false;
+    try { localStorage.setItem(MAS_MODULOS_KEY, abrira ? '1' : '0'); } catch { /* sin almacenamiento */ }
+  });
   document.querySelectorAll('#sidebar-menu .nav-link').forEach(link => {
+    if (link.tagName === 'SUMMARY') return; // desplegar "Más módulos" no cierra el menú móvil
     link.addEventListener('click', () => {
       if (window.matchMedia('(max-width: 991.98px)').matches) {
         bootstrap.Collapse.getOrCreateInstance(requireElement('sidebar-menu', HTMLElement), { toggle: false }).hide();
@@ -882,6 +917,9 @@ function updateActiveMenu(hash: string): void {
       l.parentElement?.classList.remove('active');
     }
   });
+  // Si el módulo activo está en "Más módulos", desplegarlo para que se vea dónde estás.
+  const mas = document.getElementById('sidebar-mas-modulos');
+  if (mas instanceof HTMLDetailsElement && mas.querySelector('.nav-item.active')) mas.open = true;
   let directActive = false;
   document.querySelectorAll('.erp-mobile-nav a[data-hash]').forEach(link => {
     const active = link.getAttribute('data-hash') === hash.split('?')[0];
@@ -934,10 +972,15 @@ function setupThemeToggler() {
 // Con type="module" + defer, el DOM ya está listo cuando este script ejecuta.
 // Llamar router() directamente en vez de esperar DOMContentLoaded.
 window.addEventListener('hashchange', router);
+// Si la empresa tiene una sola sede, se ocultan selectores y columnas de sede.
+window.addEventListener('hashchange', () => { void detectarModoUnaSede(); });
 
 // Ejecutar router inmediatamente (el DOM ya está listo)
 applyThemeFromCache();
 applyDocumentBranding(getCachedBrand());
+// Campos numéricos con formato colombiano (100.000) en toda la aplicación.
+instalarFormatoNumerico(document.body);
+void detectarModoUnaSede();
 
 (async () => {
   if (isAuthenticated()) {

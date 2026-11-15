@@ -10,6 +10,7 @@ import { showConfirm } from '../utils/toast.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
 import { obtenerPeriodoPagoQuincenal, formatearEtiquetaPeriodo, resumenConfigNomina } from '../utils/nomina-periodo.js';
+import { escapeHtml } from '../utils/html.js';
 
 export async function initNomina(container: HTMLElement) {
   const usuario = requireUsuario();
@@ -207,7 +208,7 @@ export async function initNomina(container: HTMLElement) {
                   <div class="col-md-6">
                     <label class="form-label required" for="emp-sede">Sede</label>
                     <select id="emp-sede" class="form-select" required>
-                      ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                      ${sedes.map(s => `<option value="${s.id}">${escapeHtml(s.nombre)}</option>`).join('')}
                     </select>
                   </div>
                   <div class="col-md-6">
@@ -288,7 +289,7 @@ export async function initNomina(container: HTMLElement) {
                 <label class="form-label required">Colaborador</label>
                 <select id="calc-empleado" class="form-select" required>
                   <option value="">-- Seleccionar colaborador activo --</option>
-                  ${empleados.filter(e => e.activo).map(e => `<option value="${e.id}">${e.nombre} (${e.cargo || 'N/A'})</option>`).join('')}
+                  ${empleados.filter(e => e.activo).map(e => `<option value="${e.id}">${escapeHtml(e.nombre)} (${escapeHtml(e.cargo || 'N/A')})</option>`).join('')}
                 </select>
               </div>
 
@@ -423,9 +424,9 @@ export async function initNomina(container: HTMLElement) {
 
     tbodyEmp.innerHTML = empleados.map(e => `
       <tr>
-        <td><strong>${e.nombre}</strong><div class="small text-secondary">${e.email || ''}</div></td>
-        <td>${e.documento}</td>
-        <td>${e.cargo || 'N/A'}<div class="small text-secondary">${e.sede ? e.sede.nombre : 'N/A'}</div></td>
+        <td><strong>${escapeHtml(e.nombre)}</strong><div class="small text-secondary">${escapeHtml(e.email || '')}</div></td>
+        <td>${escapeHtml(e.documento)}</td>
+        <td>${escapeHtml(e.cargo || 'N/A')}<div class="small text-secondary">${escapeHtml(e.sede ? e.sede.nombre : 'N/A')}</div></td>
         <td><span class="badge bg-blue-lt">${e.tipoContrato.toUpperCase()}</span></td>
         <td class="text-end fw-bold">${formatter.format(Number(e.salarioBase))}</td>
         <td class="text-center">
@@ -465,7 +466,7 @@ export async function initNomina(container: HTMLElement) {
 
       return `
         <tr>
-          <td><strong>${n.empleado ? n.empleado.nombre : 'N/A'}</strong><div class="small text-secondary">${n.empleado ? n.empleado.cargo : ''}</div></td>
+          <td><strong>${escapeHtml(n.empleado ? n.empleado.nombre : 'N/A')}</strong><div class="small text-secondary">${escapeHtml(n.empleado ? n.empleado.cargo : '')}</div></td>
           <td>${formatearEtiquetaPeriodo(n.periodo, n.tipoPeriodo, configNomina)}</td>
           <td><span class="badge bg-purple-lt">${n.tipoPeriodo === 'mensual' ? 'MENSUAL' : 'QUINCENAL'}</span></td>
           <td class="text-end">${formatter.format(Number(n.totalDevengado))}</td>
@@ -640,7 +641,7 @@ export async function initNomina(container: HTMLElement) {
 
       content.innerHTML = `
         <div class="modal-header">
-          <h5 class="modal-title">Nómina: <strong>${n.empleado ? n.empleado.nombre : 'N/A'}</strong></h5>
+          <h5 class="modal-title">Nómina: <strong>${escapeHtml(n.empleado ? n.empleado.nombre : 'N/A')}</strong></h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
@@ -719,7 +720,7 @@ export async function initNomina(container: HTMLElement) {
       requireElement('btn-modal-pdf', HTMLButtonElement).addEventListener('click', () => downloadDesprendible(n.id));
 
     } catch (err) {
-      content.innerHTML = `<div class="alert alert-danger m-3">${errorMessage(err)}</div>`;
+      content.innerHTML = `<div class="alert alert-danger m-3">${escapeHtml(errorMessage(err))}</div>`;
     }
   }
 

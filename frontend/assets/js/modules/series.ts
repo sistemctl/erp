@@ -7,6 +7,7 @@ import { apiFetch } from '../api.js';
 import { requireUsuario } from '../auth.js';
 import { showToast } from '../utils/toast.js';
 import { erpHeader } from '../utils/module-shell.js';
+import { escapeHtml } from '../utils/html.js';
 
 export async function initSeries(container: HTMLElement) {
   const usuario = requireUsuario();
@@ -61,7 +62,7 @@ export async function initSeries(container: HTMLElement) {
               <h3 class="card-title">Filtro por Producto</h3>
               <select id="select-producto-series" class="form-select mb-3">
                 <option value="">Seleccione un producto…</option>
-                ${productos.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}
+                ${productos.map(p => `<option value="${p.id}">${escapeHtml(p.nombre)}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -118,13 +119,13 @@ export async function initSeries(container: HTMLElement) {
               <div class="mb-3">
                 <label class="form-label">Producto</label>
                 <select id="reg-producto" class="form-select" required>
-                  ${productos.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('')}
+                  ${productos.map(p => `<option value="${p.id}">${escapeHtml(p.nombre)}</option>`).join('')}
                 </select>
               </div>
               <div class="mb-3">
                 <label class="form-label">Sede de Ingreso</label>
                 <select id="reg-sede" class="form-select" required>
-                  ${sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                  ${sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${escapeHtml(s.nombre)}</option>`).join('')}
                 </select>
               </div>
               
@@ -194,17 +195,17 @@ export async function initSeries(container: HTMLElement) {
 
         return `
           <tr>
-            <td><code class="fw-bold text-dark">${s.serie}</code></td>
-            <td>${s.producto.nombre}</td>
-            <td>${s.sede.nombre}</td>
+            <td><code class="fw-bold text-dark">${escapeHtml(s.serie)}</code></td>
+            <td>${escapeHtml(s.producto.nombre)}</td>
+            <td>${escapeHtml(s.sede.nombre)}</td>
             <td>${estadoBadge}</td>
-            <td>${s.cliente ? s.cliente.nombre : '-'}</td>
+            <td>${escapeHtml(s.cliente ? s.cliente.nombre : '-')}</td>
             <td>${s.fechaVenta ? new Date(s.fechaVenta).toLocaleDateString() : '-'}</td>
           </tr>
         `;
       }).join('');
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">Error al cargar listado: ${errorMessage(err)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">Error al cargar listado: ${escapeHtml(errorMessage(err))}</td></tr>`;
     }
   };
 
@@ -218,7 +219,7 @@ export async function initSeries(container: HTMLElement) {
     resDiv.innerHTML = `<div class="spinner-border text-primary" role="status"></div>`;
 
     try {
-      const data = await apiFetch<SerieHistorial>(`/series/${imei}/historial`);
+      const data = await apiFetch<SerieHistorial>(`/series/${encodeURIComponent(imei)}/historial`);
       if (!data) throw new Error("No se encontró el historial.");
       const info = data.info;
       const rep = data.reparaciones;
@@ -227,13 +228,13 @@ export async function initSeries(container: HTMLElement) {
         <div class="border p-3 rounded bg-surface">
           <div class="row">
             <div class="col-md-6">
-              <div class="mb-1"><span class="text-secondary">Producto:</span> <strong>${info.producto.nombre}</strong></div>
-              <div class="mb-1"><span class="text-secondary">Código Barras:</span> <code>${info.producto.codigoBarras}</code></div>
+              <div class="mb-1"><span class="text-secondary">Producto:</span> <strong>${escapeHtml(info.producto.nombre)}</strong></div>
+              <div class="mb-1"><span class="text-secondary">Código Barras:</span> <code>${escapeHtml(info.producto.codigoBarras)}</code></div>
               <div class="mb-1"><span class="text-secondary">Estado actual:</span> <span class="badge bg-blue-lt">${info.estado.toUpperCase()}</span></div>
             </div>
             <div class="col-md-6">
-              <div class="mb-1"><span class="text-secondary">Sede:</span> ${info.sede.nombre}</div>
-              <div class="mb-1"><span class="text-secondary">Comprador:</span> ${info.cliente ? `${info.cliente.nombre} (${info.cliente.telefono})` : 'Ninguno'}</div>
+              <div class="mb-1"><span class="text-secondary">Sede:</span> ${escapeHtml(info.sede.nombre)}</div>
+              <div class="mb-1"><span class="text-secondary">Comprador:</span> ${info.cliente ? `${escapeHtml(info.cliente.nombre)} (${escapeHtml(info.cliente.telefono)})` : 'Ninguno'}</div>
               <div class="mb-1"><span class="text-secondary">Fecha Venta:</span> ${info.fechaVenta ? new Date(info.fechaVenta).toLocaleDateString() : 'N/A'}</div>
             </div>
           </div>
@@ -258,7 +259,7 @@ export async function initSeries(container: HTMLElement) {
                       <td><a href="#/reparaciones?buscar=${r.numeroOrden}" class="fw-semibold">#${r.numeroOrden}</a></td>
                       <td>${new Date(r.createdAt).toLocaleDateString()}</td>
                       <td><span class="badge bg-secondary-lt">${r.estado}</span></td>
-                      <td class="text-truncate" style="max-width: 150px;">${r.diagnostico || 'Sin diagnóstico'}</td>
+                      <td class="text-truncate" style="max-width: 150px;">${escapeHtml(r.diagnostico || 'Sin diagnóstico')}</td>
                     </tr>
                   `).join('')}
                 </tbody>
@@ -268,7 +269,7 @@ export async function initSeries(container: HTMLElement) {
         </div>
       `;
     } catch (err) {
-      resDiv.innerHTML = `<div class="alert alert-danger">${errorMessage(err)}</div>`;
+      resDiv.innerHTML = `<div class="alert alert-danger">${escapeHtml(errorMessage(err))}</div>`;
     }
   });
 
@@ -363,7 +364,7 @@ export async function initSeries(container: HTMLElement) {
         logItem.id = logId;
         logItem.className = 'd-flex justify-content-between align-items-center mb-1 py-1 border-bottom';
         logItem.innerHTML = `
-          <span><code>${serie}</code></span>
+          <span><code>${escapeHtml(serie)}</code></span>
           <span class="text-secondary small"><span class="spinner-border spinner-border-sm text-primary" role="status"></span> Guardando…</span>
         `;
         logsDiv.insertBefore(logItem, logsDiv.firstChild);
@@ -383,7 +384,7 @@ export async function initSeries(container: HTMLElement) {
         } catch (err) {
           const status = requireSelector('span.text-secondary', HTMLSpanElement, logItem);
           status.className = 'text-danger small fw-bold';
-          status.innerHTML = `<i class="ti ti-circle-x me-1"></i> ${errorMessage(err)}`;
+          status.innerHTML = `<i class="ti ti-circle-x me-1"></i> ${escapeHtml(errorMessage(err))}`;
 
           showToast('Error de Escaneo', `${serie}: ${errorMessage(err)}`, 'error');
         }

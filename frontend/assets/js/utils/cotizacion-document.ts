@@ -2,6 +2,7 @@ import type { CotizacionDocumento, EmpresaDocumento } from '../types/documents.j
 import { numeroALetras } from './numero-a-letras.js';
 import { calcCotIvaItems, etiquetaIvaCot } from './cotizacion-iva.js';
 import { labelUnidadMedida } from './unidad-medida.js';
+import { escapeHtml } from './html.js';
 
 const cotFormatter = new Intl.NumberFormat('es-CO', {
   style: 'currency',
@@ -67,8 +68,8 @@ export function renderCotizacionDocumento(c: CotizacionDocumento, config: Empres
 
   const itemRows = c.items.map((item) => `
     <tr>
-      <td>${item.producto?.codigoBarras || '—'}</td>
-      <td>${item.descripcion}</td>
+      <td>${escapeHtml(item.producto?.codigoBarras || '—')}</td>
+      <td>${escapeHtml(item.descripcion)}</td>
       <td class="text-center">${labelUnidadMedida(item.producto?.unidadMedida)}</td>
       <td class="text-center">${item.cantidad}</td>
       <td class="text-end">${cotFormatter.format(Number(item.precioUnitario))}</td>
@@ -81,7 +82,7 @@ export function renderCotizacionDocumento(c: CotizacionDocumento, config: Empres
   `).join('');
 
   const logoHtml = config.logoUrl
-    ? `<img src="${config.logoUrl}" alt="${empresa}" class="cot-doc__logo">`
+    ? `<img src="${escapeHtml(config.logoUrl)}" alt="${escapeHtml(empresa)}" class="cot-doc__logo">`
     : '';
 
   return `
@@ -89,23 +90,23 @@ export function renderCotizacionDocumento(c: CotizacionDocumento, config: Empres
       <header class="cot-doc__header">
         <div class="cot-doc__empresa">
           ${logoHtml}
-          <h1 class="cot-doc__empresa-nombre">${empresa.toUpperCase()}</h1>
-          <p>NIT: ${nit}</p>
-          <p>Dirección: ${direccion}</p>
-          <p>Ciudad: ${c.sede?.nombre || '—'} — COLOMBIA</p>
-          <p>Tel: ${telefono}</p>
+          <h1 class="cot-doc__empresa-nombre">${escapeHtml(empresa.toUpperCase())}</h1>
+          <p>NIT: ${escapeHtml(nit)}</p>
+          <p>Dirección: ${escapeHtml(direccion)}</p>
+          <p>Ciudad: ${escapeHtml(c.sede?.nombre || '—')} — COLOMBIA</p>
+          <p>Tel: ${escapeHtml(telefono)}</p>
         </div>
         <div class="cot-doc__qr" aria-hidden="true">
           <div class="cot-doc__qr-placeholder cot-doc__qr-placeholder--print">
             ${QR_SVG}
-            <span>${c.numeroCotizacion}</span>
+            <span>${escapeHtml(c.numeroCotizacion)}</span>
           </div>
         </div>
         <div class="cot-doc__doc-id">
           <div class="cot-doc__doc-id-inner">
             <strong>COTIZACIÓN</strong>
-            <span>N° ${c.numeroCotizacion}</span>
-            <small>${(c.estado || '').toUpperCase()}</small>
+            <span>N° ${escapeHtml(c.numeroCotizacion)}</span>
+            <small>${escapeHtml((c.estado || '').toUpperCase())}</small>
           </div>
         </div>
       </header>
@@ -114,10 +115,10 @@ export function renderCotizacionDocumento(c: CotizacionDocumento, config: Empres
         <div>
           <h2>Datos del cliente</h2>
           <dl>
-            <div><dt>Cliente</dt><dd>${cliente?.nombre || 'Cliente general'}</dd></div>
-            <div><dt>NIT / C.C.</dt><dd>${cliente?.documento || '—'}</dd></div>
-            <div><dt>Dirección</dt><dd>${cliente?.direccion || '—'}</dd></div>
-            <div><dt>Teléfono</dt><dd>${cliente?.telefono || '—'}</dd></div>
+            <div><dt>Cliente</dt><dd>${escapeHtml(cliente?.nombre || 'Cliente general')}</dd></div>
+            <div><dt>NIT / C.C.</dt><dd>${escapeHtml(cliente?.documento || '—')}</dd></div>
+            <div><dt>Dirección</dt><dd>${escapeHtml(cliente?.direccion || '—')}</dd></div>
+            <div><dt>Teléfono</dt><dd>${escapeHtml(cliente?.telefono || '—')}</dd></div>
           </dl>
         </div>
         <div>
@@ -125,8 +126,8 @@ export function renderCotizacionDocumento(c: CotizacionDocumento, config: Empres
           <dl>
             <div><dt>Fecha cotización</dt><dd>${fmtCotDate(c.createdAt)}</dd></div>
             <div><dt>Fecha vencimiento</dt><dd>${fmtCotDate(c.fechaVencimiento)}</dd></div>
-            <div><dt>Vendedor</dt><dd>${c.usuario?.nombre || '—'}</dd></div>
-            <div><dt>Sede</dt><dd>${c.sede?.nombre || '—'}</dd></div>
+            <div><dt>Vendedor</dt><dd>${escapeHtml(c.usuario?.nombre || '—')}</dd></div>
+            <div><dt>Sede</dt><dd>${escapeHtml(c.sede?.nombre || '—')}</dd></div>
           </dl>
         </div>
       </section>
@@ -162,7 +163,7 @@ export function renderCotizacionDocumento(c: CotizacionDocumento, config: Empres
           ${c.notas ? `
             <div>
               <h3>Observaciones</h3>
-              <p>${c.notas}</p>
+              <p>${escapeHtml(c.notas)}</p>
             </div>
           ` : ''}
         </div>

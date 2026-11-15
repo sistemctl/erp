@@ -8,6 +8,7 @@ import { erpHeader } from '../utils/module-shell.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
 import { bindQuickAction } from '../utils/quick-actions.js';
 import { showToast } from '../utils/toast.js';
+import { escapeHtml } from '../utils/html.js';
 
 export async function initCartera(container: HTMLElement) {
   const usuario = requireUsuario();
@@ -140,7 +141,7 @@ export async function initCartera(container: HTMLElement) {
               <div class="mb-3">
                 <label class="form-label">Método de Pago</label>
                 <select id="abono-metodo" class="form-select" required>
-                  ${mediosPago.map((medio) => `<option value="${medio.id}">${medio.nombre}</option>`).join('')}
+                  ${mediosPago.map((medio) => `<option value="${medio.id}">${escapeHtml(medio.nombre)}</option>`).join('')}
                 </select>
               </div>
               <div class="mb-3">
@@ -229,12 +230,8 @@ export async function initCartera(container: HTMLElement) {
   };
   const modalDetalle = new bootstrap.Modal(requireElement('modal-detalle-cartera', HTMLDivElement));
   const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
-  const escapeHtml = (value: unknown) => String(value ?? '—')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+  // Escapa como el helper compartido, pero muestra "—" cuando no hay valor.
+  const escapeCartera = (value: unknown) => escapeHtml(value ?? '—');
   const formatDate = (value: string | null | undefined) => value ? new Date(value).toLocaleDateString('es-CO') : '—';
 
   const openDetalle = (item: CuentaDTO) => {
@@ -249,17 +246,17 @@ export async function initCartera(container: HTMLElement) {
         <div class="col-md-7">
           <div class="border rounded p-3 h-100">
             <div class="text-secondary text-uppercase small fw-bold mb-2">Cliente</div>
-            <div class="fw-bold fs-3">${escapeHtml(cliente?.nombre || 'Cliente general')}</div>
-            <div class="small text-secondary mt-2">Documento: ${escapeHtml(cliente?.documento || 'No registrado')}</div>
-            <div class="small text-secondary">Teléfono: ${escapeHtml(cliente?.telefono || 'No registrado')}</div>
-            <div class="small text-secondary">Correo: ${escapeHtml(cliente?.email || 'No registrado')}</div>
+            <div class="fw-bold fs-3">${escapeCartera(cliente?.nombre || 'Cliente general')}</div>
+            <div class="small text-secondary mt-2">Documento: ${escapeCartera(cliente?.documento || 'No registrado')}</div>
+            <div class="small text-secondary">Teléfono: ${escapeCartera(cliente?.telefono || 'No registrado')}</div>
+            <div class="small text-secondary">Correo: ${escapeCartera(cliente?.email || 'No registrado')}</div>
           </div>
         </div>
         <div class="col-md-5">
           <div class="border rounded p-3 h-100">
             <div class="text-secondary text-uppercase small fw-bold mb-2">Documento</div>
-            <div class="fw-bold fs-3">${escapeHtml(factura?.numeroFactura || '—')}</div>
-            <div class="small text-secondary mt-2">Sede: ${escapeHtml(factura?.sede?.nombre || 'No registrada')}</div>
+            <div class="fw-bold fs-3">${escapeCartera(factura?.numeroFactura || '—')}</div>
+            <div class="small text-secondary mt-2">Sede: ${escapeCartera(factura?.sede?.nombre || 'No registrada')}</div>
             <div class="small text-secondary">Vence: ${formatDate(item.fechaVencimiento)}</div>
             <div class="small ${estadoClass} fw-bold mt-2">${estado}${item.diasVencido > 0 ? ` · ${item.diasVencido} días de mora` : ''}</div>
           </div>
@@ -350,11 +347,11 @@ export async function initCartera(container: HTMLElement) {
           <tr>
             <td>
               <strong class="text-dark">${item.pagadorExterno || (item.cliente ? item.cliente?.nombre : 'Cliente General')}</strong><br>
-              <span class="text-secondary small">${item.pagadorExterno ? `Recaudo de venta · Cliente: ${item.cliente?.nombre || 'Consumidor final'}` : `Doc: ${item.cliente ? item.cliente?.documento || 'No reg' : 'N/A'}`}</span>
+              <span class="text-secondary small">${item.pagadorExterno ? `Recaudo de venta · Cliente: ${escapeCartera(item.cliente?.nombre || 'Consumidor final')}` : `Doc: ${escapeCartera(item.cliente ? item.cliente?.documento || 'No reg' : 'N/A')}`}</span>
             </td>
             <td>
-              <strong>${item.factura ? item.factura?.numeroFactura : 'N/A'}</strong><br>
-              <span class="text-secondary small">Sede: ${item.factura && item.factura?.sede ? item.factura?.sede.nombre : 'N/A'}</span>
+              <strong>${escapeCartera(item.factura ? item.factura?.numeroFactura : 'N/A')}</strong><br>
+              <span class="text-secondary small">Sede: ${escapeCartera(item.factura && item.factura?.sede ? item.factura?.sede.nombre : 'N/A')}</span>
             </td>
             <td>${new Date(item.fechaVencimiento).toLocaleDateString()}</td>
             <td class="text-center">
@@ -418,7 +415,7 @@ export async function initCartera(container: HTMLElement) {
       });
 
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Error: ${errorMessage(e)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Error: ${escapeCartera(errorMessage(e))}</td></tr>`;
     }
   };
 

@@ -3,6 +3,7 @@ import { requireElement } from '../utils/dom.js';
 import { errorMessage } from '../utils/errors.js';
 import { apiFetch } from '../api.js';
 import { erpAction } from '../utils/action-buttons.js';
+import { escapeHtml } from '../utils/html.js';
 
 let currentLogs: AuditLogDTO[] = [];
 let auditTabReady = false;
@@ -193,14 +194,14 @@ async function loadAuditLogs() {
             <span class="text-secondary small">${new Date(log.createdAt).toLocaleTimeString()}</span>
           </td>
           <td>
-            <span class="fw-bold">${log.usuario ? log.usuario.nombre : 'Sistema / Externo'}</span><br>
-            <span class="text-secondary small">${log.usuario ? log.usuario.email : ''}</span>
+            <span class="fw-bold">${escapeHtml(log.usuario ? log.usuario.nombre : 'Sistema / Externo')}</span><br>
+            <span class="text-secondary small">${escapeHtml(log.usuario ? log.usuario.email : '')}</span>
           </td>
-          <td><span class="badge ${actionBadge} text-uppercase px-2 py-1">${log.accion}</span></td>
-          <td><strong class="text-muted">${log.modulo}</strong></td>
+          <td><span class="badge ${actionBadge} text-uppercase px-2 py-1">${escapeHtml(log.accion)}</span></td>
+          <td><strong class="text-muted">${escapeHtml(log.modulo)}</strong></td>
           <td><code class="text-secondary">${log.registroId || 'N/A'}</code></td>
           <td>
-            <span class="text-secondary fw-bold small">${log.sede ? log.sede.nombre : 'Sede Global / N/A'}</span><br>
+            <span class="text-secondary fw-bold small">${escapeHtml(log.sede ? log.sede.nombre : 'Sede Global / N/A')}</span><br>
             <code class="text-muted small">${log.ip || 'Localhost'}</code>
           </td>
           <td class="d-print-none text-end erp-td-actions">
@@ -218,7 +219,7 @@ async function loadAuditLogs() {
       });
     });
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger">Error al cargar bitácora: ${errorMessage(err)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger">Error al cargar bitácora: ${escapeHtml(errorMessage(err))}</td></tr>`;
   }
 }
 

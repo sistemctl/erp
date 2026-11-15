@@ -15,6 +15,7 @@ import { showToast } from '../utils/toast.js';
 import { mountRolloCalculator } from '../utils/compra-rollo.js';
 import { normalizeCompraUnidad, moneyCents } from '../utils/compra-unidad.js';
 import { labelUnidadMedida } from '../utils/unidad-medida.js';
+import { escapeHtml } from '../utils/html.js';
 
 let comprasKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
 
@@ -59,7 +60,7 @@ export async function initCompras(container: HTMLElement) {
     const title = monto != null
       ? `${label} — ${formatter.format(Number(monto))}${extraTitle ? ` · ${extraTitle}` : ''}`
       : label;
-    return `<span class="compras-origen-badge compras-origen-badge--${fuente}" title="${title}">${label}</span>`;
+    return `<span class="compras-origen-badge compras-origen-badge--${fuente}" title="${title}">${escapeHtml(label)}</span>`;
   }
 
   function renderOrigenPagoCell(pagos: (PagoCompraColumns & {usuario?: {nombre: string} | null})[] | undefined, estadoPago: string) {
@@ -118,8 +119,8 @@ export async function initCompras(container: HTMLElement) {
                 <td class="text-end fw-bold text-danger">${formatter.format(Number(p.monto))}</td>
                 <td>${badgeOrigen(p.fuenteFondos)}</td>
                 <td class="small">${p.pagadoPor || '—'}</td>
-                <td class="small text-secondary">${p.referencia || '—'}</td>
-                <td class="small">${p.usuario ? p.usuario.nombre : '—'}</td>
+                <td class="small text-secondary">${escapeHtml(p.referencia || '—')}</td>
+                <td class="small">${escapeHtml(p.usuario ? p.usuario.nombre : '—')}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -226,7 +227,7 @@ export async function initCompras(container: HTMLElement) {
                       <div class="oc-field">
                         <label class="form-label required" for="oc-sede">Sede destino</label>
                         <select id="oc-sede" class="form-select" required>
-                          ${sedes.length === 0 ? '<option value="">Sin sedes configuradas</option>' : sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                          ${sedes.length === 0 ? '<option value="">Sin sedes configuradas</option>' : sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${escapeHtml(s.nombre)}</option>`).join('')}
                         </select>
                       </div>
                       <div class="oc-field">
@@ -569,7 +570,7 @@ export async function initCompras(container: HTMLElement) {
       const results = proveedores.filter((p) => !term || `${p.nombre || ''} ${p.nit || ''} ${p.telefono || ''}`.toLowerCase().includes(term)).slice(0, 50);
       requireElement('oc-proveedores-contador', HTMLSpanElement).textContent = String(`${results.length} ${results.length === 1 ? 'proveedor' : 'proveedores'}`);
       const list = requireElement('oc-proveedores-resultados', HTMLDivElement);
-      list.innerHTML = results.map((p) => `<button type="button" class="checkout-cliente-opcion oc-proveedor-opcion" data-id="${p.id}"><span class="avatar avatar-sm checkout-cliente-avatar">${(p.nombre || '?').trim().charAt(0).toUpperCase()}</span><span class="checkout-cliente-info"><span class="checkout-cliente-titulo">${p.nombre || 'Sin nombre'}</span><span class="checkout-cliente-meta"><i class="ti ti-id-badge"></i>${p.nit || 'Sin NIT'}</span></span><i class="ti ti-chevron-right checkout-cliente-arrow"></i></button>`).join('') || '<div class="pos-client-empty"><i class="ti ti-building-off"></i><span>No se encontraron proveedores.</span></div>';
+      list.innerHTML = results.map((p) => `<button type="button" class="checkout-cliente-opcion oc-proveedor-opcion" data-id="${p.id}"><span class="avatar avatar-sm checkout-cliente-avatar">${(p.nombre || '?').trim().charAt(0).toUpperCase()}</span><span class="checkout-cliente-info"><span class="checkout-cliente-titulo">${escapeHtml(p.nombre || 'Sin nombre')}</span><span class="checkout-cliente-meta"><i class="ti ti-id-badge"></i>${p.nit || 'Sin NIT'}</span></span><i class="ti ti-chevron-right checkout-cliente-arrow"></i></button>`).join('') || '<div class="pos-client-empty"><i class="ti ti-building-off"></i><span>No se encontraron proveedores.</span></div>';
       list.querySelectorAll<HTMLElement>('.oc-proveedor-opcion').forEach((btn) => btn.addEventListener('click', () => {
         const proveedor = proveedores.find((p) => String(p.id) === btn.dataset.id);
         proveedorInput.value = String(proveedor?.id || '');
@@ -670,7 +671,7 @@ export async function initCompras(container: HTMLElement) {
           <td><span class="compras-oc-id">OC-${shortId}</span></td>
           <td class="compras-td-date">${new Date(c.createdAt).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
           <td class="compras-td-prov" title="${provNombre}">${provNombre}</td>
-          <td class="compras-td-sede">${c.sede ? c.sede.nombre : '—'}</td>
+          <td class="compras-td-sede">${escapeHtml(c.sede ? c.sede.nombre : '—')}</td>
           <td class="text-end compras-td-total">${formatter.format(Number(c.total))}</td>
           <td class="compras-td-estado">
             <div class="compras-estado-stack">
@@ -752,7 +753,7 @@ export async function initCompras(container: HTMLElement) {
       return `
         <tr>
           <td><span class="badge bg-blue text-white">OC-${shortId}</span></td>
-          <td><strong>${c.proveedor ? c.proveedor.nombre : 'N/A'}</strong></td>
+          <td><strong>${escapeHtml(c.proveedor ? c.proveedor.nombre : 'N/A')}</strong></td>
           <td class="${meta.diasVencido > 0 ? 'text-danger fw-bold' : ''}">
             ${c.fechaVencimientoPago ? new Date(c.fechaVencimientoPago).toLocaleDateString() : 'N/A'}
             ${meta.diasVencido > 0 ? ' <span class="badge bg-red-lt">VENCIDA</span>' : ''}
@@ -1067,7 +1068,7 @@ export async function initCompras(container: HTMLElement) {
 
   function updateModalCartSummary() {
     const n = cartItems.length;
-    const tot = cartItems.reduce((sum, item) => sum + (item.cantidadPedida * Number(item.precioUnitario)), 0);
+    const tot = cartItems.reduce((sum, item) => sum + totalLinea(item), 0);
     if (modalCartSummary) {
       modalCartSummary.textContent = String(`${n} en la orden · ${formatter.format(Number(tot))}`);
     }
@@ -1177,7 +1178,8 @@ export async function initCompras(container: HTMLElement) {
       productoId: prod.id,
       nombre: prod.nombre,
       cantidadPedida: cant,
-      precioUnitario: costo
+      precioUnitario: costo,
+      rollo: rolloModal.rollo()
     })) return;
     showToast('Producto agregado', `${prod.nombre} × ${cant}`, 'success');
     updateModalCartSummary();
@@ -1194,7 +1196,13 @@ export async function initCompras(container: HTMLElement) {
     }
   }
 
-  function addProductoAlCarrito({ productoId, nombre, cantidadPedida, precioUnitario }: CompraCart) {
+  /** Total de una línea en pesos. En compras por rollo es el costo real del rollo (no el precio por metro redondeado × metros). */
+  function totalLinea(item: CompraCart): number {
+    if (item.rollo) return Number(moneyCents(item.rollo.costoTotalRollo) * BigInt(item.rollo.cantidadRollos)) / 100;
+    return Number(moneyCents(String(item.precioUnitario)) * BigInt(item.cantidadPedida)) / 100;
+  }
+
+  function addProductoAlCarrito({ productoId, nombre, cantidadPedida, precioUnitario, rollo = null }: CompraCart) {
     const product = productos.find(item => item.id === productoId);
     try {
       const canonical = normalizeCompraUnidad({ cantidadPedida, precioUnitario }, product?.unidadMedida || 'und');
@@ -1203,14 +1211,21 @@ export async function initCompras(container: HTMLElement) {
     const exist = cartItems.find((item) => item.productoId === productoId);
     if (exist) {
       if (moneyCents(exist.precioUnitario) !== moneyCents(precioUnitario)) { showToast('Costo diferente', 'El producto ya está agregado con otro costo. Edite o retire esa línea antes de agregarlo nuevamente.', 'warning'); return false; }
+      const mismoRollo = exist.rollo && rollo && exist.rollo.costoTotalRollo === rollo.costoTotalRollo && exist.rollo.metrosPorRollo === rollo.metrosPorRollo;
+      if (Boolean(exist.rollo) !== Boolean(rollo) || (exist.rollo && !mismoRollo)) {
+        showToast('Presentación diferente', 'El producto ya está en la orden con otra presentación (rollo o por metro). Edite o retire esa línea antes de agregarlo.', 'warning');
+        return false;
+      }
       exist.cantidadPedida += cantidadPedida;
+      if (exist.rollo && rollo) exist.rollo.cantidadRollos += rollo.cantidadRollos;
     } else {
       cartItems.push({
         productoId,
         nombre,
         cantidadPedida,
         precioUnitario,
-        unidadMedida: product?.unidadMedida || 'und'
+        unidadMedida: product?.unidadMedida || 'und',
+        rollo
       });
     }
     renderCart();
@@ -1260,7 +1275,8 @@ export async function initCompras(container: HTMLElement) {
       productoId: prod.id,
       nombre: prod.nombre,
       cantidadPedida: cant,
-      precioUnitario: costo
+      precioUnitario: costo,
+      rollo: rolloMain.rollo()
     })) return;
     if (inputCant) inputCant.value = String(1);
     clearProductoPicker();
@@ -1394,7 +1410,8 @@ export async function initCompras(container: HTMLElement) {
         productoId: pId,
         nombre: prod.nombre,
         cantidadPedida: cant,
-        precioUnitario: costo
+        precioUnitario: costo,
+        rollo: rolloMain.rollo()
       })) return;
       if (inputCant) inputCant.value = String(1);
       clearProductoPicker({ keepFocus: true });
@@ -1423,11 +1440,11 @@ export async function initCompras(container: HTMLElement) {
 
     let tot = 0;
     tbodyCart.innerHTML = cartItems.map((item, idx) => {
-      const sub = item.cantidadPedida * Number(item.precioUnitario);
+      const sub = totalLinea(item);
       tot += sub;
       return `
         <tr>
-          <td><strong>${item.nombre}</strong><small class="d-block text-secondary">${labelUnidadMedida(item.unidadMedida)}</small></td>
+          <td><strong>${escapeHtml(item.nombre)}</strong><small class="d-block text-secondary">${labelUnidadMedida(item.unidadMedida)}${item.rollo ? ` · ${item.rollo.cantidadRollos} rollo(s) de ${item.rollo.metrosPorRollo} m` : ''}</small></td>
           <td class="text-center">
             <input type="number" class="form-control form-control-sm text-center oc-cart-qty" data-idx="${idx}" min="1" value="${item.cantidadPedida}" aria-label="Cantidad">
           </td>
@@ -1456,6 +1473,7 @@ export async function initCompras(container: HTMLElement) {
           return;
         }
         cartItems[i].cantidadPedida = val;
+        cartItems[i].rollo = null; // edición manual: deja de ser compra por rollo
         renderCart();
       });
     });
@@ -1463,12 +1481,17 @@ export async function initCompras(container: HTMLElement) {
     tbodyCart.querySelectorAll<HTMLInputElement>('.oc-cart-costo').forEach((input) => {
       input.addEventListener('change', () => {
         const i = parseInt(input.dataset.idx || '0', 10);
-        const val = parseFloat(input.value);
-        if (!Number.isFinite(val) || val < 0) {
+        // Misma validación que al agregar: costo > 0 con máximo 2 decimales.
+        try {
+          if (!(moneyCents(input.value.trim()) > 0n)) throw new Error('El costo unitario debe ser mayor que cero.');
+        } catch (error) {
+          showToast('Costo inválido', errorMessage(error), 'warning');
           input.value = String(cartItems[i].precioUnitario);
           return;
         }
+        const val = Number((Number(moneyCents(input.value.trim())) / 100).toFixed(2));
         cartItems[i].precioUnitario = val;
+        cartItems[i].rollo = null; // edición manual: deja de ser compra por rollo
         renderCart();
       });
     });
@@ -1512,7 +1535,9 @@ export async function initCompras(container: HTMLElement) {
           sedeId,
           fechaEsperada: requireElement('oc-fecha-esperada', HTMLInputElement).value || null,
           observaciones: requireElement('oc-observaciones', HTMLInputElement).value || '',
-          items: cartItems.map(({ productoId, cantidadPedida, precioUnitario }) => ({ productoId, presentacion: 'unidad', cantidadPedida, precioUnitario }))
+          items: cartItems.map(({ productoId, cantidadPedida, precioUnitario, rollo }) => rollo
+            ? { productoId, presentacion: 'rollo', costoTotalRollo: rollo.costoTotalRollo, metrosPorRollo: rollo.metrosPorRollo, cantidadRollos: rollo.cantidadRollos }
+            : { productoId, presentacion: 'unidad', cantidadPedida, precioUnitario })
         };
 
         await apiFetch('/compras', {
@@ -1582,7 +1607,7 @@ export async function initCompras(container: HTMLElement) {
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <p class="text-secondary small mb-3">Ingrese las cantidades físicas que están ingresando al almacén de la sede: <strong>${oc.sede ? oc.sede.nombre : 'N/A'}</strong>.</p>
+            <p class="text-secondary small mb-3">Ingrese las cantidades físicas que están ingresando al almacén de la sede: <strong>${escapeHtml(oc.sede ? oc.sede.nombre : 'N/A')}</strong>.</p>
             <table class="table table-sm table-striped">
               <thead>
                 <tr>
@@ -1591,16 +1616,18 @@ export async function initCompras(container: HTMLElement) {
                   <th class="text-center">Recibidas Previamente</th>
                   <th class="text-center" style="width: 140px;">Recibiendo Ahora</th>
                 </tr>
-                             ${oc.items.map(item => {
+              </thead>
+              <tbody>
+                ${oc.items.map(item => {
                   const maxPosible = item.cantidadPedida - Number(item.cantidadRecibida);
                   const isSerialized = item.producto.tieneNumeroSerie;
                   return `
                     <tr class="align-middle">
                       <td>
-                        <strong>${item.producto.nombre}</strong>
+                        <strong>${escapeHtml(item.producto.nombre)}</strong>
                         <div class="mt-2 form-check form-switch small">
-                          <input class="form-check-input switch-recibir-seriales" type="checkbox" data-pid="${item.productoId}" ${isSerialized ? 'checked' : ''}>
-                          <label class="form-check-label text-secondary fw-semibold">Registrar Seriales / IMEIs</label>
+                          <input class="form-check-input switch-recibir-seriales" type="checkbox" data-pid="${item.productoId}" ${isSerialized ? 'checked disabled title="Producto serializado: los seriales son obligatorios"' : ''}>
+                          <label class="form-check-label text-secondary fw-semibold">Registrar Seriales / IMEIs${isSerialized ? ' (obligatorio)' : ''}</label>
                         </div>
                         <div class="mt-2 container-series-input ${isSerialized ? '' : 'd-none'}" data-pid="${item.productoId}">
                           <textarea class="form-control form-control-sm input-recibir-series" 
@@ -1731,7 +1758,7 @@ export async function initCompras(container: HTMLElement) {
       });
 
     } catch (err) {
-      modalContent.innerHTML = `<div class="alert alert-danger m-3">${errorMessage(err)}</div>`;
+      modalContent.innerHTML = `<div class="alert alert-danger m-3">${escapeHtml(errorMessage(err))}</div>`;
     }
   }
 
@@ -1755,7 +1782,7 @@ export async function initCompras(container: HTMLElement) {
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <p class="text-secondary small mb-3">Ingrese las cantidades de mercancía que se devolverán al proveedor. Se descontarán del almacén de la sede: <strong>${oc.sede ? oc.sede.nombre : 'N/A'}</strong>.</p>
+            <p class="text-secondary small mb-3">Ingrese las cantidades de mercancía que se devolverán al proveedor. Se descontarán del almacén de la sede: <strong>${escapeHtml(oc.sede ? oc.sede.nombre : 'N/A')}</strong>.</p>
             <table class="table table-sm table-striped">
               <thead>
                 <tr>
@@ -1771,7 +1798,7 @@ export async function initCompras(container: HTMLElement) {
                   return `
                     <tr class="align-middle">
                       <td>
-                        <strong>${item.producto.nombre}</strong>
+                        <strong>${escapeHtml(item.producto.nombre)}</strong>
                         <div class="mt-2 form-check form-switch small">
                           <input class="form-check-input switch-devolver-seriales" type="checkbox" data-pid="${item.productoId}" ${isSerialized ? 'checked' : ''}>
                           <label class="form-check-label text-secondary fw-semibold">Ingresar Seriales / IMEIs a Devolver</label>
@@ -1913,7 +1940,7 @@ export async function initCompras(container: HTMLElement) {
       });
 
     } catch (err) {
-      modalContent.innerHTML = `<div class="alert alert-danger m-3">${errorMessage(err)}</div>`;
+      modalContent.innerHTML = `<div class="alert alert-danger m-3">${escapeHtml(errorMessage(err))}</div>`;
     }
   }
 
@@ -1942,13 +1969,13 @@ export async function initCompras(container: HTMLElement) {
         <div class="row mb-3">
           <div class="col-md-6">
             <div class="text-secondary small">Proveedor</div>
-            <div class="fw-bold">${oc.proveedor ? oc.proveedor.nombre : 'N/A'}</div>
+            <div class="fw-bold">${escapeHtml(oc.proveedor ? oc.proveedor.nombre : 'N/A')}</div>
             ${oc.proveedor && oc.proveedor.nit ? `<div class="text-secondary small">NIT: ${oc.proveedor.nit}</div>` : ''}
           </div>
           <div class="col-md-6 text-md-end">
             <div class="text-secondary small">Sede Destino</div>
-            <div class="fw-bold">${oc.sede ? oc.sede.nombre : 'N/A'}</div>
-            <div class="text-secondary small">Registrada por: ${oc.usuario ? oc.usuario.nombre : 'N/A'}</div>
+            <div class="fw-bold">${escapeHtml(oc.sede ? oc.sede.nombre : 'N/A')}</div>
+            <div class="text-secondary small">Registrada por: ${escapeHtml(oc.usuario ? oc.usuario.nombre : 'N/A')}</div>
           </div>
         </div>
         <div class="row mb-4 border-top border-bottom py-2 bg-light">
@@ -1986,8 +2013,8 @@ export async function initCompras(container: HTMLElement) {
               ${oc.items.map(item => `
                 <tr>
                   <td>
-                    <div><strong>${item.producto ? item.producto.nombre : 'N/A'}</strong></div>
-                    ${item.producto && item.producto.codigoBarras ? `<div class="text-secondary small">${item.producto.codigoBarras}</div>` : ''}
+                    <div><strong>${escapeHtml(item.producto ? item.producto.nombre : 'N/A')}</strong></div>
+                    ${item.producto && item.producto.codigoBarras ? `<div class="text-secondary small">${escapeHtml(item.producto.codigoBarras)}</div>` : ''}
                   </td>
                   <td class="text-center">${item.cantidadPedida} ${labelUnidadMedida(item.producto?.unidadMedida)}</td>
                   <td class="text-center text-blue fw-bold">${item.cantidadRecibida}</td>
@@ -2011,7 +2038,7 @@ export async function initCompras(container: HTMLElement) {
         ${oc.observaciones ? `
           <div class="mb-3">
             <div class="text-secondary small">Observaciones:</div>
-            <p class="mb-0 text-secondary italic small">${oc.observaciones}</p>
+            <p class="mb-0 text-secondary italic small">${escapeHtml(oc.observaciones)}</p>
           </div>
         ` : ''}
       </div>

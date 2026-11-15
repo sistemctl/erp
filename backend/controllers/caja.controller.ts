@@ -1,3 +1,4 @@
+import { verificarPinAdmin } from '../utils/admin-pin';
 import type { Handler } from '../types/controller';
 import { requireUser } from '../utils/request-user';
 import { transactionFinished } from '../utils/transaction-state';
@@ -139,24 +140,8 @@ export const egresoCaja: Handler<Body> = async (req, res, next) => {
         return res.status(403).json({ error: 'Este monto supera el límite permitido. Requiere PIN del Administrador.', code: 'ADMIN_PIN_REQUIRED' });
       }
 
-      // Buscar administrador que coincida con la contraseña/PIN
-      const administradores = await Usuario.findAll({
-        where: { rol: { [Op.in]: ['admin', 'superadmin'] }, activo: true },
-        transaction
-      });
-      let pinValido = false;
-
-      for (const admin of administradores) {
-        if (await admin.compararPassword(pinAdmin)) {
-          pinValido = true;
-          autorizadoPorId = admin.id;
-          break;
-        }
-      }
-
-      if (!pinValido) {
-        return res.status(403).json({ error: 'PIN de Administrador inválido.', code: 'ADMIN_PIN_INVALID' });
-      }
+      // Validar PIN (con límite de intentos fallidos por usuario)
+      autorizadoPorId = await verificarPinAdmin(pinAdmin, requireUser(req).userId, transaction);
       requirioPin = true;
     }
 

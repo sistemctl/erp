@@ -4,8 +4,9 @@ import { transactionFinished } from '../utils/transaction-state';
 import type { Attributes, WhereOptions } from 'sequelize';
 import type CompraModel = require('../models/OrdenCompra');
 import type PagoModel = require('../models/PagoCompra');
-import { normalizeCompraUnidad, inventoryQuantity, moneyCents, moneyText, type CompraUnidadInput } from '../utils/compra-unidad';
+import { normalizeCompraUnidad, totalLineaCompraCentavos, inventoryQuantity, moneyCents, moneyText, type CompraUnidadInput } from '../utils/compra-unidad';
 import { httpError } from '../utils/http-error';
+import { recalculateParentComboCosts } from '../utils/combo';
 interface CompraItem extends CompraUnidadInput { productoId: string; cantidadRecibida?: number | string; cantidadDevolver?: number | string; series?: string[]; }
 interface Body { proveedorId?: string; sedeId?: string; fechaEsperada?: string; observaciones?: string; items?: CompraItem[]; monto?: number | string; fuenteFondos?: Attributes<PagoModel>['fuenteFondos']; pagadoPor?: string; referencia?: string; }
 import { assertSedeAccess } from '../utils/sede';
@@ -106,7 +107,7 @@ export const createCompra: Handler<Body> = async (req, res, next) => {
       try {
         const normalized = normalizeCompraUnidad(item, producto.unidadMedida);
         items.push({ productoId: item.productoId, ...normalized });
-        totalCents += moneyCents(normalized.precioUnitario) * BigInt(normalized.cantidadPedida);
+        totalCents += totalLineaCompraCentavos(item, normalized);
         moneyCents(moneyText(totalCents));
       } catch (error) { throw httpError(400, error instanceof Error ? error.message : 'Artículo de compra inválido.'); }
     }
@@ -186,7 +187,7 @@ export const recibirCompra: Handler<Body> = async (req, res, next) => {
       return res.status(400).json({ error: 'Esta orden de compra ya fue totalmente recibida.' });
     }
 
-    if (!orden.items) throw new Error('La orden no conserva sus artículos.');
+    if (!orden.items) throw httpError(409, 'La orden no conserva sus artículos.');
     let todasCompletas = true;
 
     for (const recItem of items) {
@@ -198,14 +199,18 @@ export const recibirCompra: Handler<Body> = async (req, res, next) => {
       catch (error) { throw httpError(400, error instanceof Error ? error.message : 'Cantidad inválida.'); }
       const nuevaCantidadRecibida = Number(dbItem.cantidadRecibida) + cantidadRecibida;
       if (nuevaCantidadRecibida > dbItem.cantidadPedida) {
-        throw new Error(`La cantidad recibida total supera la cantidad pedida para el producto ID: ${recItem.productoId}.`);
+        throw httpError(400, `La cantidad recibida total supera la cantidad pedida para el producto ID: ${recItem.productoId}.`);
       }
 
       const producto = await Producto.findByPk(recItem.productoId, { transaction });
+      if (producto?.tieneNumeroSerie && cantidadRecibida > 0 && (!Array.isArray(recItem.series) || recItem.series.length === 0)) {
+        // Sin seriales el stock subiría y al registrarlos después se duplicaría.
+        throw httpError(400, `El producto ${producto.nombre} requiere número de serie/IMEI: ingrese ${cantidadRecibida} seriales para recibirlo.`);
+      }
       if (producto && recItem.series && Array.isArray(recItem.series) && recItem.series.length > 0) {
         const cant = cantidadRecibida;
         if (recItem.series.length !== cant) {
-          throw new Error(`Debe especificar exactamente ${cant} seriales para el producto ${producto.nombre}.`);
+          throw httpError(400, `Debe especificar exactamente ${cant} seriales para el producto ${producto.nombre}.`);
         }
 
         // Verificar si alguno ya existe
@@ -215,7 +220,7 @@ export const recibirCompra: Handler<Body> = async (req, res, next) => {
         });
         if (existentes.length > 0) {
           const listEx = existentes.map(e => e.serie).join(', ');
-          throw new Error(`Los siguientes seriales ya están registrados en el sistema: ${listEx}`);
+          throw httpError(400, `Los siguientes seriales ya están registrados en el sistema: ${listEx}`);
         }
 
         // Crear las series en la base de datos
@@ -257,6 +262,14 @@ export const recibirCompra: Handler<Body> = async (req, res, next) => {
         referenciaId: orden.id,
         usuarioId: requireUser(req).userId
       }, { transaction });
+
+      // Último costo de compra: el costo del producto pasa a ser el pagado en esta orden
+      // (para cables, el costo por metro), y los combos que lo usan se recalculan.
+      if (producto && cantidadRecibida > 0 && moneyCents(dbItem.precioUnitario) > 0n
+        && moneyCents(producto.precioCosto ?? 0) !== moneyCents(dbItem.precioUnitario)) {
+        await producto.update({ precioCosto: moneyText(moneyCents(dbItem.precioUnitario)) }, { transaction });
+        await recalculateParentComboCosts(producto.id, transaction);
+      }
 
       if (nuevaCantidadRecibida < dbItem.cantidadPedida) {
         todasCompletas = false;
@@ -324,13 +337,18 @@ export const registrarPagoCompra: Handler<Body> = async (req, res, next) => {
       return res.status(400).json({ error: 'Esta cuenta por pagar ya se encuentra totalmente cancelada.' });
     }
 
-    const abonoNum = parseFloat(String(monto));
-    if (abonoNum > saldoActual) {
+    // Importes en centavos para que el saldo llegue exactamente a 0.
+    const abonoCentavos = Math.round(Number(monto) * 100);
+    if (!Number.isFinite(abonoCentavos) || abonoCentavos <= 0) {
+      return res.status(400).json({ error: 'El monto del pago debe ser mayor que cero.' });
+    }
+    const abonoNum = abonoCentavos / 100;
+    if (abonoCentavos > Math.round(saldoActual * 100)) {
       return res.status(400).json({ error: `El monto supera el saldo pendiente (${saldoActual}).` });
     }
 
-    const nuevoSaldo = saldoActual - abonoNum;
-    const nuevoEstadoPago = nuevoSaldo === 0 ? 'pagado' : 'abono_parcial';
+    const nuevoSaldo = (Math.round(saldoActual * 100) - abonoCentavos) / 100;
+    const nuevoEstadoPago = nuevoSaldo <= 0 ? 'pagado' : 'abono_parcial';
 
     await orden.update({
       saldoPendiente: nuevoSaldo,
@@ -461,7 +479,8 @@ export const devolverMercancia: Handler<Body> = async (req, res, next) => {
       return res.status(400).json({ error: 'No se puede devolver mercancía de una orden que está pendiente de recibir.' });
     }
 
-    if (!orden.items) throw new Error('La orden no conserva sus artículos.');
+    if (!orden.items) throw httpError(409, 'La orden no conserva sus artículos.');
+    let totalDevueltoCents = 0n;
     for (const devItem of items) {
       const dbItem = orden.items.find(i => i.productoId === devItem.productoId);
       if (!dbItem) continue;
@@ -472,14 +491,14 @@ export const devolverMercancia: Handler<Body> = async (req, res, next) => {
       catch (error) { throw httpError(400, error instanceof Error ? error.message : 'Cantidad inválida.'); }
 
       if (cantidadDev > Number(dbItem.cantidadRecibida)) {
-        throw new Error(`La cantidad a devolver supera la cantidad recibida para el producto ID: ${devItem.productoId}.`);
+        throw httpError(400, `La cantidad a devolver supera la cantidad recibida para el producto ID: ${devItem.productoId}.`);
       }
 
       // Si es serializado, verificar y eliminar las series
       const producto = await Producto.findByPk(devItem.productoId, { transaction });
       if (producto && producto.tieneNumeroSerie) {
         if (!devItem.series || !Array.isArray(devItem.series) || devItem.series.length !== cantidadDev) {
-          throw new Error(`Debe especificar exactamente ${cantidadDev} seriales a devolver para el producto ${producto.nombre}.`);
+          throw httpError(400, `Debe especificar exactamente ${cantidadDev} seriales a devolver para el producto ${producto.nombre}.`);
         }
 
         // Buscar las series en stock
@@ -494,7 +513,7 @@ export const devolverMercancia: Handler<Body> = async (req, res, next) => {
         });
 
         if (seriesRegs.length !== cantidadDev) {
-          throw new Error(`Alguno de los seriales ingresados para ${producto.nombre} no existe en stock o ya fue vendido.`);
+          throw httpError(400, `Alguno de los seriales ingresados para ${producto.nombre} no existe en stock o ya fue vendido.`);
         }
 
         // Eliminar las series
@@ -503,18 +522,23 @@ export const devolverMercancia: Handler<Body> = async (req, res, next) => {
         }
       }
 
+      // La mercancía devuelta deja de estar pedida y deja de deberse al proveedor.
       const nuevaCantidadRecibida = parseInt(String(dbItem.cantidadRecibida)) - cantidadDev;
-      await dbItem.update({ cantidadRecibida: nuevaCantidadRecibida }, { transaction });
+      const nuevaCantidadPedida = Math.max(nuevaCantidadRecibida, Number(dbItem.cantidadPedida) - cantidadDev);
+      await dbItem.update({ cantidadRecibida: nuevaCantidadRecibida, cantidadPedida: nuevaCantidadPedida }, { transaction });
+      totalDevueltoCents += moneyCents(dbItem.precioUnitario) * BigInt(cantidadDev);
 
       // Actualizar Stock en la Sede
       const stock = await StockSede.findOne({
         where: { productoId: devItem.productoId, sedeId: orden.sedeId },
-        transaction
+        transaction,
+        lock: transaction.LOCK.UPDATE
       });
 
-      if (stock) {
-        await stock.update({ cantidad: Math.max(0, stock.cantidad - cantidadDev) }, { transaction });
+      if (!stock || Number(stock.cantidad) < cantidadDev) {
+        throw httpError(409, `No hay stock suficiente de ${producto?.nombre || 'este producto'} en la sede para devolver ${cantidadDev} (disponible: ${stock ? stock.cantidad : 0}).`);
       }
+      await stock.update({ cantidad: stock.cantidad - cantidadDev }, { transaction });
 
       // Registrar Movimiento Inventario
       await MovimientoInventario.create({
@@ -554,7 +578,27 @@ export const devolverMercancia: Handler<Body> = async (req, res, next) => {
       nuevoEstado = 'parcial';
     }
 
-    await orden.update({ estado: nuevoEstado }, { transaction });
+    // Ajustar la cuenta por pagar: baja el total y el saldo por el valor devuelto.
+    const totalAnteriorCents = moneyCents(orden.total);
+    const saldoAnteriorCents = moneyCents(orden.saldoPendiente ?? orden.total);
+    const pagadoCents = totalAnteriorCents - saldoAnteriorCents;
+    // Si ya no queda nada pedido (todo devuelto), el total es 0 aunque el redondeo del
+    // costo por metro deje centavos sueltos.
+    const nadaPedido = itemsActualizados.every(item => Number(item.cantidadPedida) === 0);
+    const nuevoTotalCents = nadaPedido ? 0n
+      : totalAnteriorCents > totalDevueltoCents ? totalAnteriorCents - totalDevueltoCents : 0n;
+    const nuevoSaldoCents = nuevoTotalCents > pagadoCents ? nuevoTotalCents - pagadoCents : 0n;
+    const saldoAFavorCents = pagadoCents > nuevoTotalCents ? pagadoCents - nuevoTotalCents : 0n;
+    const nuevoEstadoPago: Attributes<CompraModel>['estadoPago'] = nuevoSaldoCents === 0n
+      ? 'pagado'
+      : pagadoCents > 0n ? 'abono_parcial' : 'pendiente';
+
+    await orden.update({
+      estado: nuevoEstado,
+      total: moneyText(nuevoTotalCents),
+      saldoPendiente: moneyText(nuevoSaldoCents),
+      estadoPago: nuevoEstadoPago
+    }, { transaction });
 
     await transaction.commit();
 
@@ -567,7 +611,15 @@ export const devolverMercancia: Handler<Body> = async (req, res, next) => {
       });
     }
 
-    return res.json({ message: 'Mercancía devuelta e inventario actualizado con éxito.', estado: orden.estado });
+    return res.json({
+      message: saldoAFavorCents > 0n
+        ? `Mercancía devuelta. Ya se había pagado más que el nuevo total: el proveedor debe reintegrar ${moneyText(saldoAFavorCents)}.`
+        : 'Mercancía devuelta, inventario y cuenta por pagar actualizados con éxito.',
+      estado: orden.estado,
+      total: orden.total,
+      saldoPendiente: orden.saldoPendiente,
+      saldoAFavor: moneyText(saldoAFavorCents)
+    });
   } catch (error) {
     if (!transactionFinished(transaction)) await transaction.rollback();
     next(error);

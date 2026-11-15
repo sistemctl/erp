@@ -6,6 +6,7 @@ import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { requireUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
+import { escapeHtml } from '../utils/html.js';
 
 export async function initTradeIn(container: HTMLElement) {
   const usuario = requireUsuario();
@@ -52,7 +53,7 @@ export async function initTradeIn(container: HTMLElement) {
                 <div class="mb-3">
                   <label class="form-label required">Sede destino (inventario)</label>
                   <select id="ti-sede" class="form-select" required>
-                    ${sedes.length === 0 ? '<option value="">Sin sedes</option>' : sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                    ${sedes.length === 0 ? '<option value="">Sin sedes</option>' : sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${escapeHtml(s.nombre)}</option>`).join('')}
                   </select>
                 </div>
                 ` : ''}
@@ -201,8 +202,8 @@ export async function initTradeIn(container: HTMLElement) {
       <button type="button" class="checkout-cliente-opcion ti-cliente-opcion" data-id="${cliente.id}">
         <span class="avatar avatar-sm checkout-cliente-avatar">${(cliente.nombre || '?').trim().charAt(0).toUpperCase()}</span>
         <span class="checkout-cliente-info">
-          <span class="checkout-cliente-titulo">${cliente.nombre || 'Sin nombre'}</span>
-          <span class="checkout-cliente-meta"><i class="ti ti-id-badge"></i>${cliente.documento || 'Sin documento'}${cliente.telefono ? `<span class="checkout-cliente-separador">·</span><i class="ti ti-phone"></i>${cliente.telefono}` : ''}</span>
+          <span class="checkout-cliente-titulo">${escapeHtml(cliente.nombre || 'Sin nombre')}</span>
+          <span class="checkout-cliente-meta"><i class="ti ti-id-badge"></i>${escapeHtml(cliente.documento || 'Sin documento')}${cliente.telefono ? `<span class="checkout-cliente-separador">·</span><i class="ti ti-phone"></i>${escapeHtml(cliente.telefono)}` : ''}</span>
         </span>
         <i class="ti ti-chevron-right checkout-cliente-arrow"></i>
       </button>
@@ -371,18 +372,18 @@ export async function initTradeIn(container: HTMLElement) {
           <tr>
             <td>${new Date(ti.createdAt).toLocaleDateString()}</td>
             <td>
-              <strong class="text-dark">${ti.marca} ${ti.modelo}</strong><br>
-              <span class="text-secondary small">${ti.tipoEquipo}</span>
+              <strong class="text-dark">${escapeHtml(ti.marca)} ${escapeHtml(ti.modelo)}</strong><br>
+              <span class="text-secondary small">${escapeHtml(ti.tipoEquipo)}</span>
             </td>
-            <td><code>${ti.imei || 'N/A'}</code></td>
+            <td><code>${escapeHtml(ti.imei || 'N/A')}</code></td>
             <td><span class="badge ${physicalBadge}">${ti.estadoFisico.toUpperCase()}</span></td>
             <td class="text-end fw-bold text-success">${formatter.format(Number(ti.valoracion))}</td>
-            <td>${ti.sede ? ti.sede.nombre : 'N/A'}</td>
+            <td>${escapeHtml(ti.sede ? ti.sede.nombre : 'N/A')}</td>
           </tr>
         `;
       }).join('');
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">Error: ${errorMessage(err)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">Error: ${escapeHtml(errorMessage(err))}</td></tr>`;
     }
   };
 

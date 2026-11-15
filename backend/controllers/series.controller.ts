@@ -34,6 +34,53 @@ export const getSeries: Handler<Body> = async (req, res, next) => {
   }
 };
 
+/**
+ * Ajusta StockSede tras registrar seriales nuevos.
+ * Si en la sede ya había unidades contadas sin serial (p. ej. recibidas en una compra
+ * sin IMEI), los seriales nuevos se asignan a esas unidades y el stock NO sube.
+ * Solo sube por la diferencia entre seriales en stock y unidades contadas.
+ */
+async function sincronizarStockConSeries(
+  productoId: string,
+  sedeId: string,
+  serialesRegistrados: number,
+  usuarioId: string,
+  transaction: import('sequelize').Transaction
+) {
+  const stock = await StockSede.findOne({
+    where: { productoId, sedeId },
+    transaction,
+    lock: transaction.LOCK.UPDATE
+  });
+  const enStock = await NumeroSerie.count({
+    where: { productoId, sedeId, estado: 'en_stock' },
+    transaction
+  });
+  const cantidadActual = stock ? Number(stock.cantidad) || 0 : 0;
+  const entradas = Math.max(0, enStock - cantidadActual);
+  const asignados = serialesRegistrados - entradas;
+
+  if (entradas > 0) {
+    if (stock) {
+      await stock.update({ cantidad: cantidadActual + entradas }, { transaction });
+    } else {
+      await StockSede.create({ productoId, sedeId, cantidad: entradas }, { transaction });
+    }
+    const { MovimientoInventario } = models;
+    await MovimientoInventario.create({
+      productoId,
+      sedeId,
+      tipo: 'entrada',
+      cantidad: entradas,
+      motivo: serialesRegistrados === 1
+        ? 'Ingreso de Serie/IMEI'
+        : `Ingreso de ${entradas} Series/IMEIs`,
+      usuarioId
+    }, { transaction });
+  }
+  return { entradas, asignados };
+}
+
 export const createSerie: Handler<Body> = async (req, res, next) => {
   const transaction = await sequelize.transaction();
   req.auditTransaction = transaction;
@@ -66,32 +113,8 @@ export const createSerie: Handler<Body> = async (req, res, next) => {
       estado: 'en_stock'
     }, { transaction });
 
-    // Sincronizar StockSede
-    const stock = await StockSede.findOne({
-      where: { productoId, sedeId },
-      transaction
-    });
-
-    if (stock) {
-      await stock.update({ cantidad: stock.cantidad + 1 }, { transaction });
-    } else {
-      await StockSede.create({
-        productoId,
-        sedeId,
-        cantidad: 1
-      }, { transaction });
-    }
-
-    // Registrar MovimientoInventario
-    const { MovimientoInventario } = models;
-    await MovimientoInventario.create({
-      productoId,
-      sedeId,
-      tipo: 'entrada',
-      cantidad: 1,
-      motivo: `Ingreso de Serie/IMEI: ${serie}`,
-      usuarioId: requireUser(req).userId
-    }, { transaction });
+    // Sincronizar StockSede (sin duplicar unidades ya contadas sin serial)
+    await sincronizarStockConSeries(String(productoId), String(sedeId), 1, requireUser(req).userId, transaction);
 
     await transaction.commit();
 
@@ -196,33 +219,10 @@ export const createSeriesBulk: Handler<Body> = async (req, res, next) => {
 
     const creados = await NumeroSerie.bulkCreate(nuevosRegistros, { transaction });
 
-    // Sincronizar StockSede
-    const cantidadNuevos = creados.length;
-    const stock = await StockSede.findOne({
-      where: { productoId, sedeId },
-      transaction
-    });
-
-    if (stock) {
-      await stock.update({ cantidad: stock.cantidad + cantidadNuevos }, { transaction });
-    } else {
-      await StockSede.create({
-        productoId,
-        sedeId,
-        cantidad: cantidadNuevos
-      }, { transaction });
-    }
-
-    // Registrar MovimientoInventario
-    const { MovimientoInventario } = models;
-    await MovimientoInventario.create({
-      productoId,
-      sedeId,
-      tipo: 'entrada',
-      cantidad: cantidadNuevos,
-      motivo: `Ingreso masivo de ${cantidadNuevos} Series/IMEIs`,
-      usuarioId: requireUser(req).userId
-    }, { transaction });
+    // Sincronizar StockSede (sin duplicar unidades ya contadas sin serial)
+    const { entradas, asignados } = await sincronizarStockConSeries(
+      String(productoId), String(sedeId), creados.length, requireUser(req).userId, transaction
+    );
 
     await transaction.commit();
 
@@ -235,8 +235,12 @@ export const createSeriesBulk: Handler<Body> = async (req, res, next) => {
     }
 
     return res.status(201).json({
-      message: `${creados.length} números de serie registrados exitosamente.`,
-      cantidad: creados.length
+      message: asignados > 0
+        ? `${creados.length} números de serie registrados: ${asignados} asignados a unidades ya existentes y ${entradas} como ingreso nuevo de stock.`
+        : `${creados.length} números de serie registrados exitosamente.`,
+      cantidad: creados.length,
+      entradasStock: entradas,
+      asignadosAStockExistente: asignados
     });
   } catch (error) {
     if (!transactionFinished(transaction)) await transaction.rollback();
@@ -267,7 +271,8 @@ export const deleteSerie: Handler<Body> = async (req, res, next) => {
     if (estado === 'en_stock') {
       const stock = await StockSede.findOne({
         where: { productoId, sedeId },
-        transaction
+        transaction,
+        lock: transaction.LOCK.UPDATE
       });
 
       if (stock) {

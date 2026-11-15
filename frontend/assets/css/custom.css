@@ -13874,3 +13874,29 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   .pos-panel--sale .pos-cart-count { padding: 4px; }
   .pos-panel--sale .pos-cart-line__media { display: none; }
 }
+
+/* Revisión de catálogo: qué le falta a cada producto (filtro "Por completar") */
+.inv-problemas { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.inv-problemas .inv-status { font-size: 11px; }
+.inv-chip--completar[aria-pressed="true"], .inv-chip--completar.is-active { border-color: var(--tblr-warning, #f59f00); }
+
+/* Modo una sola sede (utils/una-sede.ts) */
+.una-sede-oculto { display: none !important; }
+body.una-sede .pos-session-chip[title="Sede"] { display: none !important; }
+
+/* POS: tarjeta compacta cuando el producto no tiene imagen */
+.pos-product-card--sin-imagen .pos-product-card-body { padding-top: 0.25rem; }
+
+/* Inventario: categoría en una línea (ruta completa en el title) y acciones siempre visibles */
+#inventario-table-body .inv-cat { max-width: 11rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (min-width: 992px) {
+  #inventario-table-body .erp-td-actions,
+  table:has(#inventario-table-body) thead th:last-child { position: sticky; right: 0; z-index: 1; background: var(--erp-surface, #fff); box-shadow: -6px 0 8px -6px rgba(15, 23, 42, 0.18); }
+}
+
+/* Menú lateral: "Más módulos" plegable */
+.nav-mas-modulos > details > summary { list-style: none; cursor: pointer; }
+.nav-mas-modulos > details > summary::-webkit-details-marker { display: none; }
+.nav-mas-modulos > details > summary::after { content: ''; margin-left: auto; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform .15s ease; opacity: .55; }
+.nav-mas-modulos > details[open] > summary::after { transform: rotate(45deg); }
+.nav-mas-modulos__lista { padding-left: 0; }

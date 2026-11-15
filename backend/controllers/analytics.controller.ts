@@ -34,15 +34,14 @@ const {
 import { Op } from 'sequelize';
 import { resolveQuerySede } from '../utils/sede';
 import { rowsToCsv, sendCsv } from '../utils/export-csv';
+import { rangoBogota } from '../utils/rango-bogota';
 
+// Rangos de fecha en hora de Bogotá (no en la zona del servidor ni en UTC).
 function resolveDateRange(desde: string | undefined, hasta: string | undefined, defaultDays = 30) {
-  const endDate = hasta ? new Date(hasta) : new Date();
-  endDate.setHours(23, 59, 59, 999);
-  const startDate = desde ? new Date(desde) : new Date(endDate);
-  if (!desde) startDate.setDate(startDate.getDate() - defaultDays);
-  startDate.setHours(0, 0, 0, 0);
-  return { startDate, endDate };
+  return rangoBogota(desde, hasta, defaultDays);
 }
+
+const diaBogota = (col: string) => sequelize.fn('DATE', sequelize.fn('timezone', 'America/Bogota', sequelize.col(col)));
 
 function clasificarMora(fechaVencimiento: Date, saldo: string | number, estado: string): { bucket: "al_dia" | "0-30" | "30-60" | "60-90" | "+90"; diasVencido: number } {
   const hoy = new Date();
@@ -195,17 +194,17 @@ export const getFlujoCaja: Handler<Body> = async (req, res, next) => {
     const ventasPorDia = await Venta.findAll<VentaModel & { fecha?: Date | string }>({
       where: whereVentas,
       attributes: [
-        [sequelize.fn('DATE', sequelize.col('Venta.createdAt')), 'fecha'],
+        [diaBogota('Venta.createdAt'), 'fecha'],
         [sequelize.fn('SUM', sequelize.col('Venta.total')), 'total']
       ],
-      group: [sequelize.fn('DATE', sequelize.col('Venta.createdAt'))],
-      order: [[sequelize.fn('DATE', sequelize.col('Venta.createdAt')), 'ASC']],
+      group: [diaBogota('Venta.createdAt')],
+      order: [[diaBogota('Venta.createdAt'), 'ASC']],
       raw: true
     });
 
     return res.json({
-      desde: startDate.toISOString().split('T')[0],
-      hasta: endDate.toISOString().split('T')[0],
+      desde: resolveDateRange(desde, hasta).desdeYmd,
+      hasta: resolveDateRange(desde, hasta).hastaYmd,
       ingresos: parseFloat(String(ingresos)),
       egresosOperativos: totalEgresos,
       comprasPagadas: parseFloat(String(pagosCompra)),

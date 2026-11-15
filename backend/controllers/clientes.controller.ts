@@ -110,6 +110,28 @@ export const deleteCliente: Handler<Body> = async (req, res, next) => {
       return res.status(404).json({ error: 'Cliente no encontrado' });
     }
 
+    // Un cliente con documentos no se borra: perderíamos el titular de ventas,
+    // facturas, cartera, garantías e IMEI vendidos.
+    const id = cliente.id;
+    const { Venta, Factura, CuentaPorCobrar, Cotizacion, OrdenReparacion, OrdenInstalacion, ReclamoGarantia, TradeIn, NumeroSerie } = models;
+    const conteos: [string, number][] = [
+      ['ventas', await Venta.count({ where: { clienteId: id } })],
+      ['facturas', await Factura.count({ where: { clienteId: id } })],
+      ['cuentas por cobrar', await CuentaPorCobrar.count({ where: { clienteId: id } })],
+      ['cotizaciones', await Cotizacion.count({ where: { clienteId: id } })],
+      ['reparaciones', await OrdenReparacion.count({ where: { clienteId: id } })],
+      ['instalaciones', await OrdenInstalacion.count({ where: { clienteId: id } })],
+      ['garantías', await ReclamoGarantia.count({ where: { clienteId: id } })],
+      ['trade-ins', await TradeIn.count({ where: { clienteId: id } })],
+      ['equipos con IMEI', await NumeroSerie.count({ where: { clienteId: id } })]
+    ];
+    const usados = conteos.filter(([, n]) => n > 0);
+    if (usados.length) {
+      return res.status(409).json({
+        error: `No se puede eliminar el cliente: tiene ${usados.map(([k, n]) => `${n} ${k}`).join(', ')}. Puede editar sus datos, pero el historial debe conservarse.`
+      });
+    }
+
     const valorAnterior = cliente.toJSON();
     await cliente.destroy();
 

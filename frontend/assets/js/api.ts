@@ -2,7 +2,7 @@ import { notifyDataChange } from './utils/live-data.js';
 import type { ApiErrorBody, ApiResponses } from '../../../shared/contracts';
 
 export interface ApiOptions extends RequestInit { skipAuth?: boolean; silent?: boolean; }
-class ApiRequestError extends Error { status?: number; code?: string; }
+class ApiRequestError extends Error { status?: number; code?: string; details?: Record<string, unknown>; }
 function errorFields(value: unknown): Partial<ApiErrorBody> {
   if (typeof value !== 'object' || value === null) return {};
   return {
@@ -75,10 +75,12 @@ export async function apiFetch<T = unknown>(endpoint: string, options: ApiOption
     }
 
     if (!response.ok) {
-      const errorData = errorFields(await response.json().catch(() => ({})));
+      const body: unknown = await response.json().catch(() => ({}));
+      const errorData = errorFields(body);
       const err = new ApiRequestError(errorData.error || `Error en la petición: ${response.statusText}`);
       err.status = response.status;
       err.code = errorData.code;
+      if (typeof body === 'object' && body !== null) err.details = body as Record<string, unknown>;
       throw err;
     }
 

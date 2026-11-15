@@ -12,6 +12,7 @@ import { initBarcodeScanner, destroyBarcodeScanner } from '../utils/barcode.js';
 import { showToast } from '../utils/toast.js';
 import { renderPosReceipt } from '../utils/pos-receipt.js';
 import { formatStockUnidad, labelUnidadMedida } from '../utils/unidad-medida.js';
+import { nombreCortoCategoria } from '../utils/categoria-nombre.js';
 
 let posKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
 let cart: CartItem[] = [];
@@ -199,6 +200,7 @@ export async function initPos(container: HTMLElement) {
           selectPosSede.addEventListener('change', (e) => {
             currentSedeId = eventField(e).value;
             cart = [];
+            window.pendingCotizacionAprobacionId = undefined;
             loadAndRenderPOS();
           });
         }
@@ -506,6 +508,7 @@ export async function initPos(container: HTMLElement) {
   requireElement('pos-close-mobile-cart', HTMLButtonElement).addEventListener('click', () => { setMobileCart(false); requireElement('pos-mobile-cart-toggle', HTMLButtonElement).focus(); });
   requireElement('pos-clear-cart', HTMLButtonElement).addEventListener('click', () => {
     cart = [];
+    window.pendingCotizacionAprobacionId = undefined; // vaciar el carrito desvincula la cotización
     pendingSale = null;
     checkoutSignature = null;
     renderCart();
@@ -579,8 +582,10 @@ export async function initPos(container: HTMLElement) {
       // Guardar ID para aprobación final
       window.pendingCotizacionAprobacionId = cot.id;
 
-      // Cargar ítems al carrito
+      // Cargar ítems al carrito. Las líneas de texto libre (sin producto del catálogo)
+      // no se pueden vender por POS: se avisa en lugar de dejar que el cobro falle.
       cart = [];
+      const lineasLibres: string[] = [];
       cot.items.forEach(item => {
         if (item.productoId) {
           cart.push({
@@ -599,29 +604,27 @@ export async function initPos(container: HTMLElement) {
             subtotal: parseFloat(String(item.precioUnitario)) * item.cantidad
           });
         } else {
-          cart.push({
-            productoId: null,
-            nombre: item.descripcion,
-            codigoBarras: 'MANUAL',
-            precioBase: parseFloat(String(item.precioUnitario)),
-            precioModificado: parseFloat(String(item.precioUnitario)),
-            precioCosto: parseFloat(String(item.precioUnitario)) * 0.7,
-            descuentoPct: 0,
-            cantidad: item.cantidad,
-            tieneNumeroSerie: false,
-            imei: '',
-            subtotal: parseFloat(String(item.precioUnitario)) * item.cantidad
-          });
+          lineasLibres.push(item.descripcion);
         }
       });
       renderCart();
-    }).catch(err => console.error('Error cargando cotización:', err));
+      if (lineasLibres.length) {
+        showToast(
+          'Líneas sin producto',
+          `${lineasLibres.length} línea(s) de la cotización no están en el catálogo y no se agregaron: ${lineasLibres.join(', ')}. Cree el producto o servicio para poder cobrarlas.`,
+          'warning'
+        );
+      }
+    }).catch(err => {
+      window.pendingCotizacionAprobacionId = undefined;
+      showToast('No se pudo cargar la cotización', errorMessage(err), 'error');
+    });
   }
 
   // Inicializar escáner de código de barras USB
   initBarcodeScanner(async (barcode) => {
     try {
-      const prod = await apiFetch<ProductoPos>(`/productos/barcode/${barcode}?sedeId=${currentSedeId}`);
+      const prod = await apiFetch<ProductoPos>(`/productos/barcode/${encodeURIComponent(barcode)}?sedeId=${encodeURIComponent(String(currentSedeId ?? ''))}`);
       if (prod) addToCart(prod);
     } catch (err) {
       showToast('Error de Búsqueda', `Código de barras escaneado no encontrado: ${barcode}`, 'error');
@@ -659,16 +662,16 @@ export async function initPos(container: HTMLElement) {
       resultsContainer.innerHTML = `
         <div class="pos-product-grid">
           ${filtered.map(item => {
-            const brandName = item.producto.categoria ? item.producto.categoria.nombre : 'GENÉRICO';
+            const brandName = item.producto.categoria ? nombreCortoCategoria(item.producto.categoria.nombre, categories) : 'GENÉRICO';
             const comboSummary = item.producto.esCombo
               ? (item.producto.componentes || []).map((row) => `${row.cantidad}× ${row.nombre || row.producto?.nombre || 'Producto'}`).join(' · ')
               : '';
             const imgHtml = item.producto.imagenUrl 
               ? `<img src="${escapeHtml(item.producto.imagenUrl)}" class="pos-product-card-img" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'24\\' height=\\'24\\' fill=\\'none\\' stroke=\\'%23ccc\\' stroke-width=\\'2\\'><rect width=\\'20\\' height=\\'20\\' x=\\'2\\' y=\\'2\\' rx=\\'2\\'/><circle cx=\\'9\\' cy=\\'9\\' r=\\'2\\'/><path d=\\'m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\\'/></svg>';">`
-              : `<div class="pos-product-card-fallback">${escapeHtml(item.producto.nombre.charAt(0).toUpperCase())}</div>`;
+              : ''; // Sin imagen: tarjeta compacta (sin la caja gris con la inicial)
 
             return `
-              <button type="button" class="pos-product-card btn-add-prod" data-id="${item.productoId}">
+              <button type="button" class="pos-product-card btn-add-prod${item.producto.imagenUrl ? '' : ' pos-product-card--sin-imagen'}" data-id="${item.productoId}">
                 ${imgHtml}
                 <div class="pos-product-card-body">
                   <span class="pos-product-card-brand">${escapeHtml(brandName)}${item.producto.esCombo ? ' <span class="pos-combo-badge">Combo</span>' : ''}</span>
@@ -749,7 +752,7 @@ export async function initPos(container: HTMLElement) {
 
     categories.forEach(c => {
       const btnClass = selectedCategoryId === c.id ? 'pos-cat-pill is-active' : 'pos-cat-pill';
-      buttonsHtml += `<button type="button" class="${btnClass} btn-cat-filter" data-id="${c.id}">${escapeHtml(c.nombre)}</button>`;
+      buttonsHtml += `<button type="button" class="${btnClass} btn-cat-filter" data-id="${c.id}" title="${escapeHtml(c.nombre)}">${escapeHtml(nombreCortoCategoria(c.nombre, categories))}</button>`;
     });
 
     catsContainer.innerHTML = buttonsHtml;
@@ -786,6 +789,11 @@ export async function initPos(container: HTMLElement) {
         showToast('Serial ya agregado', `El serial/IMEI ${producto.autoDetectedImei} ya está en el carrito.`, 'warning');
         return;
       }
+    }
+
+    // Precio provisional ($1 o menos): avisar antes de cobrar algo mal registrado.
+    if ((Number(producto.precioVenta) || 0) <= 1 && !cart.some(item => item.productoId === producto.id)) {
+      showToast('Revise el precio', `"${producto.nombre}" tiene precio de ${new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(Number(producto.precioVenta) || 0)}. Ajuste el precio en el carrito o corrija el producto en Inventario.`, 'warning');
     }
 
     // Si tiene número de serie, no agruparlos para poder registrar cada IMEI individualmente en el carrito
@@ -1114,11 +1122,8 @@ export async function initPos(container: HTMLElement) {
       // Validar pin llamando al backend o guardando en memoria para el checkout final
       // Haremos una validación rápida: intentamos verificar si es un pin admin correcto
       try {
-        const testAuth = await apiFetch('/caja/egreso', { // un endpoint rápido que valida pin, o el de cobro final
-          // Para no registrar egresos falsos, le pasaremos el pin en el cobro final. 
-          // Aquí sólo guardaremos el pin temporalmente para validar en el checkout.
-        }).catch(() => null);
-        
+        // El PIN se valida en el servidor al cobrar (POST /ventas); aquí solo se guarda.
+
         item.pinAdmin = pin;
       } catch (err) {}
     }
@@ -1247,12 +1252,19 @@ export async function initPos(container: HTMLElement) {
 
     try {
       const tradeIns = await apiFetch<TradeInPos[]>(`/trade-in?cliente=${clienteId}`);
-      const unassociated = (tradeIns ?? []).filter(ti => !ti.ventaId);
+      // El servidor aplica un solo trade-in por venta: el más reciente sin venta de esta
+      // sede. Solo se ofrece ese para que el cobro no falle.
+      const disponibles = (tradeIns ?? [])
+        .filter(ti => !ti.ventaId && (!ti.sedeId || String(ti.sedeId) === String(currentSedeId)))
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      const unassociated = disponibles.slice(0, 1);
+      const pendientesOtras = (tradeIns ?? []).filter(ti => !ti.ventaId).length - unassociated.length;
       if (unassociated.length > 0) {
         container.classList.remove('d-none');
         const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
         container.innerHTML = `
           <label class="form-label text-success fw-bold">Saldo a favor de Trade-In Disponible</label>
+          ${pendientesOtras > 0 ? `<div class="small text-secondary mb-1">El cliente tiene ${pendientesOtras} trade-in más (de otra sede o anteriores); se aplica uno por venta.</div>` : ''}
           ${unassociated.map((ti, index) => `
             <label class="form-check text-success">
               <input class="form-check-input chk-apply-tradein" type="checkbox" data-id="${ti.id}" data-val="${ti.valoracion}" data-desc="${escapeHtml(ti.marca)} ${escapeHtml(ti.modelo)} - IMEI: ${escapeHtml(ti.imei)}">
@@ -1410,7 +1422,11 @@ export async function initPos(container: HTMLElement) {
         await apiFetch(`/cotizaciones/${window.pendingCotizacionAprobacionId}/aprobar`, {
           method: 'POST',
           body: JSON.stringify({ ventaId: res.ventaId })
-        }).catch(err => console.error('Error aprobando cotización:', err));
+        }).catch(err => {
+          showToast('Venta registrada, cotización sin aprobar',
+            `La venta se cobró pero la cotización no se pudo marcar como aprobada: ${errorMessage(err)}. Apruébela manualmente para evitar venderla dos veces.`,
+            'warning');
+        });
         delete window.pendingCotizacionAprobacionId;
       }
 
@@ -1481,6 +1497,7 @@ export async function initPos(container: HTMLElement) {
       selectPosSede.addEventListener('change', (e) => {
         currentSedeId = eventField(e).value;
         cart = [];
+        window.pendingCotizacionAprobacionId = undefined;
         loadAndRenderPOS();
       });
     }

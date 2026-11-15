@@ -14,6 +14,8 @@ import { printBarcodeLabels, renderBarcodePreview, isInternalBarcode } from '../
 import { formatStockUnidad, normalizeUnidadMedida } from '../utils/unidad-medida.js';
 import { getLocalDateStr } from '../utils/date.js';
 import { inversionPanelHtml, mountInventarioInversion } from '../utils/inventario-inversion.js';
+import { escapeHtml } from '../utils/html.js';
+import { nombreCortoCategoria } from '../utils/categoria-nombre.js';
 
 let dataSedes: SedeDTO[] = [];
 let inventarioKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
@@ -24,13 +26,17 @@ export async function initInventario(container: HTMLElement) {
   const usuario = requireUsuario();
   const isAdminOrGerente = ['admin', 'superadmin', 'gerente_sede'].includes(usuario.rol);
   const canViewMovementHistory = ['admin', 'superadmin', 'gerente_sede', 'contador'].includes(usuario.rol);
-  const escapeHtml = (value: unknown) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
-  } as Record<string,string>)[char] || char);
 
   const parseStockInput = (val: unknown) => {
     const n = Number(val ?? 0);
     return Number.isSafeInteger(n) && n >= 0 ? n : 0;
+  };
+
+  /** Fija el stock mostrado y lo recuerda como valor base: solo se envía un ajuste si el usuario lo cambia. */
+  const setStockBaseline = (value: number) => {
+    const input = requireElement('prod-stock-actual', HTMLInputElement);
+    input.value = String(value);
+    input.dataset.stockOriginal = String(value);
   };
 
   const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
@@ -94,7 +100,7 @@ export async function initInventario(container: HTMLElement) {
             <div class="col-6 col-md-2">
               <label class="form-label" for="select-sede-inventario">Sede</label>
               <select id="select-sede-inventario" class="form-select">
-                ${dataSedes.map(s => `<option value="${s.id}" ${s.id === (usuario.sedeId || dataSedes[0]?.id) ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                ${dataSedes.map(s => `<option value="${s.id}" ${s.id === (usuario.sedeId || dataSedes[0]?.id) ? 'selected' : ''}>${escapeHtml(s.nombre)}</option>`).join('')}
               </select>
             </div>
             <div class="col-6 col-md-2">
@@ -121,6 +127,7 @@ export async function initInventario(container: HTMLElement) {
                 <div class="inv-chips" role="group" aria-label="Tipo de producto">
                   <button type="button" class="inv-chip" data-serie="imei" aria-pressed="false">IMEI</button>
                   <button type="button" class="inv-chip" data-interno="1" aria-pressed="false">Interno</button>
+                  ${isAdminOrGerente ? '<button type="button" class="inv-chip inv-chip--completar" data-completar="1" aria-pressed="false" title="Productos con datos incompletos o dudosos: sin costo, precio de $1, código con texto o sin stock mínimo">Por completar <span class="inv-chip__n" id="inv-completar-n"></span></button>' : ''}
                 </div>
                 <div class="inv-filter-meta">
                   <span class="inv-result-count" id="inv-result-count" aria-live="polite"></span>
@@ -173,7 +180,7 @@ export async function initInventario(container: HTMLElement) {
                       <label class="form-label" for="mov-inv-sede">Sede</label>
                       <select id="mov-inv-sede" class="form-select">
                         <option value="">Todas las sedes</option>
-                        ${dataSedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                        ${dataSedes.map(s => `<option value="${s.id}">${escapeHtml(s.nombre)}</option>`).join('')}
                       </select>
                     </div>
                   ` : `<input type="hidden" id="mov-inv-sede" value="">`}
@@ -786,6 +793,7 @@ export async function initInventario(container: HTMLElement) {
   let filtroStock = soloStockBajo ? 'bajo' : 'todos';
   let filtroSerie = false;
   let filtroInterno = false;
+  let filtroCompletar = false;
   let movimientosInventarioLoaded = false;
   let movimientosInventarioPage = 1;
   let movimientosInventarioCache: MovimientoDTO[] = [];
@@ -1248,7 +1256,7 @@ export async function initInventario(container: HTMLElement) {
     listBody.innerHTML = pendingSerials.map((serie, idx) => `
       <tr>
         <td>
-          <code class="fw-bold text-dark">${serie}</code>
+          <code class="fw-bold text-dark">${escapeHtml(serie)}</code>
           <span class="badge bg-azure-lt ms-2">Pendiente</span>
         </td>
         <td class="text-end px-3">
@@ -1317,7 +1325,7 @@ export async function initInventario(container: HTMLElement) {
       
       listBody.innerHTML = filtered.map(s => `
         <tr>
-          <td><code class="fw-bold text-dark">${s.serie}</code></td>
+          <td><code class="fw-bold text-dark">${escapeHtml(s.serie)}</code></td>
           <td class="text-end px-3">
              <button type="button" class="btn btn-icon btn-ghost-danger btn-sm btn-delete-modal-serial" data-id="${s.id}" title="Eliminar Serial" aria-label="Eliminar serial">
               <i class="ti ti-trash"></i>
@@ -1338,7 +1346,7 @@ export async function initInventario(container: HTMLElement) {
               await loadModalSerials(productoId);
               
               const currentStockVal = parseStockInput(requireElement('prod-stock-actual', HTMLInputElement).value);
-              requireElement('prod-stock-actual', HTMLInputElement).value = String(Math.max(0, currentStockVal - 1));
+              setStockBaseline(Math.max(0, currentStockVal - 1));
               
               loadInventario({ force: true });
             } catch (err) {
@@ -1348,7 +1356,7 @@ export async function initInventario(container: HTMLElement) {
         });
       });
     } catch (err) {
-      listBody.innerHTML = `<tr><td colspan="2" class="text-center text-danger py-2">Error al cargar seriales: ${errorMessage(err)}</td></tr>`;
+      listBody.innerHTML = `<tr><td colspan="2" class="text-center text-danger py-2">Error al cargar seriales: ${escapeHtml(errorMessage(err))}</td></tr>`;
     }
   };
 
@@ -1399,7 +1407,7 @@ export async function initInventario(container: HTMLElement) {
         }
 
         try {
-          const res = await apiRequired<{message: string}>('/series/bulk', {
+          const res = await apiRequired<{message: string; entradasStock?: number}>('/series/bulk', {
             method: 'POST',
             body: JSON.stringify({ series, productoId: prodId, sedeId: currentSedeId })
           });
@@ -1411,7 +1419,7 @@ export async function initInventario(container: HTMLElement) {
           await loadModalSerials(prodId);
           
           const currentStockVal = parseStockInput(requireElement('prod-stock-actual', HTMLInputElement).value);
-          requireElement('prod-stock-actual', HTMLInputElement).value = String(currentStockVal + series.length);
+          setStockBaseline(currentStockVal + (typeof res.entradasStock === 'number' ? res.entradasStock : series.length));
           
           loadInventario({ force: true });
         } catch (err) {
@@ -1695,6 +1703,22 @@ export async function initInventario(container: HTMLElement) {
     });
   };
 
+  /** Qué le falta a un producto para que costos, márgenes, escáner y alertas funcionen bien. */
+  const problemasCatalogo = (prod: StockInventario['producto']): string[] => {
+    if (!prod) return [];
+    const fisico = !prod.esServicio && !prod.esCombo;
+    const costo = Number(prod.precioCosto) || 0;
+    const venta = Number(prod.precioVenta) || 0;
+    const codigo = String(prod.codigoBarras || '');
+    const problemas: string[] = [];
+    if (fisico && costo <= 0) problemas.push('Sin costo');
+    if (venta <= 1) problemas.push('Precio de $1 o menos');
+    else if (costo > venta) problemas.push('Costo mayor que el precio');
+    if (/\s/.test(codigo) || /[a-z]/.test(codigo)) problemas.push('Código parece una descripción');
+    if (fisico && !(Number(prod.stockMinimo) > 0)) problemas.push('Sin stock mínimo');
+    return problemas;
+  };
+
   const countByStockStatus = () => {
     const counts = { todos: 0, ok: 0, bajo: 0, agotado: 0 };
     for (const item of stockCache) {
@@ -1715,6 +1739,11 @@ export async function initInventario(container: HTMLElement) {
       const n = key === 'ok' || key === 'bajo' || key === 'agotado' ? counts[key] : 0;
       el.textContent = String(n ? String(n) : '');
     });
+    const completarN = document.getElementById('inv-completar-n');
+    if (completarN) {
+      const n = stockCache.filter((i) => problemasCatalogo(i.producto).length > 0).length;
+      completarN.textContent = n ? String(n) : '';
+    }
   };
 
   const countProductsInCategoria = (catId: string) => {
@@ -1746,7 +1775,7 @@ export async function initInventario(container: HTMLElement) {
           `<option value="">Todas (${totalSede})</option>`,
           ...categoriasCache.map((c) => {
             const n = countProductsInCategoria(c.id);
-            return `<option value="${c.id}">${c.nombre} (${n})</option>`;
+            return `<option value="${c.id}">${escapeHtml(c.nombre)} (${n})</option>`;
           })
         ].join('');
         if (current && categoriasCache.some((c) => String(c.id) === String(current))) {
@@ -1777,6 +1806,7 @@ export async function initInventario(container: HTMLElement) {
       if (filtroStock === 'agotado' && status !== 'agotado') return false;
       if (filtroSerie && !prod.tieneNumeroSerie) return false;
       if (filtroInterno && !isInternalBarcode(prod.codigoBarras)) return false;
+      if (filtroCompletar && problemasCatalogo(prod).length === 0) return false;
       if (!query) return true;
       return (prod.nombre || '').toLowerCase().includes(query) || (prod.codigoBarras || '').toLowerCase().includes(query);
     });
@@ -1823,20 +1853,21 @@ export async function initInventario(container: HTMLElement) {
       const rowInteractive = isAdminOrGerente;
 
       return `
-        <tr class="${rowInteractive ? 'inv-row is-clickable' : ''}" ${rowInteractive ? `data-id="${item.productoId}" tabindex="0" role="button" aria-label="Editar ${prod.nombre}"` : ''}>
+        <tr class="${rowInteractive ? 'inv-row is-clickable' : ''}" ${rowInteractive ? `data-id="${item.productoId}" tabindex="0" role="button" aria-label="Editar ${escapeHtml(prod.nombre)}"` : ''}>
           <td>
             <div class="inv-sku">
-              <code class="inv-sku__code">${prod.codigoBarras}</code>
+              <code class="inv-sku__code">${escapeHtml(prod.codigoBarras)}</code>
               ${codigoInterno}
             </div>
           </td>
           <td>
             <div class="inv-product">
               ${imgHtml}
-              <span class="inv-product__name" title="${prod.nombre}">${prod.nombre}${prod.esCombo ? ' <span class="inv-status inv-status--combo">Combo</span>' : ''}</span>
+              <span class="inv-product__name" title="${escapeHtml(prod.nombre)}">${escapeHtml(prod.nombre)}${prod.esCombo ? ' <span class="inv-status inv-status--combo">Combo</span>' : ''}</span>
             </div>
+            ${filtroCompletar ? `<div class="inv-problemas">${problemasCatalogo(prod).map((p) => `<span class="inv-status inv-status--low">${escapeHtml(p)}</span>`).join('')}</div>` : ''}
           </td>
-          <td class="inv-cat">${prod.categoria?.nombre || categoriasCache.find((c) => String(c.id) === String(prod.categoriaId))?.nombre || '—'}</td>
+          ${(() => { const catNombre = prod.categoria?.nombre || categoriasCache.find((c) => String(c.id) === String(prod.categoriaId))?.nombre || ''; return `<td class="inv-cat" title="${escapeHtml(catNombre)}">${escapeHtml(catNombre ? nombreCortoCategoria(catNombre, categoriasCache) : '—')}</td>`; })()}
           <td class="text-end inv-money">${formatter.format(Number(prod.precioCosto))}</td>
           <td class="text-end inv-money inv-money--sale">${formatter.format(Number(prod.precioVenta))}</td>
           <td class="text-end"><span class="inv-qty ${statusClass}">${formatStockUnidad(stockQty, prod.unidadMedida)}</span></td>
@@ -1901,7 +1932,7 @@ export async function initInventario(container: HTMLElement) {
 
       const stockInput = requireElement('prod-stock-actual', HTMLInputElement);
       const adminNote = requireElement('admin-stock-note', HTMLParagraphElement);
-      stockInput.value = String(item.cantidad);
+      setStockBaseline(Number(item.cantidad) || 0);
       requireElement('prod-stock-wrapper', HTMLDivElement).classList.remove('d-none');
 
       if (item.producto.esCombo) {
@@ -1947,15 +1978,45 @@ export async function initInventario(container: HTMLElement) {
           showToast('Error', 'No se pudo identificar el producto.', 'error');
           return;
         }
-        const verificado = await showConfirm('Eliminar Producto', '¿Está seguro de eliminar este producto del catálogo de forma permanente?');
+        // El nombre sale del mismo id que se enviará al servidor: así se ve exactamente
+        // qué producto se elimina.
+        const objetivo = stockCache.find(s => s.productoId === id)?.producto;
+        if (!objetivo) {
+          showToast('Error', 'No se encontró el producto en la lista actual. Recargue el inventario e intente de nuevo.', 'error');
+          return;
+        }
+        const verificado = await showConfirm('Eliminar producto', `¿Eliminar "${objetivo.nombre}"${objetivo.codigoBarras ? ` (código ${objetivo.codigoBarras})` : ''} del catálogo?`);
         if (verificado) {
           try {
             await apiFetch(`/productos/${id}`, { method: 'DELETE' });
-            showToast('Éxito', 'Producto eliminado correctamente.', 'success');
+            showToast('Éxito', `"${objetivo.nombre}" eliminado correctamente.`, 'success');
             stockCacheSedeId = null;
             loadInventario({ force: true });
           } catch (err) {
-            showToast('Error', errorMessage(err), 'error');
+            // Componente de un combo: ofrecer abrir el combo para quitarlo de ahí.
+            const info = err as { code?: string; details?: { combos?: { id?: string; nombre?: string }[]; stockTotal?: number; sedes?: { sede: string; cantidad: number }[] } };
+            // Tiene existencias: un admin puede confirmar darlas de baja (quedan en el kardex).
+            if (info.code === 'PRODUCTO_CON_STOCK') {
+              const detalle = (info.details?.sedes || []).map(s => `${s.sede}: ${s.cantidad}`).join(', ');
+              const baja = await showConfirm('Dar de baja el stock', `"${objetivo.nombre}" tiene ${info.details?.stockTotal ?? 0} unidad(es) en inventario${detalle ? ` (${detalle})` : ''}. Al eliminarlo se dan de baja y la salida queda registrada en el kardex. ¿Continuar?`);
+              if (!baja) return;
+              try {
+                await apiFetch(`/productos/${id}?darDeBaja=1`, { method: 'DELETE' });
+                showToast('Éxito', `"${objetivo.nombre}" eliminado y su stock dado de baja.`, 'success');
+                stockCacheSedeId = null;
+                loadInventario({ force: true });
+              } catch (errBaja) {
+                showToast('No se pudo eliminar', errorMessage(errBaja), 'error');
+              }
+              return;
+            }
+            const combo = info.code === 'PRODUCTO_EN_COMBO' ? info.details?.combos?.find(c => c.id && stockCache.some(s => s.productoId === c.id)) : undefined;
+            if (combo?.id) {
+              const abrir = await showConfirm('Producto usado en un combo', `${errorMessage(err)} ¿Abrir el combo "${combo.nombre}" para quitarle este componente?`);
+              if (abrir) abrirEdicionProducto(combo.id);
+              return;
+            }
+            showToast('No se pudo eliminar', errorMessage(err), 'error');
           }
         }
       });
@@ -2055,15 +2116,23 @@ export async function initInventario(container: HTMLElement) {
     applyInventarioFilters();
   });
 
+  document.querySelector('.inv-chip[data-completar="1"]')?.addEventListener('click', () => {
+    filtroCompletar = !filtroCompletar;
+    syncToggleChip('.inv-chip[data-completar="1"]', filtroCompletar);
+    applyInventarioFilters();
+  });
+
   btnLimpiarFiltros?.addEventListener('click', () => {
     searchInput.value = String('');
     if (selectCategoria) selectCategoria.value = String('');
     filtroStock = 'todos';
     filtroSerie = false;
     filtroInterno = false;
+    filtroCompletar = false;
     syncStockChips();
     syncToggleChip('.inv-chip[data-serie="imei"]', false);
     syncToggleChip('.inv-chip[data-interno="1"]', false);
+    syncToggleChip('.inv-chip[data-completar="1"]', false);
     applyInventarioFilters();
   });
 
@@ -2439,6 +2508,7 @@ export async function initInventario(container: HTMLElement) {
       comboComponents = [];
       requireElement('producto-id', HTMLInputElement).value = String('');
       requireElement('prod-stock-wrapper', HTMLDivElement).classList.add('d-none');
+      delete requireElement('prod-stock-actual', HTMLInputElement).dataset.stockOriginal;
       clearPendingSerials();
       requireElement('sec-gestion-seriales', HTMLElement).classList.add('d-none');
       requireElement('modal-producto-title', HTMLHeadingElement).textContent = String('Crear producto');
@@ -2470,6 +2540,18 @@ export async function initInventario(container: HTMLElement) {
       if (!Number.isSafeInteger(stockEntered) || stockEntered < 0 || stockEntered > 2147483647) {
         showToast('Existencias inválidas', 'Indique metros o unidades completos, sin fracciones.', 'warning'); return;
       }
+      // Solo se envía ajuste de stock si el admin cambió el campo; además se manda el
+      // valor que vio para que el servidor rechace el ajuste si el stock cambió entretanto.
+      const stockPayload = () => {
+        const input = requireElement('prod-stock-actual', HTMLInputElement);
+        const puedeAjustar = !requireElement('prod-combo', HTMLInputElement).checked && ['admin', 'superadmin'].includes(usuario.rol);
+        const original = input.dataset.stockOriginal;
+        const actual = parseStockInput(input.value);
+        if (!puedeAjustar) return { ajusteStock: null };
+        if (original === undefined || original === '') return { ajusteStock: actual };
+        if (parseStockInput(original) === actual) return { ajusteStock: null };
+        return { ajusteStock: actual, stockEsperado: parseStockInput(original) };
+      };
       const data = {
         codigoBarras: undefined as string | undefined,
         nombre: requireElement('prod-nombre', HTMLInputElement).value,
@@ -2489,9 +2571,7 @@ export async function initInventario(container: HTMLElement) {
         })),
         unidadMedida: normalizeUnidadMedida(requireElement('prod-unidad', HTMLSelectElement).value),
         imagenUrl: requireElement('prod-imagen-url', HTMLInputElement).value.trim() || null,
-        ajusteStock: !requireElement('prod-combo', HTMLInputElement).checked && ['admin', 'superadmin'].includes(usuario.rol)
-          ? parseStockInput(requireElement('prod-stock-actual', HTMLInputElement).value)
-          : null,
+        ...stockPayload(),
         sedeId
       };
       if (codigoRaw) {
@@ -2563,7 +2643,7 @@ export async function initInventario(container: HTMLElement) {
         const selectOrig = requireElement('traslado-origen', HTMLSelectElement);
         const selectDest = requireElement('traslado-destino', HTMLSelectElement);
 
-        const sedesOptions = dataSedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
+        const sedesOptions = dataSedes.map(s => `<option value="${s.id}">${escapeHtml(s.nombre)}</option>`).join('');
         selectOrig.innerHTML = sedesOptions;
         selectDest.innerHTML = sedesOptions;
 

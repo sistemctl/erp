@@ -11,6 +11,7 @@ import { showConfirm, showToast } from '../utils/toast.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
 import { renderFacturaDocumento, printFacturaDocumento } from '../utils/factura-document.js';
+import { escapeHtml } from '../utils/html.js';
 
 export async function initFacturacion(container: HTMLElement) {
   const usuario = requireUsuario();
@@ -61,7 +62,7 @@ export async function initFacturacion(container: HTMLElement) {
                 <label class="form-label">Sede</label>
                 <select id="filtro-sede" class="form-select">
                   <option value="">-- Todas --</option>
-                  ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                  ${sedes.map(s => `<option value="${s.id}">${escapeHtml(s.nombre)}</option>`).join('')}
                 </select>
               </div>
             ` : '<input type="hidden" id="filtro-sede" value="">'}
@@ -142,10 +143,10 @@ export async function initFacturacion(container: HTMLElement) {
 
       return `
         <tr>
-          <td><strong class="text-blue">${f.numeroFactura}</strong></td>
+          <td><strong class="text-blue">${escapeHtml(f.numeroFactura)}</strong></td>
           <td>${new Date(f.createdAt).toLocaleDateString()}</td>
-          <td>${f.cliente ? f.cliente.nombre : 'Cliente General'}</td>
-          <td>${f.sede ? f.sede.nombre : 'N/A'}</td>
+          <td>${escapeHtml(f.cliente ? f.cliente.nombre : 'Cliente General')}</td>
+          <td>${escapeHtml(f.sede ? f.sede.nombre : 'N/A')}</td>
           <td>${origen}</td>
           <td class="text-end fw-bold">${formatter.format(Number(f.total))}</td>
           <td class="text-center">
@@ -209,7 +210,7 @@ export async function initFacturacion(container: HTMLElement) {
       const filtradas = (await apiFetch<FacturaDTO[]>(`/facturas${query}`)) ?? [];
       renderFacturasTable(filtradas);
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-danger">Error: ${errorMessage(err)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-danger">Error: ${escapeHtml(errorMessage(err))}</td></tr>`;
     }
   }
   requireElement('form-filtros-facturacion', HTMLFormElement).addEventListener('submit', (e) => {
@@ -233,7 +234,7 @@ export async function initFacturacion(container: HTMLElement) {
       if (!f) throw new Error("No se encontró la factura.");
       content.innerHTML = `
         <div class="modal-header d-print-none">
-          <h5 class="modal-title">Factura de venta <strong>${f.numeroFactura}</strong></h5>
+          <h5 class="modal-title">Factura de venta <strong>${escapeHtml(f.numeroFactura)}</strong></h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
         </div>
         <div class="modal-body cot-doc-modal-body">
@@ -258,7 +259,7 @@ export async function initFacturacion(container: HTMLElement) {
       document.getElementById('modal-download-pdf')?.addEventListener('click', () => downloadPdf(f.id, f.numeroFactura));
       document.getElementById('modal-email-factura')?.addEventListener('click', () => enviarFacturaEmail(f.id, f.cliente?.email));
     } catch (err) {
-      content.innerHTML = `<div class="alert alert-danger m-3">${errorMessage(err)}</div>`;
+      content.innerHTML = `<div class="alert alert-danger m-3">${escapeHtml(errorMessage(err))}</div>`;
     }
   }
 

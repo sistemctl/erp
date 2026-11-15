@@ -1,3 +1,4 @@
+import { escapeHtml } from '../utils/html.js';
 import type { SedeDTO } from '../../../../shared/contracts';
 import type { CuentaDTO, CuentaPagarDTO, CarteraResumen, CuentasPagarResumen, FlujoCaja, MetodoVentaResumen, ProductoVentaResumen, InventarioValorizado } from '../types/finance.js';
 interface ReportFilters { sede: string; desde: string; hasta: string; }
@@ -78,7 +79,7 @@ export async function initReportes(container: HTMLElement) {
               <label class="form-label">Sede</label>
               <select id="rep-sede" class="form-select">
                 <option value="">Todas</option>
-                ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                ${sedes.map(s => `<option value="${s.id}">${escapeHtml(s.nombre)}</option>`).join('')}
               </select>
             </div>` : ''}
             <div class="col-md-2">
@@ -178,8 +179,8 @@ export async function initReportes(container: HTMLElement) {
     }
     tbody.innerHTML = lastCartera.map(r => `
       <tr>
-        <td>${r.cliente?.nombre || '—'}</td>
-        <td>${r.factura?.numeroFactura || '—'}</td>
+        <td>${escapeHtml(r.cliente?.nombre || '—')}</td>
+        <td>${escapeHtml(r.factura?.numeroFactura || '—')}</td>
         <td>${new Date(r.fechaVencimiento).toLocaleDateString()}</td>
         <td class="text-end fw-bold">${formatter.format(Number(r.saldoPendiente))}</td>
         <td><span class="badge ${r.estado === 'vencida' ? 'bg-red-lt' : 'bg-green-lt'}">${r.estado}</span></td>
@@ -200,7 +201,7 @@ export async function initReportes(container: HTMLElement) {
     tbody.innerHTML = lastCpp.map(r => `
       <tr>
         <td>${r.numeroOrden || r.id?.slice(0, 8)}</td>
-        <td>${r.proveedor?.nombre || '—'}</td>
+        <td>${escapeHtml(r.proveedor?.nombre || '—')}</td>
         <td class="${r.diasVencido > 0 ? 'text-danger fw-bold' : ''}">${r.fechaVencimientoPago ? new Date(r.fechaVencimientoPago).toLocaleDateString() : '—'}</td>
         <td class="text-end fw-bold text-danger">${formatter.format(Number(r.saldoPendiente))}</td>
         <td class="text-center">${r.diasVencido > 0 ? r.diasVencido + ' d' : 'Al día'}</td>
@@ -244,7 +245,7 @@ export async function initReportes(container: HTMLElement) {
       <tr><td>${m.metodo}</td><td class="text-end fw-bold">${formatter.format(m.total)}</td></tr>
     `).join('') || '<tr><td colspan="2" class="text-center py-3 text-secondary">Sin datos</td></tr>';
     requireElement('rep-top-body', HTMLTableSectionElement).innerHTML = ((top ?? [])).map(p => `
-      <tr><td>${p.nombre}</td><td class="text-end">${p.unidades}</td><td class="text-end fw-bold">${formatter.format(p.ingresos)}</td></tr>
+      <tr><td>${escapeHtml(p.nombre)}</td><td class="text-end">${p.unidades}</td><td class="text-end fw-bold">${formatter.format(p.ingresos)}</td></tr>
     `).join('') || '<tr><td colspan="3" class="text-center py-3 text-secondary">Sin datos</td></tr>';
   }
 
@@ -259,7 +260,7 @@ export async function initReportes(container: HTMLElement) {
     const tbody = requireElement('rep-inv-body', HTMLTableSectionElement);
     const items = (data.items || []).filter(i => i.cantidad > 0).slice(0, 100);
     tbody.innerHTML = items.length ? items.map(i => `
-      <tr><td>${i.nombre}</td><td>${i.sede}</td><td class="text-end">${i.cantidad}</td><td class="text-end">${formatter.format(i.valorCosto)}</td><td class="text-end">${formatter.format(i.valorVenta)}</td></tr>
+      <tr><td>${escapeHtml(i.nombre)}</td><td>${i.sede}</td><td class="text-end">${i.cantidad}</td><td class="text-end">${formatter.format(i.valorCosto)}</td><td class="text-end">${formatter.format(i.valorVenta)}</td></tr>
     `).join('') : '<tr><td colspan="5" class="text-center py-4 text-secondary">Sin stock.</td></tr>';
   }
 

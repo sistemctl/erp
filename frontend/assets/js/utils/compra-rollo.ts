@@ -1,5 +1,6 @@
 import { costoPorMetro, inventoryQuantity, moneyCents, moneyText } from './compra-unidad.js';
 import type { ProductoDTO } from '../../../../shared/contracts.js';
+import type { RolloCompra } from '../types/purchases.js';
 
 /** Preview only. The cart and purchase API receive meters and price per meter. */
 export function mountRolloCalculator(cost: HTMLInputElement, quantity: HTMLInputElement, host: HTMLElement) {
@@ -30,13 +31,22 @@ export function mountRolloCalculator(cost: HTMLInputElement, quantity: HTMLInput
       const result = costoPorMetro(total.value, meters.value), count = inventoryQuantity(rolls.value);
       cost.value = result.costoPorMetro; quantity.value = String(inventoryQuantity(result.metros * count));
       const amount = moneyText(moneyCents(result.costoPorMetro) * BigInt(quantity.value));
-      preview.textContent = `Se guardarán ${quantity.value} m a ${money(result.costoPorMetro)}/m. Total calculado: ${money(amount)}.${result.diferenciaCentavos ? ' El costo por metro está redondeado a 2 decimales; el total calculado puede diferir del costo del rollo.' : ''}`;
+      const totalReal = moneyText(moneyCents(total.value) * BigInt(count));
+      preview.textContent = `Se guardarán ${quantity.value} m a ${money(result.costoPorMetro)}/m (redondeado). Total de la orden: ${money(totalReal)}, igual al costo de ${count} rollo(s).${result.diferenciaCentavos ? ` El costo por metro × metros da ${money(amount)}; la orden conserva el valor real del rollo.` : ''}`;
       preview.className = 'col-12 small mb-0 text-secondary';
     } catch (error) { cost.value = ''; quantity.value = ''; preview.textContent = error instanceof Error ? error.message : 'Complete los datos del rollo.'; preview.className = 'col-12 small mb-0 text-danger'; }
   };
   mode.addEventListener('change', update);
   for (const field of [total, meters, rolls]) field.addEventListener('input', update);
   return {
+    /** Datos del rollo si el modo rollo está activo y es válido; null en modo costo por metro. */
+    rollo(): RolloCompra | null {
+      if (mode.value !== 'rollo' || panel.hidden) return null;
+      try {
+        const result = costoPorMetro(total.value, meters.value);
+        return { costoTotalRollo: moneyText(moneyCents(total.value)), metrosPorRollo: result.metros, cantidadRollos: inventoryQuantity(rolls.value) };
+      } catch { return null; }
+    },
     selectProduct(product: ProductoDTO | null) {
       panel.hidden = product?.unidadMedida !== 'm'; mode.value = 'unidad'; total.value = ''; meters.value = ''; rolls.value = '1'; fields.hidden = true; cost.readOnly = false; quantity.readOnly = false;
       const costLabel = cost.labels?.[0]; if (costLabel) costLabel.textContent = product?.unidadMedida === 'm' ? 'Costo por metro ($/m)' : 'Costo unitario';

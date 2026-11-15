@@ -1,3 +1,4 @@
+import { escapeHtml } from './html.js';
 /**
  * Kit de módulo canónico:
  * erpHeader → erp-list-workspace(erp-filter-card → erp-table-panel)
@@ -16,8 +17,8 @@ export function erpHeader({ eyebrow, title, subtitle = '', actionsHtml = '', tit
     <header class="erp-header d-print-none">
       <div class="erp-header__main">
         ${eyebrow ? `<div class="erp-header__eyebrow">${eyebrow}</div>` : ''}
-        <h1 class="erp-header__title"${titleAttr}>${title}</h1>
-        ${subtitle ? `<p class="erp-header__sub"${subAttr}>${subtitle}</p>` : ''}
+        <h1 class="erp-header__title"${titleAttr}>${escapeHtml(title)}</h1>
+        ${subtitle ? `<p class="erp-header__sub"${subAttr}>${escapeHtml(subtitle)}</p>` : ''}
       </div>
       ${actions}
     </header>

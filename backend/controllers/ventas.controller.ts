@@ -47,6 +47,7 @@ import { calculateSale, normalizePayments, money } from '../utils/venta-totales'
 import { nextDocumentNumber } from '../utils/document-number';
 import { assertSedeAccess } from '../utils/sede';
 import { httpError } from '../utils/http-error';
+import { verificarPinAdmin } from '../utils/admin-pin';
 
 const METODOS_CAJA: Record<string, keyof Pick<CajaModel, "totalVentasEfectivo" | "totalVentasNequi" | "totalVentasDaviplata" | "totalVentasTarjeta" | "totalVentasTransferencia">> = {
   efectivo: 'totalVentasEfectivo',
@@ -331,24 +332,8 @@ export const procesarVenta: Handler<Body> = async (req, res, next) => {
         return res.status(403).json({ error: 'La transacción contiene un descuento alto o precio bajo costo. Requiere PIN del Administrador.', code: 'ADMIN_PIN_REQUIRED' });
       }
 
-      const admins = await Usuario.findAll({
-        where: { rol: { [Op.in]: ['admin', 'superadmin'] }, activo: true },
-        transaction
-      });
-      let pinValido = false;
-
-      for (const admin of admins) {
-        if (await admin.compararPassword(pinAdmin)) {
-          pinValido = true;
-          autorizadoPorId = admin.id;
-          break;
-        }
-      }
-
-      if (!pinValido) {
-        await transaction.rollback();
-        return res.status(403).json({ error: 'PIN de Administrador incorrecto.', code: 'ADMIN_PIN_INVALID' });
-      }
+      // Validar PIN (con límite de intentos fallidos por usuario)
+      autorizadoPorId = await verificarPinAdmin(pinAdmin, requireUser(req).userId, transaction);
     }
 
     // Generar secuencia de venta
@@ -393,6 +378,9 @@ export const procesarVenta: Handler<Body> = async (req, res, next) => {
         iva: item.iva,
         ivaTotal: money(item.iva * item.cantidad),
         subtotal: item.subtotal,
+        // Sin costo registrado (0) se guarda NULL: la rentabilidad usará el costo actual
+        // cuando se complete en el catálogo, en vez de quedar con margen del 100 %.
+        costoUnitario: (parseFloat(String(producto.precioCosto)) || 0) > 0 ? parseFloat(String(producto.precioCosto)) : null,
         autorizadoPorAdmin: requierePin
       }, { transaction });
 
@@ -447,7 +435,7 @@ export const procesarVenta: Handler<Body> = async (req, res, next) => {
 
         if (producto.tieneNumeroSerie) {
           if (!item.imei) {
-            throw new Error(`El producto ${producto.nombre} requiere número de serie/IMEI.`);
+            throw httpError(400, `El producto ${producto.nombre} requiere número de serie/IMEI.`);
           }
 
           const serieReg = await NumeroSerie.findOne({
@@ -457,7 +445,7 @@ export const procesarVenta: Handler<Body> = async (req, res, next) => {
           });
 
           if (!serieReg) {
-            throw new Error(`Número de serie/IMEI ${item.imei} no está en stock o ya fue vendido.`);
+            throw httpError(400, `Número de serie/IMEI ${item.imei} no está en stock o ya fue vendido.`);
           }
 
           await serieReg.update({
@@ -893,9 +881,15 @@ export const crearDevolucionVenta: Handler<ReturnBody> = async (req, res, next) 
       throw httpError(409, 'La devolución excede el importe original de la venta.');
     }
 
+    // Cuenta por cobrar de la venta (si fue a crédito)
+    const cpc = venta.factura
+      ? await CuentaPorCobrar.findOne({ where: { facturaId: venta.factura.id }, transaction, lock: transaction.LOCK.UPDATE })
+      : null;
+    const esVentaCredito = Boolean(cpc) || venta.esCredito === true || venta.estado === 'credito';
+
     let metodo = String(metodoReembolso || '').toLowerCase();
     if (!metodo || metodo === 'mismo') {
-      if (venta.esCredito || venta.estado === 'credito') {
+      if (esVentaCredito) {
         metodo = 'credito';
       } else if (venta.pagos?.length === 1) {
         metodo = venta.pagos[0].metodo;
@@ -909,6 +903,19 @@ export const crearDevolucionVenta: Handler<ReturnBody> = async (req, res, next) 
       await transaction.rollback();
       return res.status(400).json({ error: 'Método de reembolso inválido.' });
     }
+    if (metodo === 'credito' && !cpc) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'Esta venta no tiene saldo a crédito: elija un método de reembolso de caja.' });
+    }
+
+    // En ventas a crédito la devolución primero reduce la deuda pendiente; solo el
+    // excedente (lo que el cliente ya había pagado) se devuelve por caja.
+    const saldoCredito = cpc ? money(parseFloat(String(cpc.saldoPendiente)) || 0) : 0;
+    const montoACredito = esVentaCredito && cpc ? Math.min(saldoCredito, totalDev) : 0;
+    const montoACaja = money(totalDev - montoACredito);
+    let metodoCaja = metodo === 'credito' ? 'efectivo' : metodo;
+    if (montoACaja > 0 && !METODOS_CAJA[metodoCaja]) metodoCaja = 'efectivo';
+    if (montoACredito > 0 && montoACaja === 0) metodo = 'credito';
 
     const numero = await nextDocumentNumber(sequelize, 'DEV', transaction);
 
@@ -986,30 +993,32 @@ export const crearDevolucionVenta: Handler<ReturnBody> = async (req, res, next) 
       }
     }
 
-    // Ajuste de caja / crédito
-    if (metodo === 'credito' && venta.factura) {
-      const cpc = await CuentaPorCobrar.findOne({
-        where: { facturaId: venta.factura.id },
-        transaction
-      });
-      if (cpc) {
-        const nuevoSaldo = Math.max(0, parseFloat(String(cpc.saldoPendiente)) - totalDev);
-        await cpc.update({
-          saldoPendiente: nuevoSaldo,
-          estado: nuevoSaldo <= 0 ? 'pagada' : cpc.estado
-        }, { transaction });
-        const nuevoSaldoVenta = Math.max(0, parseFloat(String(venta.saldoPendiente || 0)) - totalDev);
-        await venta.update({ saldoPendiente: nuevoSaldoVenta }, { transaction });
+    // Ajuste de crédito: reduce la cuenta por cobrar y sincroniza factura y venta
+    if (montoACredito > 0 && cpc) {
+      const nuevoSaldo = money(Math.max(0, saldoCredito - montoACredito));
+      await cpc.update({
+        saldoPendiente: nuevoSaldo,
+        estado: nuevoSaldo <= 0 ? 'pagada' : cpc.estado
+      }, { transaction });
+      await venta.update({
+        saldoPendiente: nuevoSaldo,
+        ...(nuevoSaldo <= 0 && venta.estado === 'credito' ? { estado: 'completada' as const } : {})
+      }, { transaction });
+      if (venta.factura && nuevoSaldo <= 0 && venta.factura.estado !== 'anulada') {
+        await venta.factura.update({ estado: 'pagada' }, { transaction });
       }
-    } else if (METODOS_CAJA[metodo]) {
-      if (metodo === 'efectivo') {
+    }
+
+    // Ajuste de caja: solo por el monto que realmente se devuelve al cliente
+    if (montoACaja > 0 && METODOS_CAJA[metodoCaja]) {
+      if (metodoCaja === 'efectivo') {
         const disponible = parseFloat(String(caja.montoApertura))
           + parseFloat(String(caja.totalVentasEfectivo))
           - parseFloat(String(caja.totalEgresos));
-        if (totalDev > disponible + 0.01) {
+        if (montoACaja > disponible + 0.01) {
           await transaction.rollback();
           return res.status(400).json({
-            error: `No hay suficiente efectivo en caja para reembolsar (disponible: $${disponible.toLocaleString('es-CO')}).`
+            error: `No hay suficiente efectivo en caja para reembolsar $${montoACaja.toLocaleString('es-CO')} (disponible: $${disponible.toLocaleString('es-CO')}).`
           });
         }
         const cat = await ensureCategoriaDevolucion(transaction);
@@ -1017,18 +1026,18 @@ export const crearDevolucionVenta: Handler<ReturnBody> = async (req, res, next) 
           cajaId: caja.id,
           usuarioId: requireUser(req).userId,
           categoriaId: cat.id,
-          monto: totalDev,
+          monto: montoACaja,
           motivo: `Devolución ${numero} — ${venta.numeroVenta}: ${String(motivo).trim()}`,
           requirioPin: false
         }, { transaction });
         await caja.update({
-          totalEgresos: parseFloat(String(caja.totalEgresos)) + totalDev
+          totalEgresos: parseFloat(String(caja.totalEgresos)) + montoACaja
         }, { transaction });
       } else {
-        const campo = METODOS_CAJA[metodo];
+        const campo = METODOS_CAJA[metodoCaja];
         const actual = parseFloat(String(caja[campo])) || 0;
         await caja.update({
-          [campo]: Math.max(0, actual - totalDev)
+          [campo]: Math.max(0, actual - montoACaja)
         }, { transaction });
       }
     }

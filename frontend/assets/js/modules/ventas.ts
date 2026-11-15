@@ -13,6 +13,7 @@ import { erpHeader } from '../utils/module-shell.js';
 import { erpAction } from '../utils/action-buttons.js';
 import { showToast } from '../utils/toast.js';
 import { renderDevolucionReceipt } from '../utils/pos-receipt.js';
+import { escapeHtml } from '../utils/html.js';
 
 export async function initVentas(container: HTMLElement) {
   const usuario = requireUsuario();
@@ -92,7 +93,7 @@ export async function initVentas(container: HTMLElement) {
                       <label class="form-label">Vendedor</label>
                       <select id="filtro-vendedor-venta" class="form-select">
                         <option value="">-- Todos --</option>
-                        ${vendedores.map(v => `<option value="${v.id}">${v.nombre}</option>`).join('')}
+                        ${vendedores.map(v => `<option value="${v.id}">${escapeHtml(v.nombre)}</option>`).join('')}
                       </select>
                     </div>
                     ${isAdminOrGerente && ['admin', 'superadmin'].includes(usuario.rol) ? `
@@ -100,7 +101,7 @@ export async function initVentas(container: HTMLElement) {
                         <label class="form-label">Sede</label>
                         <select id="filtro-sede-venta" class="form-select">
                           <option value="">-- Todas --</option>
-                          ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                          ${sedes.map(s => `<option value="${s.id}">${escapeHtml(s.nombre)}</option>`).join('')}
                         </select>
                       </div>
                     ` : '<input type="hidden" id="filtro-sede-venta" value="">'}
@@ -150,7 +151,7 @@ export async function initVentas(container: HTMLElement) {
                       <label class="form-label">Vendedor / Cajero</label>
                       <select id="filtro-vendedor-comision" class="form-select">
                         <option value="">-- Todos --</option>
-                        ${vendedores.map(v => `<option value="${v.id}">${v.nombre}</option>`).join('')}
+                        ${vendedores.map(v => `<option value="${v.id}">${escapeHtml(v.nombre)}</option>`).join('')}
                       </select>
                     </div>
                     <div class="col-md-3">
@@ -242,7 +243,7 @@ export async function initVentas(container: HTMLElement) {
                         <label class="form-label">Sede</label>
                         <select id="filtro-sede-reparacion" class="form-select">
                           <option value="">-- Todas --</option>
-                          ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                          ${sedes.map(s => `<option value="${s.id}">${escapeHtml(s.nombre)}</option>`).join('')}
                         </select>
                       </div>
                     ` : '<input type="hidden" id="filtro-sede-reparacion" value="">'}
@@ -434,12 +435,12 @@ export async function initVentas(container: HTMLElement) {
             : 'venta-row';
       return `
         <tr class="${rowClass}">
-          <td><strong class="text-blue">${v.numeroVenta}</strong>${devolucionBadge(v)}</td>
+          <td><strong class="text-blue">${escapeHtml(v.numeroVenta)}</strong>${devolucionBadge(v)}</td>
           <td>${new Date(v.createdAt).toLocaleDateString()}</td>
-          <td>${v.cliente ? v.cliente.nombre : 'Consumidor Final'}</td>
-          <td>${v.usuario ? v.usuario.nombre : 'Desconocido'}</td>
-          <td>${v.sede ? v.sede.nombre : 'N/A'}</td>
-          <td class="small text-secondary" style="max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${itemsStr}">${itemsStr}</td>
+          <td>${escapeHtml(v.cliente ? v.cliente.nombre : 'Consumidor Final')}</td>
+          <td>${escapeHtml(v.usuario ? v.usuario.nombre : 'Desconocido')}</td>
+          <td>${escapeHtml(v.sede ? v.sede.nombre : 'N/A')}</td>
+          <td class="small text-secondary" style="max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(itemsStr)}">${escapeHtml(itemsStr)}</td>
           <td>${pagosStr}</td>
           <td class="text-end fw-bold text-primary">${formatter.format(Number(v.total))}</td>
           <td class="text-end">${actions}</td>
@@ -474,7 +475,7 @@ export async function initVentas(container: HTMLElement) {
           return `
             <tr class="text-secondary">
               <td></td>
-              <td>${item.producto?.nombre || 'Producto'}</td>
+              <td>${escapeHtml(item.producto?.nombre || 'Producto')}</td>
               <td class="text-center">${item.cantidad}</td>
               <td class="text-center">${ya}</td>
               <td class="text-center small">Completo</td>
@@ -486,7 +487,7 @@ export async function initVentas(container: HTMLElement) {
             <td>
               <input type="checkbox" class="form-check-input dev-item-check" data-id="${item.id}" data-max="${max}" checked>
             </td>
-            <td>${item.producto?.nombre || 'Producto'}</td>
+            <td>${escapeHtml(item.producto?.nombre || 'Producto')}</td>
             <td class="text-center">${item.cantidad}</td>
             <td class="text-center">${ya}</td>
             <td>
@@ -603,7 +604,7 @@ export async function initVentas(container: HTMLElement) {
       const query = params.length > 0 ? `?${params.join('&')}` : '';
       renderVentasTable(await apiRequired<VentaDetalleDTO[]>(`/ventas${query}`));
     } catch (err) {
-      tbodyVentas.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Error: ${errorMessage(err)}</td></tr>`;
+      tbodyVentas.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Error: ${escapeHtml(errorMessage(err))}</td></tr>`;
     }
   }
 
@@ -700,14 +701,14 @@ export async function initVentas(container: HTMLElement) {
       tbodyComisiones.innerHTML = data.comisiones.map((c) => `
         <tr>
           <td><strong>${c.vendedor}</strong></td>
-          <td><span class="badge bg-blue text-white">${c.numeroVenta}</span></td>
+          <td><span class="badge bg-blue text-white">${escapeHtml(c.numeroVenta)}</span></td>
           <td>${new Date(c.fecha).toLocaleDateString()}</td>
           <td class="text-end">${formatter.format(c.totalVenta)}</td>
           <td class="text-end fw-bold text-success">${formatter.format(c.comision)}</td>
         </tr>
       `).join('');
     } catch (err) {
-      tbodyComisiones.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-danger">Error: ${errorMessage(err)}</td></tr>`;
+      tbodyComisiones.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-danger">Error: ${escapeHtml(errorMessage(err))}</td></tr>`;
     }
   });
 
@@ -726,10 +727,10 @@ export async function initVentas(container: HTMLElement) {
         const ahorro = (base - modificado) * item.cantidad;
         return `
           <tr>
-            <td><strong class="text-blue">${venta?.numeroVenta || 'N/A'}</strong></td>
+            <td><strong class="text-blue">${escapeHtml(venta?.numeroVenta || 'N/A')}</strong></td>
             <td>${venta?.createdAt ? new Date(venta?.createdAt).toLocaleDateString() : 'N/A'}</td>
-            <td>${item.producto ? item.producto.nombre : 'Producto'}</td>
-            <td>${venta?.usuario ? venta?.usuario.nombre : 'N/A'}</td>
+            <td>${escapeHtml(item.producto ? item.producto.nombre : 'Producto')}</td>
+            <td>${escapeHtml(venta?.usuario ? venta?.usuario.nombre : 'N/A')}</td>
             <td class="text-end">${formatter.format(base)}</td>
             <td class="text-end fw-bold text-primary">${formatter.format(modificado)}</td>
             <td class="text-center"><span class="badge bg-red-lt px-2 py-1">${item.descuentoPct}%</span></td>
@@ -738,7 +739,7 @@ export async function initVentas(container: HTMLElement) {
         `;
       }).join('');
     } catch (err) {
-      tbodyDescuentos.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-danger">Error: ${errorMessage(err)}</td></tr>`;
+      tbodyDescuentos.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-danger">Error: ${escapeHtml(errorMessage(err))}</td></tr>`;
     }
   }
 
@@ -760,11 +761,11 @@ export async function initVentas(container: HTMLElement) {
     };
     tbodyReparaciones.innerHTML = data.map((o) => `
       <tr>
-        <td><strong class="text-blue">${o.numeroOrden}</strong></td>
+        <td><strong class="text-blue">${escapeHtml(o.numeroOrden)}</strong></td>
         <td>${new Date(o.createdAt).toLocaleDateString()}</td>
-        <td>${o.cliente ? o.cliente.nombre : 'Cliente General'}</td>
-        <td>${o.tecnico ? o.tecnico.nombre : 'Sin Técnico'}</td>
-        <td>${o.sede ? o.sede.nombre : 'N/A'}</td>
+        <td>${escapeHtml(o.cliente ? o.cliente.nombre : 'Cliente General')}</td>
+        <td>${escapeHtml(o.tecnico ? o.tecnico.nombre : 'Sin Técnico')}</td>
+        <td>${escapeHtml(o.sede ? o.sede.nombre : 'N/A')}</td>
         <td><span class="badge ${badgeClasses[o.estado] || 'bg-secondary text-white'}">${o.estado.toUpperCase()}</span></td>
         <td class="text-end text-secondary">${formatter.format(parseFloat(String(o.costoManoObra || 0)))}</td>
         <td class="text-end text-danger">${formatter.format(parseFloat(String(o.costoRepuestos || 0)))}</td>
@@ -789,7 +790,7 @@ export async function initVentas(container: HTMLElement) {
       if (hasta) params.push(`hasta=${hasta}`);
       renderReparacionesTable(await apiRequired<ReparacionVentaDTO[]>(`/reparaciones${params.length ? `?${params.join('&')}` : ''}`));
     } catch (err) {
-      tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Error: ${errorMessage(err)}</td></tr>`;
+      tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Error: ${escapeHtml(errorMessage(err))}</td></tr>`;
     }
   }
 

@@ -5,14 +5,15 @@ const {
   CuentaPorCobrar,
   Factura,
   Cliente,
-  ConfiguracionSistema
+  ConfiguracionSistema,
+  sequelize
 } = models;
 import emailService = require('../services/email.service');
+import { inicioDiaBogota, hoyBogota } from '../utils/rango-bogota';
 
+// "Hoy" es el día operativo de Colombia, sin depender de la zona horaria del servidor.
 function startOfToday() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
+  return inicioDiaBogota(hoyBogota());
 }
 
 async function actualizarEstadosVencidos() {
@@ -29,23 +30,31 @@ async function actualizarEstadosVencidos() {
     }
   });
 
+  let fallidas = 0;
   for (const cpc of cuentas) {
-    if (cpc.estado !== 'vencida') {
-      await cpc.update({ estado: 'vencida' });
-      cpcActualizadas += 1;
-    }
+    // Cada cuenta en su propia transacción: un error no deja cuenta y factura a medias
+    // ni detiene el resto del proceso.
+    try {
+      await sequelize.transaction(async (transaction) => {
+        if (cpc.estado !== 'vencida') {
+          await cpc.update({ estado: 'vencida' }, { transaction });
+          cpcActualizadas += 1;
+        }
 
-    const factura = await Factura.findByPk(cpc.facturaId);
-    if (factura && !['pagada', 'anulada'].includes(factura.estado)) {
-      if (factura.estado !== 'vencida') {
-        await factura.update({ estado: 'vencida' });
-        facturasActualizadas += 1;
-      }
+        const factura = await Factura.findByPk(cpc.facturaId, { transaction });
+        if (factura && !['pagada', 'anulada'].includes(factura.estado) && factura.estado !== 'vencida') {
+          await factura.update({ estado: 'vencida' }, { transaction });
+          facturasActualizadas += 1;
+        }
+      });
+    } catch (err) {
+      fallidas += 1;
+      console.error(`[Job Cartera] Error marcando vencida la cuenta ${cpc.id}:`, err instanceof Error ? err.message : String(err));
     }
   }
 
-  console.log(`[Job Cartera] Estados vencidos: ${cpcActualizadas} cuentas, ${facturasActualizadas} facturas.`);
-  return { cpcActualizadas, facturasActualizadas };
+  console.log(`[Job Cartera] Estados vencidos: ${cpcActualizadas} cuentas, ${facturasActualizadas} facturas${fallidas ? `, ${fallidas} con error` : ''}.`);
+  return { cpcActualizadas, facturasActualizadas, fallidas };
 }
 
 async function enviarRecordatoriosCartera() {
@@ -57,8 +66,7 @@ async function enviarRecordatoriosCartera() {
 
   const diasMin = parseInt(String(config.diasMoraRecordatorioCartera), 10) || 7;
   const hoy = startOfToday();
-  const limite = new Date(hoy);
-  limite.setDate(limite.getDate() - diasMin);
+  const limite = new Date(hoy.getTime() - diasMin * 24 * 60 * 60 * 1000);
 
   const cuentas = await CuentaPorCobrar.findAll({
     where: {

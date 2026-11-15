@@ -230,7 +230,11 @@ const TABLES_TO_TRUNCATE_FULL = [
 /** Solo inventario: conserva sedes, usuarios, clientes, ventas cabecera, etc. */
 const TABLES_TO_TRUNCATE_INVENTORY = [
   'ItemsDevolucion',
+  'ItemsVentaComponentes',
   'ItemsVenta',
+  'MaterialesInstalacion',
+  'ComboComponentes',
+  'ReclamosGarantia',
   'ItemsCotizacion',
   'RepuestosOrden',
   'ItemsOrdenCompra',
@@ -243,6 +247,25 @@ const TABLES_TO_TRUNCATE_INVENTORY = [
 
 async function cleanErp(transaction: Transaction | null) {
   if (INVENTORY_ONLY) {
+    // Reemplazar el catálogo borra las líneas de ventas, compras, reparaciones, etc. que
+    // apuntan a los productos. Si ya hay operación, se exige confirmación explícita.
+    const referencias: [string, string][] = [
+      ['ItemsVenta', 'líneas de venta'], ['ItemsOrdenCompra', 'líneas de compra'],
+      ['RepuestosOrden', 'repuestos de reparaciones'], ['MaterialesInstalacion', 'materiales de instalaciones'],
+      ['ItemsDevolucion', 'líneas de devoluciones'], ['ItemsVentaComponentes', 'componentes de combos vendidos'],
+      ['ReclamosGarantia', 'reclamos de garantía'], ['TradeIns', 'trade-ins'], ['ItemsCotizacion', 'líneas de cotización']
+    ];
+    const encontrados: string[] = [];
+    for (const [tabla, etiqueta] of referencias) {
+      try {
+        const [rows] = await sequelize.query(`SELECT COUNT(*)::int AS n FROM "${tabla}"`, { transaction }) as [Array<{ n: number }>, unknown];
+        if (rows[0]?.n > 0) encontrados.push(`${rows[0].n} ${etiqueta}`);
+      } catch { /* tabla inexistente */ }
+    }
+    if (encontrados.length && !process.argv.includes('--confirmar-borrado-ventas')) {
+      throw new Error(`--inventory-only borraría documentos que usan los productos actuales: ${encontrados.join(', ')}. `
+        + 'Haga un respaldo y, si realmente quiere reemplazar el catálogo, ejecute de nuevo con --confirmar-borrado-ventas.');
+    }
     console.log('Limpiando solo inventario (conservando sedes, usuarios y resto)...');
     try {
       await sequelize.query(
@@ -254,9 +277,10 @@ async function cleanErp(transaction: Transaction | null) {
     }
     for (const table of TABLES_TO_TRUNCATE_INVENTORY) {
       try {
-        await sequelize.query(`TRUNCATE TABLE "${table}" CASCADE`, { transaction });
+        // Sin CASCADE: si otra tabla no listada depende de esta, falla en vez de vaciarla en silencio.
+        await sequelize.query(`DELETE FROM "${table}"`, { transaction });
       } catch (e) {
-        warn(`TRUNCATE ${table}: ${(e instanceof Error ? e.message : String(e))}`);
+        throw new Error(`No se pudo limpiar ${table}: ${(e instanceof Error ? e.message : String(e))}`);
       }
     }
     return;

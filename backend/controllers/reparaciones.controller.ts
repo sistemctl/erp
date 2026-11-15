@@ -48,6 +48,36 @@ async function assertRepuestosEditables(orden: OrdenModel, transaction: Transact
   if (factura) throw httpError(409, 'La reparación ya está facturada. No se pueden modificar sus repuestos.');
 }
 
+/** Al cancelar una reparación, todos sus repuestos vuelven al inventario de la sede. */
+async function devolverRepuestosAlCancelar(orden: OrdenModel, usuarioId: string, transaction: Transaction) {
+  const repuestos = await RepuestoOrden.findAll({ where: { ordenId: orden.id }, transaction, lock: transaction.LOCK.UPDATE });
+  if (!repuestos.length) return;
+  const round = (value: number) => Math.round(value * 100) / 100;
+  let costoDevuelto = 0;
+  for (const repuesto of repuestos) {
+    const cantidad = Number(repuesto.cantidad);
+    if (!Number.isSafeInteger(cantidad) || cantidad <= 0) continue;
+    const stock = await StockSede.findOne({ where: { productoId: repuesto.productoId, sedeId: orden.sedeId }, transaction, lock: transaction.LOCK.UPDATE });
+    if (stock) {
+      await stock.update({ cantidad: Number(stock.cantidad) + cantidad }, { transaction });
+    } else {
+      await StockSede.create({ productoId: repuesto.productoId, sedeId: orden.sedeId, cantidad }, { transaction });
+    }
+    await MovimientoInventario.create({ productoId: repuesto.productoId, sedeId: orden.sedeId, tipo: 'entrada', cantidad,
+      motivo: `Repuesto devuelto por cancelación de Orden #${orden.numeroOrden}`, referenciaId: orden.id, usuarioId }, { transaction });
+    costoDevuelto += Number(repuesto.costoUnitario) * cantidad;
+    await repuesto.destroy({ transaction });
+  }
+  costoDevuelto = round(costoDevuelto);
+  const totalCobrado = Math.max(0, round(Number(orden.totalCobrado) - costoDevuelto));
+  await orden.update({ costoRepuestos: 0, totalCobrado }, { transaction });
+  const rentabilidad = await RentabilidadReparacion.findOne({ where: { ordenId: orden.id }, transaction, lock: transaction.LOCK.UPDATE });
+  if (rentabilidad) {
+    const costoReal = Math.max(0, round(Number(rentabilidad.costoReal) - costoDevuelto));
+    await rentabilidad.update({ costoReal, totalCobrado, margen: round(totalCobrado - costoReal) }, { transaction });
+  }
+}
+
 // --- CRUD ÓRDENES ---
 
 export const getOrdenes: Handler<Body> = async (req, res, next) => {
@@ -230,6 +260,10 @@ export const updateOrden: Handler<Body> = async (req, res, next) => {
       await transaction.rollback();
       return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
     }
+    if (['entregado', 'cancelado'].includes(orden.estado)) {
+      await transaction.rollback();
+      return res.status(409).json({ error: 'Una reparación entregada o cancelada no se puede editar: su factura y rentabilidad ya están cerradas.' });
+    }
 
     const {
       tecnicoId,
@@ -348,7 +382,7 @@ export const updateEstado: Handler<Body> = async (req, res, next) => {
       });
 
       if (!caja) {
-        throw new Error('Debe abrir caja en la sede de la orden antes de entregar y cobrar la reparación.');
+        throw httpError(400, 'Debe abrir caja en la sede de la orden antes de entregar y cobrar la reparación.');
       }
 
       const totalNum = parseFloat(String(orden.totalCobrado || 0));
@@ -369,13 +403,13 @@ export const updateEstado: Handler<Body> = async (req, res, next) => {
         if (![efectivoRec, nequiRec, daviplataRec, tarjetaRec, transferenciaRec].every((monto) => (
           Number.isFinite(monto) && monto >= 0
         ))) {
-          throw new Error('Los montos de pago deben ser valores positivos o cero.');
+          throw httpError(400, 'Los montos de pago deben ser valores positivos o cero.');
         }
 
         saldoPendiente = Math.max(0, totalNum - totalPagado);
         if (saldoPendiente > 0) {
           if (!esCredito) {
-            throw new Error('El pago no cubre el total. Active la opción de crédito para registrar el saldo pendiente.');
+            throw httpError(400, 'El pago no cubre el total. Active la opción de crédito para registrar el saldo pendiente.');
           }
 
           const cliente = await Cliente.findByPk(orden.clienteId, { transaction });
@@ -384,7 +418,7 @@ export const updateEstado: Handler<Body> = async (req, res, next) => {
             ['222222222', '222222222-0', '222222222222'].includes(cliente.documento || '');
 
           if (esConsumidorFinal) {
-            throw new Error('Debe asignar un cliente registrado para entregar una reparación a crédito.');
+            throw httpError(400, 'Debe asignar un cliente registrado para entregar una reparación a crédito.');
           }
         }
 
@@ -406,7 +440,7 @@ export const updateEstado: Handler<Body> = async (req, res, next) => {
         // Fallback a pago único tradicional
         const metodo = metodoPago || 'efectivo';
         if (!['efectivo', 'nequi', 'daviplata', 'tarjeta', 'transferencia'].includes(metodo)) {
-          throw new Error('Método de pago inválido.');
+          throw httpError(400, 'Método de pago inválido.');
         }
 
         if (metodo === 'efectivo') {
@@ -465,6 +499,9 @@ export const updateEstado: Handler<Body> = async (req, res, next) => {
     }
 
     const valorAnterior = orden.toJSON();
+    if (estado === 'cancelado') {
+      await devolverRepuestosAlCancelar(orden, requireUser(req).userId, transaction);
+    }
     await orden.update({
       estado,
       notificacionEnviada: false // Preparar el hook de Twilio (Fase 10)
@@ -700,7 +737,28 @@ export const removeRepuesto: Handler<Body> = async (req, res, next) => {
 
 // --- SUBIR FOTOGRAFÍAS ---
 
+/** Antes de recibir archivos: la orden existe y es de la sede del usuario (evita archivos huérfanos). */
+export const verificarOrdenParaFotos: Handler<Body> = async (req, res, next) => {
+  try {
+    const orden = await OrdenReparacion.findByPk(req.params.id, { attributes: ['id', 'sedeId'] });
+    if (!orden) return res.status(404).json({ error: 'Orden de reparación no encontrada.' });
+    assertSedeAccess(requireUser(req), orden.sedeId);
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/** Borra del disco las fotos recibidas cuando la petición no termina guardándolas. */
+function descartarArchivos(files: unknown) {
+  if (!Array.isArray(files)) return;
+  for (const file of files as { path?: string }[]) {
+    if (file?.path) fs.promises.unlink(file.path).catch(() => {});
+  }
+}
+
 export const uploadFotos: Handler<Body> = async (req, res, next) => {
+  let guardadas = false;
   try {
     const { id } = req.params;
     const { momento } = req.body; // 'recepcion' o 'entrega'
@@ -731,9 +789,12 @@ export const uploadFotos: Handler<Body> = async (req, res, next) => {
       fotos.push(foto);
     }
 
+    guardadas = true;
     return res.status(201).json(fotos);
   } catch (error) {
     next(error);
+  } finally {
+    if (!guardadas) descartarArchivos(req.files);
   }
 };
 

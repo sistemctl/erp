@@ -8,6 +8,7 @@ import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { requireUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
+import { escapeHtml, safeHref } from '../utils/html.js';
 
 export async function initDashboard(container: HTMLElement) {
   let usuario = requireUsuario();
@@ -85,7 +86,7 @@ export async function initDashboard(container: HTMLElement) {
           <span class="dash-filter__label">Sede</span>
           <select id="filter-sede" class="form-select form-select-sm" aria-label="Filtrar por sede">
             <option value="" ${!initialSede ? 'selected' : ''}>Todas</option>
-            ${sedes.map(s => `<option value="${s.id}" ${String(s.id) === String(initialSede) ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+            ${sedes.map(s => `<option value="${escapeHtml(s.id)}" ${String(s.id) === String(initialSede) ? 'selected' : ''}>${escapeHtml(s.nombre)}</option>`).join('')}
           </select>
         </label>
       ` : ''}
@@ -615,11 +616,11 @@ export async function initDashboard(container: HTMLElement) {
         listEl.innerHTML = filas.map((row) => `
           <li class="dash-window__row">
             <div class="dash-window__row-main">
-              <span class="dash-window__row-primary">${row.primaria || '—'}</span>
-              <span class="dash-window__row-secondary">${row.secundaria || ''}</span>
+              <span class="dash-window__row-primary">${escapeHtml(row.primaria || '—')}</span>
+              <span class="dash-window__row-secondary">${escapeHtml(row.secundaria || '')}</span>
             </div>
             ${row.monto !== null && row.monto !== undefined
-              ? `<span class="dash-window__row-monto">${formatWindowMonto(row)}</span>`
+              ? `<span class="dash-window__row-monto">${escapeHtml(formatWindowMonto(row))}</span>`
               : ''}
           </li>
         `).join('');
@@ -695,10 +696,10 @@ export async function initDashboard(container: HTMLElement) {
         alertsEl.innerHTML = alertas.map((a) => `
           <button type="button"
             class="dash-bitacora__chip${a.tipo === 'stock_bajo' ? ' dash-bitacora__chip--alert' : ''}"
-            data-dash-window="${a.detalleTipo}"
+            data-dash-window="${escapeHtml(a.detalleTipo)}"
             aria-haspopup="dialog">
-            <span class="dash-bitacora__chip-key">${a.clave || ''}</span>
-            <span class="dash-bitacora__chip-label">${a.label}</span>
+            <span class="dash-bitacora__chip-key">${escapeHtml(a.clave || '')}</span>
+            <span class="dash-bitacora__chip-label">${escapeHtml(a.label)}</span>
           </button>
         `).join('');
         bindDashWindows(alertsEl);
@@ -731,15 +732,15 @@ export async function initDashboard(container: HTMLElement) {
       const hora = formatBitacoraHora(ev.cuando);
       return `
         <li>
-          <a href="${ev.href || '#/dashboard'}" class="dash-bitacora__row">
-            <span class="dash-bitacora__clave" aria-hidden="true">${ev.clave || '—'}</span>
+          <a href="${safeHref(ev.href, '#/dashboard')}" class="dash-bitacora__row">
+            <span class="dash-bitacora__clave" aria-hidden="true">${escapeHtml(ev.clave || '—')}</span>
             <span class="dash-bitacora__body">
-              <span class="dash-bitacora__titulo">${ev.titulo || '—'}</span>
-              <span class="dash-bitacora__detalle">${ev.detalle || ''}</span>
+              <span class="dash-bitacora__titulo">${escapeHtml(ev.titulo || '—')}</span>
+              <span class="dash-bitacora__detalle">${escapeHtml(ev.detalle || '')}</span>
             </span>
             <span class="dash-bitacora__meta">
               ${monto}
-              <time class="dash-bitacora__hora" datetime="${ev.cuando || ''}">${hora}</time>
+              <time class="dash-bitacora__hora" datetime="${escapeHtml(ev.cuando || '')}">${hora}</time>
             </span>
           </a>
         </li>
@@ -933,7 +934,7 @@ export async function initDashboard(container: HTMLElement) {
         <li class="dash-analisis__rank-row">
           <span class="dash-analisis__rank-idx">${String(i + 1).padStart(2, '0')}</span>
           <span class="dash-analisis__rank-body">
-            <span class="dash-analisis__rank-name" title="${row.nombre}">${row.nombre}</span>
+            <span class="dash-analisis__rank-name" title="${escapeHtml(row.nombre)}">${escapeHtml(row.nombre)}</span>
             <span class="dash-analisis__rank-track" aria-hidden="true">
               <span class="dash-analisis__rank-fill" style="width:${barW}%"></span>
             </span>
@@ -1037,9 +1038,9 @@ export async function initDashboard(container: HTMLElement) {
             <tr>
               <td class="text-nowrap">${new Date(p.fecha).toLocaleDateString('es-CO')}</td>
               <td><code class="small">${p.ordenRef}</code></td>
-              <td class="text-truncate" style="max-width:140px" title="${p.proveedor}">${p.proveedor}</td>
-              <td><span class="badge" style="background:${ORIGEN_COLORS[p.fuenteFondos] || '#64748b'}20;color:${ORIGEN_COLORS[p.fuenteFondos] || '#64748b'}">${p.fuenteLabel}</span></td>
-              <td class="small text-secondary text-truncate" style="max-width:120px" title="${[p.pagadoPor, p.referencia].filter(Boolean).join(' — ')}">${[p.pagadoPor, p.referencia].filter(Boolean).join(' · ') || '—'}</td>
+              <td class="text-truncate" style="max-width:140px" title="${escapeHtml(p.proveedor)}">${escapeHtml(p.proveedor)}</td>
+              <td><span class="badge" style="background:${ORIGEN_COLORS[p.fuenteFondos] || '#64748b'}20;color:${ORIGEN_COLORS[p.fuenteFondos] || '#64748b'}">${escapeHtml(p.fuenteLabel)}</span></td>
+              <td class="small text-secondary text-truncate" style="max-width:120px" title="${escapeHtml([p.pagadoPor, p.referencia].filter(Boolean).join(' — '))}">${escapeHtml([p.pagadoPor, p.referencia].filter(Boolean).join(' · ') || '—')}</td>
               <td class="text-end fw-bold text-danger text-nowrap">${formatterCOP.format(p.monto)}</td>
             </tr>
           `).join('')
@@ -1052,9 +1053,9 @@ export async function initDashboard(container: HTMLElement) {
         ? detalleEgresos.map((e) => `
             <tr>
               <td class="text-nowrap">${new Date(e.fecha).toLocaleDateString('es-CO')}</td>
-              <td><span class="badge bg-secondary-lt">${e.categoria}</span></td>
-              <td class="text-truncate" style="max-width:180px" title="${e.motivo}">${e.motivo}</td>
-              <td class="small">${e.usuario}</td>
+              <td><span class="badge bg-secondary-lt">${escapeHtml(e.categoria)}</span></td>
+              <td class="text-truncate" style="max-width:180px" title="${escapeHtml(e.motivo)}">${escapeHtml(e.motivo)}</td>
+              <td class="small">${escapeHtml(e.usuario)}</td>
               <td class="text-end fw-bold text-danger text-nowrap">${formatterCOP.format(e.monto)}</td>
             </tr>
           `).join('')

@@ -18,12 +18,13 @@ interface ItemVentaAttributes {
   iva: string | number;
   ivaTotal: string | number | null;
   subtotal: string | number;
+  costoUnitario: string | number | null;
   autorizadoPorAdmin: boolean | null;
   cantidadDevuelta: number;
   createdAt: Date;
   updatedAt: Date;
 }
-type ItemVentaCreation = Optional<ItemVentaAttributes, 'id' | 'numeroSerieId' | 'cantidad' | 'precioBase' | 'precioModificado' | 'descuentoPct' | 'iva' | 'ivaTotal' | 'subtotal' | 'autorizadoPorAdmin' | 'cantidadDevuelta' | 'createdAt' | 'updatedAt'>;
+type ItemVentaCreation = Optional<ItemVentaAttributes, 'id' | 'numeroSerieId' | 'cantidad' | 'precioBase' | 'precioModificado' | 'descuentoPct' | 'iva' | 'ivaTotal' | 'subtotal' | 'costoUnitario' | 'autorizadoPorAdmin' | 'cantidadDevuelta' | 'createdAt' | 'updatedAt'>;
 interface ItemVenta extends Model<ItemVentaAttributes, ItemVentaCreation>, ItemVentaAttributes {
   venta?: Venta | null;
   producto?: Producto | null;
@@ -84,6 +85,12 @@ const ItemVenta = sequelize.define<ItemVenta, Omit<ItemVentaAttributes, 'created
     type: DataTypes.DECIMAL(15, 2),
     allowNull: false,
     defaultValue: 0.00
+  },
+  // Costo unitario del producto al momento de la venta. La rentabilidad lo usa en vez
+  // del costo actual; NULL en ventas anteriores a esta columna (se usa el costo actual).
+  costoUnitario: {
+    type: DataTypes.DECIMAL(15, 2),
+    allowNull: true
   },
   autorizadoPorAdmin: {
     type: DataTypes.BOOLEAN,

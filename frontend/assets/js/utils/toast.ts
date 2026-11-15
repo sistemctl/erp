@@ -1,3 +1,4 @@
+import { escapeHtml } from './html.js';
 /**
  * Premium Toast Notification system for ERP TechStore
  */
@@ -34,8 +35,8 @@ export function showToast(title: string, message: unknown, type: ToastType = 'su
       <i class="ti ${iconClass}" style="font-size: 1.5rem;"></i>
     </div>
     <div class="premium-toast-content">
-      <div class="premium-toast-title">${title}</div>
-      <div class="premium-toast-msg">${message}</div>
+      <div class="premium-toast-title">${escapeHtml(title)}</div>
+      <div class="premium-toast-msg">${escapeHtml(message)}</div>
     </div>
   `;
 
@@ -72,8 +73,8 @@ export function showConfirm(title: string, message: string): Promise<boolean> {
           <i class="ti ti-alert-circle" style="font-size: 2rem;"></i>
         </div>
         <div class="premium-confirm-content text-center mb-4">
-          <div class="premium-confirm-title mb-1">${title}</div>
-          <div class="premium-confirm-msg">${message}</div>
+          <div class="premium-confirm-title mb-1">${escapeHtml(title)}</div>
+          <div class="premium-confirm-msg">${escapeHtml(message)}</div>
         </div>
         <div class="premium-confirm-actions d-flex justify-content-end w-100">
           <button id="btn-confirm-cancel" class="btn btn-link link-secondary me-2">Cancelar</button>

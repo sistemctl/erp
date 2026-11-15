@@ -1,5 +1,5 @@
 import type { SedeDTO, SessionUser } from '../../../../shared/contracts';
-interface VentaMargen { estado: string; total: string; numeroVenta: string; createdAt: string; sede?: { nombre: string } | null; cliente?: { nombre: string } | null; usuario?: { nombre: string } | null; items?: { cantidad: number; producto?: { nombre: string; precioCosto: string } | null }[]; }
+interface VentaMargen { estado: string; total: string; numeroVenta: string; createdAt: string; sede?: { nombre: string } | null; cliente?: { nombre: string } | null; usuario?: { nombre: string } | null; items?: { cantidad: number; cantidadDevuelta?: number | null; subtotal?: string | number | null; costoUnitario?: string | number | null; producto?: { nombre: string; precioCosto: string; esServicio?: boolean } | null }[]; }
 interface OrdenMargen { numeroOrden: string; createdAt: string; updatedAt: string; estado: string; tipoEquipo?: string; marca?: string; modelo?: string; costoManoObra?: string; costoRepuestos?: string; costoMateriales?: string; totalCobrado: string; tecnico?: { nombre: string } | null; sede?: { nombre: string } | null; cliente?: { nombre: string } | null; }
 interface ReparacionMargen { orden?: OrdenMargen | null; totalCobrado: string; costoReal: string; }
 interface CajaMargen { tipo: string; tipoClass: string; referencia: string; fecha: Date; sede: string; cliente: string; costo: number; total: number; margen: number; }
@@ -9,6 +9,31 @@ import { watchDataChanges } from '../utils/live-data.js';
 import { apiFetch } from '../api.js';
 import { requireUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
+import { escapeHtml } from '../utils/html.js';
+
+/**
+ * Margen de una venta sin IVA (el IVA no es ingreso del negocio) y descontando
+ * las unidades devueltas. El costo es el guardado en la venta; en ventas antiguas
+ * (o de productos que no tenían costo) se usa el costo actual del producto.
+ */
+function margenVenta(v: VentaMargen) {
+  let ingreso = 0;
+  let costo = 0;
+  for (const item of v.items || []) {
+    const cantidad = parseInt(String(item.cantidad || 0), 10) || 0;
+    if (cantidad <= 0) continue;
+    const devuelta = Math.min(cantidad, parseInt(String(item.cantidadDevuelta || 0), 10) || 0);
+    const neta = cantidad - devuelta;
+    const subtotal = parseFloat(String(item.subtotal ?? 0)) || 0;
+    ingreso += (subtotal / cantidad) * neta;
+    const costoVenta = parseFloat(String(item.costoUnitario ?? ''));
+    const costoUnitario = costoVenta > 0 ? costoVenta : (parseFloat(String(item.producto ? item.producto.precioCosto : 0)) || 0);
+    costo += costoUnitario * neta;
+  }
+  ingreso = Math.round(ingreso * 100) / 100;
+  costo = Math.round(costo * 100) / 100;
+  return { ingreso, costo, margen: Math.round((ingreso - costo) * 100) / 100 };
+}
 
 export async function initRentabilidad(container: HTMLElement) {
   const usuario = requireUsuario();
@@ -152,7 +177,7 @@ export async function initRentabilidad(container: HTMLElement) {
             <label class="rentab-filters__label" for="filtro-tecnico">Técnico</label>
             <select id="filtro-tecnico" class="form-select">
               <option value="">Todos</option>
-              ${tecnicos.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+              ${tecnicos.map(t => `<option value="${t.id}">${escapeHtml(t.nombre)}</option>`).join('')}
             </select>
           </div>
           <div class="rentab-filters__field">
@@ -209,14 +234,14 @@ export async function initRentabilidad(container: HTMLElement) {
             <label class="rentab-filters__label" for="filtro-sede">Sede</label>
             <select id="filtro-sede" class="form-select">
               <option value="">Todas</option>
-              ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+              ${sedes.map(s => `<option value="${s.id}">${escapeHtml(s.nombre)}</option>`).join('')}
             </select>
           </div>
           <div class="rentab-filters__field rentab-filters__field--wide">
             <label class="rentab-filters__label" for="filtro-vendedor">Vendedor</label>
             <select id="filtro-vendedor" class="form-select">
               <option value="">Todos</option>
-              ${vendedores.map(v => `<option value="${v.id}">${v.nombre} (${v.rol})</option>`).join('')}
+              ${vendedores.map(v => `<option value="${v.id}">${escapeHtml(v.nombre)} (${v.rol})</option>`).join('')}
             </select>
           </div>
           <div class="rentab-filters__field">
@@ -257,7 +282,7 @@ export async function initRentabilidad(container: HTMLElement) {
                   <th>Artículos</th>
                   <th>Vendedor</th>
                   <th class="text-end">Costo</th>
-                  <th class="text-end">Total venta</th>
+                  <th class="text-end" title="Total vendido sin IVA y descontando devoluciones">Venta neta</th>
                   <th class="text-end">Margen</th>
                   <th>Margen %</th>
                 </tr>
@@ -274,7 +299,7 @@ export async function initRentabilidad(container: HTMLElement) {
             <label class="rentab-filters__label" for="filtro-sede-caja">Sede</label>
             <select id="filtro-sede-caja" class="form-select">
               <option value="">Todas</option>
-              ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+              ${sedes.map(s => `<option value="${s.id}">${escapeHtml(s.nombre)}</option>`).join('')}
             </select>
           </div>
           <div class="rentab-filters__field">
@@ -420,10 +445,10 @@ export async function initRentabilidad(container: HTMLElement) {
 
         return `
           <tr style="--rentab-row:${i}">
-            <td><strong class="rentab-ref">${orden?.numeroOrden || 'N/A'}</strong></td>
+            <td><strong class="rentab-ref">${escapeHtml(orden?.numeroOrden || 'N/A')}</strong></td>
             <td class="rentab-muted">${orden?.createdAt ? new Date(orden?.createdAt).toLocaleDateString('es-CO') : '—'}</td>
-            <td>${[orden?.tipoEquipo, orden?.marca, orden?.modelo].filter(Boolean).join(' ') || '—'}</td>
-            <td>${orden?.tecnico ? orden?.tecnico.nombre : '—'}</td>
+            <td>${escapeHtml([orden?.tipoEquipo, orden?.marca, orden?.modelo].filter(Boolean).join(' ') || '—')}</td>
+            <td>${escapeHtml(orden?.tecnico ? orden?.tecnico.nombre : '—')}</td>
             <td class="text-end rentab-num">${formatter.format(manoObra)}</td>
             <td class="text-end rentab-num rentab-num--cost">${formatter.format(costoRepuestos)}</td>
             <td class="text-end rentab-num rentab-num--ink">${formatter.format(cobrado)}</td>
@@ -442,7 +467,7 @@ export async function initRentabilidad(container: HTMLElement) {
         margenLabel: 'Margen neto'
       });
     } catch (err) {
-      tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="rentab-table__empty text-danger">Error al cargar: ${errorMessage(err)}</td></tr>`;
+      tbodyReparaciones.innerHTML = `<tr><td colspan="9" class="rentab-table__empty text-danger">Error al cargar: ${escapeHtml(errorMessage(err))}</td></tr>`;
       kpisReparaciones.innerHTML = '';
     }
   }
@@ -478,15 +503,12 @@ export async function initRentabilidad(container: HTMLElement) {
       let totalMargenAcum = 0;
 
       tbodyVentas.innerHTML = ventasValidas.map((v, i) => {
-        const totalVenta = parseFloat(String(v.total || 0));
-        let costoVenta = 0;
+        const { ingreso: totalVenta, costo: costoVenta, margen } = margenVenta(v);
         const itemsInfo = (v.items || []).map(item => {
-          const costoUnit = parseFloat(String(item.producto ? item.producto.precioCosto : 0));
-          costoVenta += costoUnit * parseInt(String(item.cantidad || 0), 10);
-          return `${item.cantidad}× ${item.producto ? item.producto.nombre : 'N/A'}`;
+          const devuelta = parseInt(String(item.cantidadDevuelta || 0), 10) || 0;
+          return `${item.cantidad}× ${item.producto ? item.producto.nombre : 'N/A'}${devuelta > 0 ? ` (dev. ${devuelta})` : ''}`;
         }).join(', ');
 
-        const margen = totalVenta - costoVenta;
         const pctMargen = totalVenta > 0 ? (margen / totalVenta) * 100 : 0;
 
         totalVentasAcum += totalVenta;
@@ -495,12 +517,12 @@ export async function initRentabilidad(container: HTMLElement) {
 
         return `
           <tr style="--rentab-row:${i}">
-            <td><strong class="rentab-ref">${v.numeroVenta || 'N/A'}</strong></td>
+            <td><strong class="rentab-ref">${escapeHtml(v.numeroVenta || 'N/A')}</strong></td>
             <td class="rentab-muted">${v.createdAt ? new Date(v.createdAt).toLocaleDateString('es-CO') : '—'}</td>
-            <td>${v.sede ? v.sede.nombre : '—'}</td>
-            <td>${v.cliente ? v.cliente.nombre : 'Cliente general'}</td>
-            <td class="rentab-items" title="${itemsInfo}">${itemsInfo || '—'}</td>
-            <td>${v.usuario ? v.usuario.nombre : '—'}</td>
+            <td>${escapeHtml(v.sede ? v.sede.nombre : '—')}</td>
+            <td>${escapeHtml(v.cliente ? v.cliente.nombre : 'Cliente general')}</td>
+            <td class="rentab-items" title="${escapeHtml(itemsInfo)}">${escapeHtml(itemsInfo || '—')}</td>
+            <td>${escapeHtml(v.usuario ? v.usuario.nombre : '—')}</td>
             <td class="text-end rentab-num rentab-num--cost">${formatter.format(costoVenta)}</td>
             <td class="text-end rentab-num rentab-num--ink">${formatter.format(totalVenta)}</td>
             <td class="text-end rentab-num ${margen >= 0 ? 'rentab-num--gain' : 'rentab-num--loss'}">${formatter.format(margen)}</td>
@@ -518,7 +540,7 @@ export async function initRentabilidad(container: HTMLElement) {
         margenLabel: 'Margen neto'
       });
     } catch (err) {
-      tbodyVentas.innerHTML = `<tr><td colspan="10" class="rentab-table__empty text-danger">Error al cargar: ${errorMessage(err)}</td></tr>`;
+      tbodyVentas.innerHTML = `<tr><td colspan="10" class="rentab-table__empty text-danger">Error al cargar: ${escapeHtml(errorMessage(err))}</td></tr>`;
       kpisVentas.innerHTML = '';
     }
   }
@@ -567,13 +589,7 @@ export async function initRentabilidad(container: HTMLElement) {
       let totalMargen = 0;
 
       ventasValidas.forEach(v => {
-        const totalVenta = parseFloat(String(v.total || 0));
-        let costoVenta = 0;
-        (v.items || []).forEach(item => {
-          const costoUnit = parseFloat(String(item.producto ? item.producto.precioCosto : 0));
-          costoVenta += costoUnit * parseInt(String(item.cantidad || 0), 10);
-        });
-        const margen = totalVenta - costoVenta;
+        const { ingreso: totalVenta, costo: costoVenta, margen } = margenVenta(v);
         totalIngresos += totalVenta;
         totalCostos += costoVenta;
         totalMargen += margen;
@@ -637,10 +653,10 @@ export async function initRentabilidad(container: HTMLElement) {
         return `
           <tr style="--rentab-row:${i}">
             <td><span class="rentab-tipo ${item.tipoClass}">${item.tipo}</span></td>
-            <td><strong class="rentab-ref">${item.referencia}</strong></td>
+            <td><strong class="rentab-ref">${escapeHtml(item.referencia)}</strong></td>
             <td class="rentab-muted">${item.fecha.toLocaleDateString('es-CO')}</td>
-            <td>${item.sede}</td>
-            <td>${item.cliente}</td>
+            <td>${escapeHtml(item.sede)}</td>
+            <td>${escapeHtml(item.cliente)}</td>
             <td class="text-end rentab-num rentab-num--cost">${formatter.format(item.costo)}</td>
             <td class="text-end rentab-num rentab-num--ink">${formatter.format(item.total)}</td>
             <td class="text-end rentab-num ${item.margen >= 0 ? 'rentab-num--gain' : 'rentab-num--loss'}">${formatter.format(item.margen)}</td>
@@ -658,7 +674,7 @@ export async function initRentabilidad(container: HTMLElement) {
         margenLabel: 'Margen neto'
       });
     } catch (err) {
-      tbodyCaja.innerHTML = `<tr><td colspan="9" class="rentab-table__empty text-danger">Error al cargar: ${errorMessage(err)}</td></tr>`;
+      tbodyCaja.innerHTML = `<tr><td colspan="9" class="rentab-table__empty text-danger">Error al cargar: ${escapeHtml(errorMessage(err))}</td></tr>`;
       kpisCaja.innerHTML = '';
     }
   }

@@ -1,14 +1,14 @@
 import type { Handler } from '../types/controller';
 import { requireUser } from '../utils/request-user';
 import { transactionFinished } from '../utils/transaction-state';
-import type { Attributes, CreationAttributes, WhereOptions, WhereAttributeHash, IncludeOptions } from 'sequelize';
+import type { Attributes, CreationAttributes, WhereOptions, WhereAttributeHash, IncludeOptions, Transaction } from 'sequelize';
 import type ProductModel = require('../models/Producto');
 import type SerieModel = require('../models/NumeroSerie');
 import type CategoriaModel = require('../models/Categoria');
-type Body = CreationAttributes<ProductModel> & { componentes?: unknown; ajusteStock?: number | string | null; sedeId?: string; reasignarA?: string };
+type Body = CreationAttributes<ProductModel> & { componentes?: unknown; ajusteStock?: number | string | null; stockEsperado?: number | string | null; sedeId?: string; reasignarA?: string };
 import models = require('../models');
 const { Producto, Categoria, Sede, StockSede, NumeroSerie, MovimientoInventario, ComboComponente, sequelize } = models;
-const { ItemOrdenCompra, ItemVenta, MaterialInstalacion, RepuestoOrden } = models;
+const { ItemOrdenCompra, ItemVenta, MaterialInstalacion, RepuestoOrden, OrdenCompra } = models;
 import { Op } from 'sequelize';
 import { generateInternalBarcode, normalizeCodigoBarras } from '../utils/internal-barcode';
 import { normalizeUnidadMedida } from '../utils/unidad-medida';
@@ -30,6 +30,18 @@ const comboInclude: IncludeOptions = {
 };
 
 // --- CRUD PRODUCTOS ---
+
+/** Cuenta registros que dependen de la unidad y el tipo de un producto (stock, compras, ventas, etc.). */
+async function productoTieneHistorial(id: string, transaction: Transaction) {
+  const references = await Promise.all([
+    StockSede.count({ where: { productoId: id, cantidad: { [Op.ne]: 0 } }, transaction }),
+    ItemOrdenCompra.count({ where: { productoId: id }, transaction }), ItemVenta.count({ where: { productoId: id }, transaction }),
+    MaterialInstalacion.count({ where: { productoId: id }, transaction }), RepuestoOrden.count({ where: { productoId: id }, transaction }),
+    MovimientoInventario.count({ where: { productoId: id }, transaction }), NumeroSerie.count({ where: { productoId: id }, transaction }),
+    ComboComponente.count({ where: { productoId: id }, transaction })
+  ]);
+  return references.some(count => count > 0);
+}
 
 export const getProductos: Handler<Body> = async (req, res, next) => {
   try {
@@ -104,6 +116,19 @@ export const createProducto: Handler<Body> = async (req, res, next) => {
         await transaction.rollback();
         return res.status(400).json({ error: 'El código de barras ya está asignado a otro producto activo.' });
       } else {
+        // Un producto eliminado con historial conserva su unidad y tipo: cambiarlos al
+        // reactivarlo reinterpretaría stock, compras y ventas antiguas.
+        const nuevoTieneSerie = (esServicio || combo) ? false : !!tieneNumeroSerie;
+        const cambiaEstructura = normalizeUnidadMedida(existe.unidadMedida) !== unidad
+          || !!existe.tieneNumeroSerie !== nuevoTieneSerie
+          || !!existe.esServicio !== (combo ? false : !!esServicio)
+          || !!existe.esCombo !== combo;
+        if (cambiaEstructura && await productoTieneHistorial(existe.id, transaction)) {
+          await transaction.rollback();
+          return res.status(409).json({
+            error: `Ya existe un producto eliminado con este código ("${existe.nombre}") que tiene historial con otra unidad o tipo. Use otro código de barras o reactívelo con la misma unidad (${normalizeUnidadMedida(existe.unidadMedida)}) y tipo.`
+          });
+        }
         // Restaurarlo y actualizarlo con la nueva información
         await existe.update({
           nombre,
@@ -131,7 +156,7 @@ export const createProducto: Handler<Body> = async (req, res, next) => {
         // Garantizar que tiene sus registros de StockSede inicializados
         const sedes = await Sede.findAll();
         for (const sede of sedes) {
-          const stockReg = await StockSede.findOne({ where: { productoId: existe.id, sedeId: sede.id }, transaction });
+          const stockReg = await StockSede.findOne({ where: { productoId: existe.id, sedeId: sede.id }, transaction, lock: transaction.LOCK.UPDATE });
           if (!stockReg) {
             await StockSede.create({
               productoId: existe.id,
@@ -228,7 +253,7 @@ export const updateProducto: Handler<Body> = async (req, res, next) => {
       }
     }
 
-    const { ajusteStock, sedeId, componentes, ...productData } = req.body;
+    const { ajusteStock, stockEsperado, sedeId, componentes, ...productData } = req.body;
     const combo = productData.esCombo !== undefined ? !!productData.esCombo : !!producto.esCombo;
     const comboData = combo
       ? await validateComboComponents({ comboId: id, componentes, transaction })
@@ -268,13 +293,7 @@ export const updateProducto: Handler<Body> = async (req, res, next) => {
     if (productData.unidadMedida !== undefined) {
       productData.unidadMedida = normalizeUnidadMedida(productData.unidadMedida);
       if (productData.unidadMedida !== normalizeUnidadMedida(producto.unidadMedida)) {
-        const references = await Promise.all([
-          StockSede.count({ where: { productoId: id, cantidad: { [Op.ne]: 0 } }, transaction }),
-          ItemOrdenCompra.count({ where: { productoId: id }, transaction }), ItemVenta.count({ where: { productoId: id }, transaction }),
-          MaterialInstalacion.count({ where: { productoId: id }, transaction }), RepuestoOrden.count({ where: { productoId: id }, transaction }),
-          MovimientoInventario.count({ where: { productoId: id }, transaction }), NumeroSerie.count({ where: { productoId: id }, transaction })
-        ]);
-        if (usadoComoComponente || references.some(count => count > 0)) throw httpError(400, 'No cambie la unidad de un producto con existencias o historial: no se conoce la longitud real de los registros antiguos. Cree un producto con la unidad correcta.');
+        if (usadoComoComponente || await productoTieneHistorial(id, transaction)) throw httpError(400, 'No cambie la unidad de un producto con existencias o historial: no se conoce la longitud real de los registros antiguos. Cree un producto con la unidad correcta.');
       }
     }
     try {
@@ -290,13 +309,29 @@ export const updateProducto: Handler<Body> = async (req, res, next) => {
         return res.status(400).json({ error: 'La cantidad de existencias debe ser un número mayor o igual a 0.' });
       }
 
-      const [stockSede] = await StockSede.findOrCreate({
+      await StockSede.findOrCreate({
         where: { productoId: id, sedeId },
         defaults: { productoId: id, sedeId, cantidad: 0 },
         transaction
       });
+      const stockSede = await StockSede.findOne({
+        where: { productoId: id, sedeId },
+        transaction,
+        lock: transaction.LOCK.UPDATE
+      });
+      if (!stockSede) throw httpError(409, 'No se pudo leer el stock de la sede.');
 
       const cantidadAnterior = parseInt(String(stockSede.cantidad), 10);
+      // Si el formulario indica el stock que vio el usuario y ya no coincide (hubo ventas,
+      // compras o traslados mientras editaba), se rechaza para no pisar movimientos reales.
+      if (stockEsperado !== undefined && stockEsperado !== null && stockEsperado !== ''
+        && Number(stockEsperado) !== cantidadAnterior) {
+        await transaction.rollback();
+        return res.status(409).json({
+          error: `El stock cambió mientras editaba (antes ${Number(stockEsperado)}, ahora ${cantidadAnterior}). Recargue el producto y vuelva a ajustar.`,
+          stockActual: cantidadAnterior
+        });
+      }
       if (cantidadAnterior !== stockNuevo) {
         await stockSede.update({ cantidad: stockNuevo }, { transaction });
 
@@ -341,41 +376,117 @@ export const updateProducto: Handler<Body> = async (req, res, next) => {
 };
 
 export const deleteProducto: Handler<Body> = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
   try {
     const { id } = req.params;
-    const producto = await Producto.findByPk(id);
+    const producto = await Producto.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
 
     if (!producto) {
+      await transaction.rollback();
       return res.status(404).json({ error: 'Producto no encontrado.' });
     }
 
-    const usadoEnCombo = await ComboComponente.findOne({
+    // El producto puede ser COMPONENTE de un combo (no ser él mismo un combo): si se
+    // eliminara, el combo quedaría incompleto. Se indica cuál y cómo resolverlo.
+    const usosEnCombo = await ComboComponente.findAll({
       where: { productoId: id },
-      include: [{ model: Producto, as: 'combo', where: { activo: true }, attributes: ['nombre'] }]
+      include: [{ model: Producto, as: 'combo', where: { activo: true }, attributes: ['id', 'nombre'] }],
+      transaction
     });
-    if (usadoEnCombo) {
-      return res.status(400).json({
-        error: `No se puede eliminar porque forma parte del combo ${usadoEnCombo.combo?.nombre || 'activo'}.`
+    if (usosEnCombo.length) {
+      await transaction.rollback();
+      const combos = usosEnCombo.map(uso => ({ id: uso.combo?.id, nombre: uso.combo?.nombre || 'combo' }));
+      const nombres = combos.map(c => `"${c.nombre}"`).join(', ');
+      return res.status(409).json({
+        error: `"${producto.nombre}" es uno de los componentes del combo ${nombres}. Quítelo de ese combo (o elimine el combo) y luego podrá eliminarlo.`,
+        code: 'PRODUCTO_EN_COMBO',
+        combos
       });
     }
 
+    // Un producto con seriales en stock o compras por recibir no puede desaparecer del
+    // inventario. Si solo tiene existencias, un admin puede confirmar darlas de baja:
+    // cada sede queda en 0 y la salida se registra en el kardex.
+    const stocksADarDeBaja: InstanceType<typeof StockSede>[] = [];
+    if (!producto.esCombo && !producto.esServicio) {
+      const seriesEnStock = await NumeroSerie.count({ where: { productoId: id, estado: 'en_stock' }, transaction });
+      if (seriesEnStock > 0) {
+        await transaction.rollback();
+        return res.status(409).json({ error: `No se puede eliminar: tiene ${seriesEnStock} serial(es)/IMEI en stock. Véndalos, devuélvalos al proveedor o elimínelos desde la gestión de seriales.` });
+      }
+      const stocks = await StockSede.findAll({
+        where: { productoId: id, cantidad: { [Op.ne]: 0 } },
+        include: [{ model: Sede, as: 'sede', attributes: ['nombre'] }],
+        transaction,
+        lock: { level: transaction.LOCK.UPDATE, of: StockSede }
+      });
+      const stockTotal = stocks.reduce((total, stock) => total + (parseInt(String(stock.cantidad), 10) || 0), 0);
+      if (stocks.length) {
+        const darDeBaja = ['1', 'true'].includes(String(req.query.darDeBaja || ''));
+        const puedeDarDeBaja = ['admin', 'superadmin'].includes(requireUser(req).rol);
+        if (!darDeBaja || !puedeDarDeBaja) {
+          await transaction.rollback();
+          const sedes = stocks.map(stock => ({ sede: stock.sede?.nombre || 'Sede', cantidad: parseInt(String(stock.cantidad), 10) || 0 }));
+          return res.status(409).json({
+            error: puedeDarDeBaja
+              ? `"${producto.nombre}" tiene ${stockTotal} unidad(es) en inventario.`
+              : `No se puede eliminar: el producto tiene ${stockTotal} unidad(es) en inventario. Pida a un administrador que lo elimine (dará de baja el stock) o ajuste el stock a 0.`,
+            code: puedeDarDeBaja ? 'PRODUCTO_CON_STOCK' : undefined,
+            stockTotal,
+            sedes
+          });
+        }
+        stocksADarDeBaja.push(...stocks);
+      }
+    }
+    const pendientes = await ItemOrdenCompra.count({
+      where: { productoId: id, cantidadRecibida: { [Op.lt]: sequelize.col('cantidadPedida') } },
+      include: [{ model: OrdenCompra, as: 'ordenCompra', where: { estado: { [Op.in]: ['pendiente', 'parcial'] } }, attributes: [] }],
+      transaction
+    });
+    if (pendientes > 0) {
+      await transaction.rollback();
+      return res.status(409).json({ error: 'No se puede eliminar: hay órdenes de compra pendientes de recibir con este producto.' });
+    }
+
     const valorAnterior = producto.toJSON();
-    
+
+    const stockDadoDeBaja: { sedeId: string; sede: string; cantidad: number }[] = [];
+    for (const stock of stocksADarDeBaja) {
+      const cantidadAnterior = parseInt(String(stock.cantidad), 10) || 0;
+      stockDadoDeBaja.push({ sedeId: stock.sedeId, sede: stock.sede?.nombre || 'Sede', cantidad: cantidadAnterior });
+      await stock.update({ cantidad: 0 }, { transaction });
+      await MovimientoInventario.create({
+        productoId: id,
+        sedeId: stock.sedeId,
+        tipo: cantidadAnterior > 0 ? 'salida' : 'entrada',
+        cantidad: Math.abs(cantidadAnterior),
+        motivo: `Baja de stock por eliminación del producto (${requireUser(req).rol})`,
+        usuarioId: requireUser(req).userId
+      }, { transaction });
+    }
+
     // Eliminación lógica
-    await producto.update({ activo: false });
+    await producto.update({ activo: false }, { transaction });
+    await transaction.commit();
 
     if (req.logAudit) {
       await req.logAudit({
         accion: 'DELETE',
         modulo: 'Productos',
         registroId: id,
-        valorAnterior
+        valorAnterior,
+        valorNuevo: stockDadoDeBaja.length ? { activo: false, stockDadoDeBaja } : { activo: false }
       });
     }
 
-    return res.json({ message: 'Producto eliminado exitosamente.' });
+    return res.json({ message: 'Producto eliminado exitosamente.', stockDadoDeBaja });
   } catch (error) {
+    if (!transactionFinished(transaction)) await transaction.rollback();
     next(error);
+  } finally {
+    if (!transactionFinished(transaction)) await transaction.rollback();
   }
 };
 
@@ -496,10 +607,16 @@ export const importarCSV: Handler<Body> = async (req, res, next) => {
       }
 
       // Buscar o crear la categoría
-      let categoria = await Categoria.findOne({ where: { nombre: row.categoriaNombre } });
+      // Dentro de la transacción (ve las categorías creadas en filas anteriores) y sin
+      // distinguir mayúsculas/espacios, para no crear "Cables" 50 veces.
+      const nombreCategoria = row.categoriaNombre.trim();
+      let categoria = await Categoria.findOne({
+        where: sequelize.where(sequelize.fn('lower', sequelize.fn('trim', sequelize.col('nombre'))), nombreCategoria.toLowerCase()),
+        transaction
+      });
       if (!categoria) {
         categoria = await Categoria.create({
-          nombre: row.categoriaNombre,
+          nombre: nombreCategoria,
           descripcion: 'Categoría auto-creada por importación masiva'
         }, { transaction });
       }
@@ -538,6 +655,17 @@ export const importarCSV: Handler<Body> = async (req, res, next) => {
           productoId: producto.id,
           sedeId: sede.id,
           cantidad: sede.id === sedeDestinoId ? stockInicial : 0
+        }, { transaction });
+      }
+      if (stockInicial > 0 && !esServicioBool) {
+        // El stock inicial queda trazado en el kardex como cualquier otra entrada.
+        await MovimientoInventario.create({
+          productoId: producto.id,
+          sedeId: sedeDestinoId,
+          tipo: 'entrada',
+          cantidad: stockInicial,
+          motivo: 'Stock inicial por importación CSV',
+          usuarioId: requireUser(req).userId
         }, { transaction });
       }
 

@@ -1,3 +1,4 @@
+import { escapeHtml } from '../utils/html.js';
 import { apiRequired } from '../utils/api-required.js';
 import { requireSelector } from '../utils/dom.js';
 import type { ConfigSistema, SedeConfig, UsuarioConfig, UsuarioEditor, NotificacionConfig } from '../types/config.js';
@@ -629,7 +630,7 @@ export async function initConfig(container: HTMLElement) {
         <label class="form-check form-switch m-0" title="${medio.activo ? 'Disponible para cobrar' : 'Oculto para nuevos cobros'}">
           <input class="form-check-input cfg-medio-activo" type="checkbox" data-id="${medio.id}" ${medio.activo ? 'checked' : ''}>
         </label>
-        <span class="small fw-semibold">${medio.nombre}</span>
+        <span class="small fw-semibold">${escapeHtml(medio.nombre)}</span>
         ${medio.fijo ? '<span class="text-secondary small">Base</span>' : `<button type="button" class="btn btn-ghost-danger btn-icon btn-sm btn-eliminar-medio" data-id="${medio.id}" title="Eliminar método"><i class="ti ti-trash"></i></button>`}
       </div>
     `).join('');
@@ -734,7 +735,7 @@ export async function initConfig(container: HTMLElement) {
       // Llenar select de sedes en modal de usuarios
       const usrSedeSelect = requireElement('usr-sede', HTMLSelectElement);
       usrSedeSelect.innerHTML = `<option value="">Sede Global / N/A</option>` + 
-        sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('');
+        sedes.map(s => `<option value="${s.id}">${escapeHtml(s.nombre)}</option>`).join('');
 
       if (sedes.length === 0) {
         tbody.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-secondary">No hay sedes creadas.</td></tr>`;
@@ -743,9 +744,9 @@ export async function initConfig(container: HTMLElement) {
 
       tbody.innerHTML = sedes.map((s, index) => `
         <tr>
-          <td><strong class="text-primary">${s.nombre}</strong></td>
-          <td>${s.direccion || 'N/A'}</td>
-          <td>${s.telefono || 'N/A'}</td>
+          <td><strong class="text-primary">${escapeHtml(s.nombre)}</strong></td>
+          <td>${escapeHtml(s.direccion || 'N/A')}</td>
+          <td>${escapeHtml(s.telefono || 'N/A')}</td>
           <td>
             <span class="badge ${s.activa ? 'bg-success' : 'bg-secondary'} text-white">
               ${s.activa ? 'Activa' : 'Inactiva'}
@@ -830,7 +831,7 @@ export async function initConfig(container: HTMLElement) {
           const nombre = btn.getAttribute('data-nombre') || 'esta sede';
           const verificado = await showConfirm(
             'Eliminar sede definitivamente',
-            `Se eliminará "${nombre}" y su inventario asociado. Si tiene clientes, se reasignarán a otra sede. Ventas, cajas y documentos de esa sede también se borrarán. Esta acción no se puede deshacer.`
+            `Se eliminará "${nombre}" y su inventario asociado. Si tiene clientes, se reasignarán a otra sede. Solo es posible si la sede no tiene ventas, facturas, cajas, compras ni otros documentos; si los tiene, desactívela. Esta acción no se puede deshacer.`
           );
           if (!verificado) return;
           try {
@@ -844,7 +845,7 @@ export async function initConfig(container: HTMLElement) {
       });
 
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-danger">Error: ${errorMessage(e)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-danger">Error: ${escapeHtml(errorMessage(e))}</td></tr>`;
     }
   };
 
@@ -881,10 +882,10 @@ export async function initConfig(container: HTMLElement) {
 
       tbody.innerHTML = usuarios.map((u) => `
         <tr>
-          <td><strong class="text-dark">${u.nombre}</strong></td>
-          <td><code>${u.email}</code></td>
+          <td><strong class="text-dark">${escapeHtml(u.nombre)}</strong></td>
+          <td><code>${escapeHtml(u.email)}</code></td>
           <td><span class="badge bg-blue-lt text-uppercase">${u.rol}</span></td>
-          <td><span class="fw-bold">${u.sede ? u.sede.nombre : 'Sede Global / N/A'}</span></td>
+          <td><span class="fw-bold">${escapeHtml(u.sede ? u.sede.nombre : 'Sede Global / N/A')}</span></td>
           <td>
             <span class="badge ${u.activo ? 'bg-success' : 'bg-secondary'} text-white">
               ${u.activo ? 'Activo' : 'Suspendido'}
@@ -941,7 +942,7 @@ export async function initConfig(container: HTMLElement) {
       });
 
     } catch (e) {
-      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3 text-danger">Error: ${errorMessage(e)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3 text-danger">Error: ${escapeHtml(errorMessage(e))}</td></tr>`;
     }
   };
 
@@ -997,13 +998,13 @@ export async function initConfig(container: HTMLElement) {
             <td>${new Date(n.createdAt).toLocaleString()}</td>
             <td><strong>${n.factura ? n.factura.numeroFactura : (n.orden ? n.orden.numeroOrden : '—')}</strong></td>
             <td>
-              ${n.cliente ? n.cliente.nombre : 'Cliente N/A'}<br>
-              <span class="text-secondary small">${n.cliente?.email || n.cliente?.telefono || ''}</span>
+              ${escapeHtml(n.cliente ? n.cliente.nombre : 'Cliente N/A')}<br>
+              <span class="text-secondary small">${escapeHtml(n.cliente?.email || n.cliente?.telefono || '')}</span>
             </td>
-            <td class="text-truncate" style="max-width: 300px;" title="${n.mensaje}">${n.mensaje}</td>
+            <td class="text-truncate" style="max-width: 300px;" title="${escapeHtml(n.mensaje)}">${escapeHtml(n.mensaje)}</td>
             <td><span class="badge bg-secondary-lt text-uppercase">${n.canal}</span></td>
             <td>
-              <span class="badge ${statusBadge} text-white" ${n.errorDetalle ? `title="${n.errorDetalle}" style="cursor:help;"` : ''}>
+              <span class="badge ${statusBadge} text-white" ${n.errorDetalle ? `title="${escapeHtml(n.errorDetalle)}" style="cursor:help;"` : ''}>
                 ${n.estado.toUpperCase()}
               </span>
             </td>
@@ -1012,7 +1013,7 @@ export async function initConfig(container: HTMLElement) {
       }).join('');
 
     } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3 text-danger">Error cargando log: ${errorMessage(err)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center py-3 text-danger">Error cargando log: ${escapeHtml(errorMessage(err))}</td></tr>`;
     }
   };
 

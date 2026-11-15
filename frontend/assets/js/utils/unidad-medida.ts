@@ -11,5 +11,7 @@ export function labelUnidadMedida(value: unknown) {
 
 /** Texto de stock: "305 m" o "12 und". */
 export function formatStockUnidad(cantidad: number | string, unidadMedida: unknown) {
-  return `${cantidad} ${labelUnidadMedida(unidadMedida)}`;
+  const n = Number(cantidad);
+  const texto = Number.isFinite(n) ? n.toLocaleString('es-CO', { maximumFractionDigits: 2 }) : String(cantidad);
+  return `${texto} ${labelUnidadMedida(unidadMedida)}`;
 }

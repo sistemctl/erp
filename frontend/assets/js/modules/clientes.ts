@@ -9,6 +9,7 @@ import { apiFetch } from '../api.js';
 import { requireUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
+import { showToast } from '../utils/toast.js';
 
 const escapeHtml = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -254,15 +255,35 @@ export async function initClientes(container: HTMLElement) {
       if (!c) throw new Error("No se encontró el cliente.");
       
       // Load History in Parallel
-      const compras = (await apiFetch<CompraCliente[]>(`/ventas?cliente=${id}`).catch(() => [])) ?? [];
-      const reparaciones = (await apiFetch<ReparacionCliente[]>(`/reparaciones?cliente=${id}`).catch(() => [])) ?? [];
-      const facturas = (await apiFetch<FacturaCliente[]>(`/facturas?cliente=${id}`).catch(() => [])) ?? [];
+      // Si alguna consulta falla se avisa, en lugar de mostrar "sin compras" como si fuera cierto.
+      const fallidas: string[] = [];
+      const cargar = async <T,>(url: string, etiqueta: string): Promise<T[]> => {
+        try { return (await apiFetch<T[]>(url)) ?? []; }
+        catch { fallidas.push(etiqueta); return []; }
+      };
+      const enc = encodeURIComponent(String(id));
+      const [compras, reparaciones, facturas] = await Promise.all([
+        cargar<CompraCliente>(`/ventas?cliente=${enc}`, 'compras'),
+        cargar<ReparacionCliente>(`/reparaciones?cliente=${enc}`, 'reparaciones'),
+        cargar<FacturaCliente>(`/facturas?cliente=${enc}`, 'facturas')
+      ]);
 
       const formatter = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
 
-      // Calcular deuda pendiente (Facturas pendientes o abonos parciales)
       const facturasMora = facturas.filter(f => ['pendiente', 'abono_parcial', 'vencida'].includes(f.estado));
-      const totalDeuda = facturasMora.reduce((acc, curr) => acc + parseFloat(curr.total), 0);
+      // Deuda real = saldo pendiente de cartera (no el total de las facturas con abonos).
+      let totalDeuda: number;
+      try {
+        const cuentas = (await apiFetch<{ saldoPendiente: string | number; estado: string }[]>(`/cartera?cliente=${enc}`)) ?? [];
+        totalDeuda = cuentas.filter(c => c.estado !== 'pagada')
+          .reduce((acc, c) => acc + (parseFloat(String(c.saldoPendiente)) || 0), 0);
+      } catch {
+        // Sin acceso a cartera: aproximación con facturas pendientes.
+        totalDeuda = facturasMora.reduce((acc, curr) => acc + parseFloat(curr.total), 0);
+      }
+      if (fallidas.length) {
+        showToast('Información incompleta', `No se pudo cargar: ${fallidas.join(', ')}. La ficha puede estar incompleta.`, 'warning');
+      }
 
       // Compras List HTML
       const comprasHtml = compras.length > 0 ? compras.map(com => `

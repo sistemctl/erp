@@ -27,6 +27,9 @@ import crypto = require('crypto');
 import { startScheduler } from './jobs/scheduler';
 import { migrateAuditSchema } from './migrations/audit-2026-10';
 import { migrateCajaFacturasSchema } from './migrations/caja-facturas-2026-10';
+import { migrateStockSedeUnico } from './migrations/stock-sede-unico-2026-11';
+import { migrateColumnasModelo } from './migrations/columnas-modelo-2026-11';
+import { migrateIndicesUnicos } from './migrations/indices-unicos-2026-11';
 import express = require('express');
 import cors = require('cors');
 import helmet from 'helmet';
@@ -45,25 +48,45 @@ require('dotenv').config({ path: ENV_PATH });
 
 const app = express();
 
-app.set('trust proxy', 1);
+// Solo se confía en X-Forwarded-For si la conexión viene de un proxy en red privada
+// (Traefik/Dokploy, Nginx local). Un cliente que entra directo por el puerto publicado
+// no puede falsificar su IP para saltarse el límite de intentos de login.
+// TRUST_PROXY permite ajustarlo (p. ej. "1", "false" o una lista de IPs/subredes).
+const trustProxyEnv = (process.env.TRUST_PROXY || '').trim();
+app.set('trust proxy', trustProxyEnv === ''
+  ? 'loopback, linklocal, uniquelocal'
+  : trustProxyEnv === 'false' ? false
+  : /^\d+$/.test(trustProxyEnv) ? Number(trustProxyEnv)
+  : trustProxyEnv);
+
+// En producción un JWT_SECRET corto (o ausente) impide arrancar: con un secreto débil
+// cualquiera podría falsificar sesiones de administrador.
+const jwtSecret = process.env.JWT_SECRET || '';
+if (process.env.NODE_ENV === 'production' && (jwtSecret.length < 32 || jwtSecret.startsWith('genera_una_clave'))) {
+  console.error('[Seguridad] JWT_SECRET falta, tiene menos de 32 caracteres o es el valor de ejemplo. El servidor NO arranca en producción con un secreto débil. Genere uno con `openssl rand -hex 32`, configúrelo en el Environment (Dokploy) y reinicie.');
+  process.exit(1);
+}
 
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false
 }));
 
-const corsOptions: cors.CorsOptions = {
-  origin(origin, callback) {
-    if (isAllowedCorsOrigin(origin)) {
-      return callback(null, true);
-    }
-    return callback(new Error(`Origen no permitido por CORS: ${origin}`));
-  },
-  credentials: true
-};
-
-// CORS solo en /api — los módulos ES envían Origin y fallaban con 500 en assets estáticos
-app.use('/api', cors(corsOptions));
+// CORS solo en /api — los módulos ES envían Origin y fallaban con 500 en assets estáticos.
+// Las peticiones del mismo origen (la propia app servida desde este host) siempre se
+// permiten, aunque CORS_ORIGINS/PUBLIC_BASE_URL no estén configurados.
+app.use('/api', cors((req, callback) => {
+  const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value)?.split(',')[0].trim();
+  const origin = first(req.headers.origin);
+  const host = first(req.headers['x-forwarded-host']) || first(req.headers.host);
+  let mismoOrigen = false;
+  try { mismoOrigen = !!origin && !!host && new URL(origin).host === host; } catch { mismoOrigen = false; }
+  if (mismoOrigen || isAllowedCorsOrigin(origin)) {
+    return callback(null, { origin: true, credentials: true });
+  }
+  const error = Object.assign(new Error(`Origen no permitido por CORS: ${origin}`), { status: 403 });
+  return callback(error);
+}));
 
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) {
@@ -149,9 +172,15 @@ const startServer = async () => {
     console.log('Conectando y sincronizando base de datos PostgreSQL...');
     // Alterar el esquema solo cuando se habilita explícitamente.
     const allowAlter = process.env.DB_SYNC_ALTER === 'true';
+    if (allowAlter) {
+      console.warn('[BD] DB_SYNC_ALTER=true: Sequelize puede duplicar restricciones UNIQUE en cada arranque. Las columnas nuevas ya se añaden con migraciones; desactívelo tras usarlo.');
+    }
     await sequelize.sync(allowAlter ? { alter: true } : {});
     await migrateAuditSchema(sequelize);
     await migrateCajaFacturasSchema(sequelize);
+    await migrateStockSedeUnico(sequelize);
+    await migrateColumnasModelo(sequelize);
+    await migrateIndicesUnicos(sequelize);
     console.log(allowAlter
       ? 'Base de datos sincronizada (con alter).'
       : 'Base de datos sincronizada (producción, sin alter).');

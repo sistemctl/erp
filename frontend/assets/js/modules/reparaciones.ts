@@ -11,6 +11,7 @@ import { requireUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { erpAction } from '../utils/action-buttons.js';
 import { showConfirm, showToast } from '../utils/toast.js';
+import { escapeHtml } from '../utils/html.js';
 
 export async function initReparaciones(container: HTMLElement) {
   const usuario = requireUsuario();
@@ -163,7 +164,7 @@ export async function initReparaciones(container: HTMLElement) {
                     <div class="rep-orden-field">
                       <label class="form-label required" for="eq-sede">Sede de ingreso</label>
                       <select id="eq-sede" class="form-select" required>
-                        ${sedes.length === 0 ? '<option value="">Sin sedes configuradas</option>' : sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                        ${sedes.length === 0 ? '<option value="">Sin sedes configuradas</option>' : sedes.map(s => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${escapeHtml(s.nombre)}</option>`).join('')}
                       </select>
                     </div>
                     ` : ''}
@@ -238,7 +239,7 @@ export async function initReparaciones(container: HTMLElement) {
                         <label class="form-label" for="eq-tecnico">Técnico</label>
                         <select id="eq-tecnico" class="form-select">
                           <option value="">Por asignar</option>
-                          ${tecnicos.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                          ${tecnicos.map(t => `<option value="${t.id}">${escapeHtml(t.nombre)}</option>`).join('')}
                         </select>
                       </div>
                     </div>
@@ -457,19 +458,19 @@ export async function initReparaciones(container: HTMLElement) {
 
         card.innerHTML = `
           <div class="rep-card__top">
-            <span class="rep-card__orden">${o.numeroOrden}</span>
+            <span class="rep-card__orden">${escapeHtml(o.numeroOrden)}</span>
             <span class="rep-card__fecha">${new Date(o.createdAt).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}</span>
           </div>
-          <div class="rep-card__equipo" title="${equipoLabel}">${equipoLabel}</div>
-          <div class="rep-card__meta" title="${clienteNombre}">
+          <div class="rep-card__equipo" title="${escapeHtml(equipoLabel)}">${escapeHtml(equipoLabel)}</div>
+          <div class="rep-card__meta" title="${escapeHtml(clienteNombre)}">
             <i class="ti ti-user" aria-hidden="true"></i>
-            <span>${clienteNombre}</span>
+            <span>${escapeHtml(clienteNombre)}</span>
           </div>
-          ${o.imei ? `<div class="rep-card__meta" title="IMEI/Serie: ${o.imei}"><i class="ti ti-device-mobile" aria-hidden="true"></i><span>${o.imei}</span></div>` : ''}
+          ${o.imei ? `<div class="rep-card__meta" title="IMEI/Serie: ${escapeHtml(o.imei)}"><i class="ti ti-device-mobile" aria-hidden="true"></i><span>${escapeHtml(o.imei)}</span></div>` : ''}
           <div class="rep-card__footer">
             <div class="rep-card__tec ${o.tecnico ? '' : 'rep-card__tec--unassigned'}">
               <i class="ti ti-tool" aria-hidden="true"></i>
-              ${o.tecnico ? o.tecnico.nombre.split(' ')[0] : 'Sin asignar'}
+              ${escapeHtml(o.tecnico ? o.tecnico.nombre.split(' ')[0] : 'Sin asignar')}
             </div>
             <div class="rep-card__total">${formatter.format(Number(o.totalCobrado))}</div>
           </div>
@@ -583,7 +584,7 @@ export async function initReparaciones(container: HTMLElement) {
     const results = clientes.filter((c) => !term || `${c.nombre || ''} ${c.documento || ''} ${c.telefono || ''}`.toLowerCase().includes(term)).slice(0, 50);
     requireElement('orden-clientes-contador', HTMLSpanElement).textContent = `${results.length} ${results.length === 1 ? 'cliente' : 'clientes'}`;
     const list = requireElement('orden-clientes-resultados', HTMLDivElement);
-    list.innerHTML = results.map((c) => `<button type="button" class="checkout-cliente-opcion orden-cliente-opcion" data-id="${c.id}"><span class="avatar avatar-sm checkout-cliente-avatar">${(c.nombre || '?').trim().charAt(0).toUpperCase()}</span><span class="checkout-cliente-info"><span class="checkout-cliente-titulo">${c.nombre || 'Sin nombre'}</span><span class="checkout-cliente-meta"><i class="ti ti-id-badge"></i>${c.documento || 'Sin documento'}</span></span><i class="ti ti-chevron-right checkout-cliente-arrow"></i></button>`).join('') || '<div class="pos-client-empty"><i class="ti ti-user-off"></i><span>No se encontraron clientes.</span></div>';
+    list.innerHTML = results.map((c) => `<button type="button" class="checkout-cliente-opcion orden-cliente-opcion" data-id="${c.id}"><span class="avatar avatar-sm checkout-cliente-avatar">${escapeHtml((c.nombre || '?').trim().charAt(0).toUpperCase())}</span><span class="checkout-cliente-info"><span class="checkout-cliente-titulo">${escapeHtml(c.nombre || 'Sin nombre')}</span><span class="checkout-cliente-meta"><i class="ti ti-id-badge"></i>${escapeHtml(c.documento || 'Sin documento')}</span></span><i class="ti ti-chevron-right checkout-cliente-arrow"></i></button>`).join('') || '<div class="pos-client-empty"><i class="ti ti-user-off"></i><span>No se encontraron clientes.</span></div>';
     list.querySelectorAll<HTMLElement>('.orden-cliente-opcion').forEach((btn) => btn.addEventListener('click', () => {
       const client = clientes.find((c) => String(c.id) === btn.dataset.id);
       clientSelect.value = client?.id || '';
@@ -803,12 +804,12 @@ export async function initReparaciones(container: HTMLElement) {
               <h4 class="text-primary mb-3"><i class="ti ti-info-circle me-1"></i>Ficha del Equipo</h4>
               <table class="table table-sm table-striped">
                 <tbody>
-                  <tr><th style="width: 130px;">Cliente</th><td>${orden.cliente ? orden.cliente.nombre : 'Cliente General'}</td></tr>
-                  <tr><th>Teléfono</th><td>${orden.cliente ? orden.cliente.telefono || 'No registrado' : 'N/A'}</td></tr>
-                  <tr><th>Equipo</th><td>${orden.tipoEquipo} ${orden.marca} ${orden.modelo}</td></tr>
-                  <tr><th>IMEI/Serie</th><td><strong>${orden.imei || 'N/A'}</strong></td></tr>
-                  <tr><th>Sede de Ingreso</th><td>${orden.sede ? orden.sede.nombre : 'Sede Centro'}</td></tr>
-                  <tr><th>Modalidad</th><td>${orden.modalidad === 'domicilio' ? `A domicilio${orden.direccionServicio ? ` — ${orden.direccionServicio}` : ''}` : 'En taller'}</td></tr>
+                  <tr><th style="width: 130px;">Cliente</th><td>${escapeHtml(orden.cliente ? orden.cliente.nombre : 'Cliente General')}</td></tr>
+                  <tr><th>Teléfono</th><td>${escapeHtml(orden.cliente ? orden.cliente.telefono || 'No registrado' : 'N/A')}</td></tr>
+                  <tr><th>Equipo</th><td>${escapeHtml(`${orden.tipoEquipo} ${orden.marca} ${orden.modelo}`)}</td></tr>
+                  <tr><th>IMEI/Serie</th><td><strong>${escapeHtml(orden.imei || 'N/A')}</strong></td></tr>
+                  <tr><th>Sede de Ingreso</th><td>${escapeHtml(orden.sede ? orden.sede.nombre : 'Sede Centro')}</td></tr>
+                  <tr><th>Modalidad</th><td>${orden.modalidad === 'domicilio' ? `A domicilio${orden.direccionServicio ? ` — ${escapeHtml(orden.direccionServicio)}` : ''}` : 'En taller'}</td></tr>
                   <tr><th>Fecha Ingreso</th><td>${new Date(orden.createdAt).toLocaleString()}</td></tr>
                 </tbody>
               </table>
@@ -848,14 +849,14 @@ export async function initReparaciones(container: HTMLElement) {
               <form id="form-update-detalle">
                 <div class="mb-3">
                   <label class="form-label required">Problema Reportado</label>
-                  <textarea class="form-control form-control-plaintext bg-light px-2" readonly rows="1">${orden.problemaReportado}</textarea>
+                  <textarea class="form-control form-control-plaintext bg-light px-2" readonly rows="1">${escapeHtml(orden.problemaReportado)}</textarea>
                 </div>
                 <div class="row">
                   <div class="col-md-6 mb-3">
                     <label class="form-label">Técnico Asignado</label>
                     <select id="det-tecnico" class="form-select">
                       <option value="">-- Por asignar --</option>
-                      ${tecnicos.map(t => `<option value="${t.id}" ${orden.tecnicoId === t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
+                      ${tecnicos.map(t => `<option value="${t.id}" ${orden.tecnicoId === t.id ? 'selected' : ''}>${escapeHtml(t.nombre)}</option>`).join('')}
                     </select>
                   </div>
                   <div class="col-md-6 mb-3">
@@ -875,11 +876,11 @@ export async function initReparaciones(container: HTMLElement) {
                 </div>
                 <div class="mb-3">
                   <label class="form-label">Diagnóstico Técnico</label>
-                  <textarea id="det-diagnostico" class="form-control" rows="2" placeholder="Describa el diagnóstico final o avance…" spellcheck="false">${orden.diagnostico || ''}</textarea>
+                  <textarea id="det-diagnostico" class="form-control" rows="2" placeholder="Describa el diagnóstico final o avance…" spellcheck="false">${escapeHtml(orden.diagnostico || '')}</textarea>
                 </div>
                 <div class="mb-3">
                   <label class="form-label">Observaciones</label>
-                  <input type="text" id="det-observaciones" class="form-control" value="${orden.observaciones || ''}">
+                  <input type="text" id="det-observaciones" class="form-control" value="${escapeHtml(orden.observaciones || '')}">
                 </div>
                 <div class="d-flex justify-content-end mb-3">
                   <button type="submit" class="btn btn-success">
@@ -911,7 +912,7 @@ export async function initReparaciones(container: HTMLElement) {
                   <tbody id="det-repuestos-body">
                     ${orden.repuestos && orden.repuestos.length > 0 ? orden.repuestos.map(r => `
                       <tr>
-                        <td>${r.producto ? r.producto.nombre : 'Repuesto'}</td>
+                        <td>${escapeHtml(r.producto ? r.producto.nombre : 'Repuesto')}</td>
                         <td class="text-center">${r.cantidad}</td>
                         <td>${canEditRepuestos ? `<div class="repair-part-cost-editor">
                           <div class="repair-part-cost-field">
@@ -1095,8 +1096,8 @@ export async function initReparaciones(container: HTMLElement) {
           }
 
           dropdownMenu.innerHTML = filtered.map(item => `
-            <button type="button" class="dropdown-item py-2 px-3 text-start btn-select-repuesto w-100 border-0 bg-transparent" data-id="${item.id}" data-text="${item.nombre}">
-              ${item.texto}
+            <button type="button" class="dropdown-item py-2 px-3 text-start btn-select-repuesto w-100 border-0 bg-transparent" data-id="${item.id}" data-text="${escapeHtml(item.nombre)}">
+              ${escapeHtml(item.texto)}
             </button>
           `).join('');
 
@@ -1291,11 +1292,11 @@ export async function initReparaciones(container: HTMLElement) {
                 </style>
               </head>
               <body>
-                <h3>${empresaNombre}</h3>
+                <h3>${escapeHtml(empresaNombre)}</h3>
                 <p><strong>ORDEN DE REPARACIÓN</strong></p>
-                <p>Orden #: <strong>${orden.numeroOrden}</strong></p>
-                <p>Cliente: ${orden.cliente ? orden.cliente.nombre : 'Cliente General'}</p>
-                <p>Equipo: ${orden.tipoEquipo} ${orden.marca} ${orden.modelo}</p>
+                <p>Orden #: <strong>${escapeHtml(orden.numeroOrden)}</strong></p>
+                <p>Cliente: ${escapeHtml(orden.cliente ? orden.cliente.nombre : 'Cliente General')}</p>
+                <p>Equipo: ${escapeHtml(`${orden.tipoEquipo} ${orden.marca} ${orden.modelo}`)}</p>
                 <img src="${imgUrl}" width="120" height="120">
                 <p style="font-size:10px;color:#666;margin-top:4px">Escaneo del cliente · sin login</p>
                 <button onclick="window.print()">Imprimir Etiqueta</button>
@@ -1309,7 +1310,7 @@ export async function initReparaciones(container: HTMLElement) {
       });
 
     } catch (err) {
-      content.innerHTML = `<div class="alert alert-danger m-3">${errorMessage(err)}</div>`;
+      content.innerHTML = `<div class="alert alert-danger m-3">${escapeHtml(errorMessage(err))}</div>`;
     }
   }
 

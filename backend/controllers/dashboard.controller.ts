@@ -31,6 +31,9 @@ const {
   sequelize
 } = models;
 import { Op } from 'sequelize';
+import { inicioDiaBogota, finDiaBogota } from '../utils/rango-bogota';
+import cajaFechaUtil = require('../utils/caja-fecha');
+const hoyBogotaDe = (d: Date) => cajaFechaUtil.fechaOperativa(d);
 import { resolveQuerySede } from '../utils/sede';
 
 const FUENTE_LABELS: Record<string, string> = {
@@ -483,10 +486,8 @@ export const getGastosPorCategoria: Handler<Body> = async (req, res, next) => {
     let startDate;
     let endDate;
     if (desde && hasta) {
-      startDate = new Date(desde);
-      startDate.setHours(0, 0, 0, 0);
-      endDate = new Date(hasta);
-      endDate.setHours(23, 59, 59, 999);
+      startDate = inicioDiaBogota(String(desde));
+      endDate = finDiaBogota(String(hasta));
     } else {
       ({ startDate, endDate } = resolvePeriodoRange(periodo || 'mes'));
     }
@@ -527,8 +528,8 @@ export const getGastosPorCategoria: Handler<Body> = async (req, res, next) => {
     const totalGeneral = items.reduce((sum, i) => sum + i.total, 0);
 
     return res.json({
-      desde: startDate.toISOString().split('T')[0],
-      hasta: endDate.toISOString().split('T')[0],
+      desde: hoyBogotaDe(startDate),
+      hasta: hoyBogotaDe(endDate),
       totalGeneral,
       porCategoria: items,
       detalle: detalle.map(e => ({
@@ -553,10 +554,8 @@ export const getGastoResumen: Handler<Body> = async (req, res, next) => {
     let startDate;
     let endDate;
     if (desde && hasta) {
-      startDate = new Date(desde);
-      startDate.setHours(0, 0, 0, 0);
-      endDate = new Date(hasta);
-      endDate.setHours(23, 59, 59, 999);
+      startDate = inicioDiaBogota(String(desde));
+      endDate = finDiaBogota(String(hasta));
     } else {
       ({ startDate, endDate } = resolvePeriodoRange(periodo || 'mes'));
     }
@@ -564,8 +563,8 @@ export const getGastoResumen: Handler<Body> = async (req, res, next) => {
     const gastos = await computeGastosEmpresa(startDate, endDate, querySedeId);
 
     return res.json({
-      desde: startDate.toISOString().split('T')[0],
-      hasta: endDate.toISOString().split('T')[0],
+      desde: hoyBogotaDe(startDate),
+      hasta: hoyBogotaDe(endDate),
       ...gastos
     });
   } catch (error) {
@@ -784,8 +783,8 @@ export const getActividad: Handler<Body> = async (req, res, next) => {
     }
 
     return res.json({
-      desde: startDate.toISOString().split('T')[0],
-      hasta: endDate.toISOString().split('T')[0],
+      desde: hoyBogotaDe(startDate),
+      hasta: hoyBogotaDe(endDate),
       alertas,
       eventos: eventosLimitados
     });

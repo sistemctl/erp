@@ -19,4 +19,4 @@ export interface SaleBody {
   idempotencyKey?: string; cambio?: number;
 }
 export interface CotizacionPos { id: string; clienteId: string | null; items: { productoId: string | null; descripcion: string; producto?: ProductoDTO | null; precioUnitario: string; cantidad: number }[]; }
-export interface TradeInPos { id: string; ventaId: string | null; valoracion: string; marca: string; modelo: string; imei: string | null; }
+export interface TradeInPos { id: string; ventaId: string | null; valoracion: string; marca: string; modelo: string; imei: string | null; sedeId?: string; createdAt?: string; }

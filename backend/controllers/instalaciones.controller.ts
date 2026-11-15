@@ -71,6 +71,53 @@ function recalcTotales(orden: { valorServicio?: number | string | null; precioCe
   };
 }
 
+/** Devuelve al stock (y a "en_stock" sus seriales) un material consumido por una orden de instalación. */
+async function revertirMaterialAlStock(
+  material: MaterialModel,
+  orden: OrdenModel,
+  usuarioId: string,
+  transaction: import('sequelize').Transaction
+) {
+  const qty = parseInt(String(material.cantidad), 10);
+  const stock = await StockSede.findOne({
+    where: { productoId: material.productoId, sedeId: orden.sedeId },
+    transaction,
+    lock: transaction.LOCK.UPDATE
+  });
+  if (stock) {
+    await stock.update({ cantidad: stock.cantidad + qty }, { transaction });
+  } else {
+    await StockSede.create({ productoId: material.productoId, sedeId: orden.sedeId, cantidad: qty }, { transaction });
+  }
+
+  await MovimientoInventario.create({
+    productoId: material.productoId,
+    sedeId: orden.sedeId,
+    tipo: 'entrada',
+    cantidad: qty,
+    motivo: `Reverso material instalación #${orden.numeroOrden}`,
+    referenciaId: orden.id,
+    usuarioId
+  }, { transaction });
+
+  if (material.producto?.tieneNumeroSerie && Array.isArray(material.series)) {
+    for (const serieStr of material.series) {
+      const serieReg = await NumeroSerie.findOne({
+        where: { serie: serieStr, productoId: material.productoId },
+        transaction
+      });
+      if (serieReg && serieReg.estado === 'instalado') {
+        await serieReg.update({
+          estado: 'en_stock',
+          clienteId: null,
+          fechaVenta: null,
+          sedeId: orden.sedeId
+        }, { transaction });
+      }
+    }
+  }
+}
+
 export const getOrdenes: Handler<Body> = async (req, res, next) => {
   try {
     const { estado, tecnico, sede, buscar, desde, hasta } = req.query;
@@ -244,6 +291,11 @@ export const updateOrden: Handler<Body> = async (req, res, next) => {
         await transaction.rollback();
         return res.status(400).json({ error: 'Estado inválido.' });
       }
+      if (estado === 'entregada') {
+        // Entregar genera factura, caja y cartera: solo por POST /:id/cerrar.
+        await transaction.rollback();
+        return res.status(400).json({ error: 'Para entregar la instalación use la acción "Marcar entregada" (cierre con cobro).' });
+      }
       patch.estado = estado;
     }
     if (valorServicio !== undefined) {
@@ -251,6 +303,21 @@ export const updateOrden: Handler<Body> = async (req, res, next) => {
     }
     if (precioCerrado !== undefined) {
       patch.precioCerrado = precioCerrado === true || precioCerrado === 'true' || precioCerrado === 1;
+    }
+
+    if (patch.estado === 'cancelada') {
+      // Al cancelar, los materiales consumidos vuelven al inventario.
+      const materiales = await MaterialInstalacion.findAll({
+        where: { ordenId: orden.id },
+        include: [{ model: Producto, as: 'producto' }],
+        transaction
+      });
+      const usuarioId = requireUser(req).userId;
+      for (const material of materiales) {
+        await revertirMaterialAlStock(material, orden, usuarioId, transaction);
+        await material.destroy({ transaction });
+      }
+      orden.materiales = [];
     }
 
     await orden.update(patch, { transaction });
@@ -514,7 +581,7 @@ export const updateMaterial: Handler<Body> = async (req, res, next) => {
           motivo: `Ajuste material instalación #${orden.numeroOrden} (${oldQty} → ${newQty})`,
           referenciaId: orden.id,
           usuarioId: requireUser(req).userId
-        });
+        }, { transaction });
       }
     }
 
@@ -580,41 +647,7 @@ export const removeMaterial: Handler<Body> = async (req, res, next) => {
       return res.status(404).json({ error: 'Material no encontrado.' });
     }
 
-    const qty = parseInt(String(material.cantidad), 10);
-    const stock = await StockSede.findOne({
-      where: { productoId: material.productoId, sedeId: orden.sedeId },
-      transaction
-    });
-    if (stock) {
-      await stock.update({ cantidad: stock.cantidad + qty }, { transaction });
-    }
-
-    await MovimientoInventario.create({
-      productoId: material.productoId,
-      sedeId: orden.sedeId,
-      tipo: 'entrada',
-      cantidad: qty,
-      motivo: `Reverso material instalación #${orden.numeroOrden}`,
-      referenciaId: orden.id,
-      usuarioId: requireUser(req).userId
-    }, { transaction });
-
-    if (material.producto?.tieneNumeroSerie && Array.isArray(material.series)) {
-      for (const serieStr of material.series) {
-        const serieReg = await NumeroSerie.findOne({
-          where: { serie: serieStr, productoId: material.productoId },
-          transaction
-        });
-        if (serieReg && serieReg.estado === 'instalado') {
-          await serieReg.update({
-            estado: 'en_stock',
-            clienteId: null,
-            fechaVenta: null,
-            sedeId: orden.sedeId
-          }, { transaction });
-        }
-      }
-    }
+    await revertirMaterialAlStock(material, orden, requireUser(req).userId, transaction);
 
     await material.destroy({ transaction });
 

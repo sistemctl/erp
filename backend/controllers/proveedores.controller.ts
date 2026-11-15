@@ -95,6 +95,13 @@ export const deleteProveedor: Handler<Body> = async (req, res, next) => {
       return res.status(404).json({ error: 'Proveedor no encontrado.' });
     }
 
+    const ordenes = await models.OrdenCompra.count({ where: { proveedorId: proveedor.id } });
+    if (ordenes > 0) {
+      return res.status(409).json({
+        error: `No se puede eliminar el proveedor: tiene ${ordenes} orden(es) de compra registradas. El historial de compras y pagos debe conservarse.`
+      });
+    }
+
     const valorAnterior = proveedor.toJSON();
     await proveedor.destroy();
 

@@ -11,6 +11,7 @@ import { requireUsuario } from '../auth.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { showToast } from '../utils/toast.js';
 import { labelUnidadMedida } from '../utils/unidad-medida.js';
+import { escapeHtml } from '../utils/html.js';
 
 const fmt = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 2 });
 
@@ -149,21 +150,21 @@ export async function initInstalaciones(container: HTMLElement) {
                     <label class="form-label required" for="inst-cliente">Cliente</label>
                     <select id="inst-cliente" class="form-select" required>
                       <option value="">Seleccionar cliente</option>
-                      ${clientes.map((c) => `<option value="${c.id}">${c.nombre}${c.documento ? ` (${c.documento})` : ''}</option>`).join('')}
+                      ${clientes.map((c) => `<option value="${c.id}">${escapeHtml(c.nombre)}${c.documento ? ` (${escapeHtml(c.documento)})` : ''}</option>`).join('')}
                     </select>
                   </div>
                   ${needsSedePicker ? `
                   <div class="inst-field">
                     <label class="form-label required" for="inst-sede">Sede</label>
                     <select id="inst-sede" class="form-select" required>
-                      ${sedes.map((s) => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                      ${sedes.map((s) => `<option value="${s.id}" ${s.id === defaultSedeId ? 'selected' : ''}>${escapeHtml(s.nombre)}</option>`).join('')}
                     </select>
                   </div>` : ''}
                   <div class="inst-field">
                     <label class="form-label" for="inst-tecnico">Técnico</label>
                     <select id="inst-tecnico" class="form-select">
                       <option value="">Por asignar</option>
-                      ${tecnicos.map((t) => `<option value="${t.id}">${t.nombre}</option>`).join('')}
+                      ${tecnicos.map((t) => `<option value="${t.id}">${escapeHtml(t.nombre)}</option>`).join('')}
                     </select>
                   </div>
                   <div class="inst-field">
@@ -590,9 +591,9 @@ export async function initInstalaciones(container: HTMLElement) {
     body.innerHTML = list.map((o) => `
       <tr>
         <td><span class="fw-bold">${o.numeroOrden}</span></td>
-        <td>${o.cliente?.nombre || '—'}</td>
-        <td>${o.sitio || '—'}</td>
-        <td>${o.sede?.nombre || '—'}</td>
+        <td>${escapeHtml(o.cliente?.nombre || '—')}</td>
+        <td>${escapeHtml(o.sitio || '—')}</td>
+        <td>${escapeHtml(o.sede?.nombre || '—')}</td>
         <td><span class="badge ${ESTADO_BADGE[o.estado] || 'bg-secondary-lt'}">${ESTADO_LABEL[o.estado] || o.estado}</span></td>
         <td class="text-end">${fmt.format(Number(o.totalCobrado) || 0)}</td>
         <td>
@@ -1030,9 +1031,9 @@ export async function initInstalaciones(container: HTMLElement) {
               <span class="inst-detalle__status badge ${ESTADO_BADGE[orden.estado]}">${ESTADO_LABEL[orden.estado]}</span>
             </div>
             <p class="inst-detalle__lede">
-              <span>${orden.cliente?.nombre || 'Sin cliente'}</span>
+              <span>${escapeHtml(orden.cliente?.nombre || 'Sin cliente')}</span>
               <span class="inst-detalle__sep" aria-hidden="true">·</span>
-              <span>${orden.sede?.nombre || 'Sin sede'}</span>
+              <span>${escapeHtml(orden.sede?.nombre || 'Sin sede')}</span>
             </p>
           </div>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
@@ -1042,15 +1043,15 @@ export async function initInstalaciones(container: HTMLElement) {
           <div class="inst-detalle__meta" role="list">
             <div class="inst-detalle__meta-item" role="listitem">
               <span class="inst-detalle__meta-label">Técnico</span>
-              <span class="inst-detalle__meta-value">${orden.tecnico?.nombre || 'Sin asignar'}</span>
+              <span class="inst-detalle__meta-value">${escapeHtml(orden.tecnico?.nombre || 'Sin asignar')}</span>
             </div>
             <div class="inst-detalle__meta-item" role="listitem">
               <span class="inst-detalle__meta-label">Sitio</span>
-              <span class="inst-detalle__meta-value">${orden.sitio || '—'}</span>
+              <span class="inst-detalle__meta-value">${escapeHtml(orden.sitio || '—')}</span>
             </div>
             <div class="inst-detalle__meta-item inst-detalle__meta-item--wide" role="listitem">
               <span class="inst-detalle__meta-label">Dirección</span>
-              <span class="inst-detalle__meta-value">${orden.direccion || '—'}</span>
+              <span class="inst-detalle__meta-value">${escapeHtml(orden.direccion || '—')}</span>
             </div>
           </div>
 
@@ -1069,12 +1070,12 @@ export async function initInstalaciones(container: HTMLElement) {
                 <label class="form-label" for="det-tecnico">Técnico</label>
                 <select id="det-tecnico" class="form-select">
                   <option value="">— Por asignar —</option>
-                  ${tecnicos.map((t) => `<option value="${t.id}" ${orden.tecnicoId === t.id ? 'selected' : ''}>${t.nombre}</option>`).join('')}
+                  ${tecnicos.map((t) => `<option value="${t.id}" ${orden.tecnicoId === t.id ? 'selected' : ''}>${escapeHtml(t.nombre)}</option>`).join('')}
                 </select>
               </div>
               <div class="inst-detalle__field inst-detalle__field--obs">
                 <label class="form-label" for="det-obs">Observaciones</label>
-                <input type="text" id="det-obs" class="form-control" value="${(orden.observaciones || '').replace(/"/g, '&quot;')}">
+                <input type="text" id="det-obs" class="form-control" value="${escapeHtml(orden.observaciones || '')}">
               </div>
               <div class="inst-detalle__field inst-detalle__field--action">
                 <button type="button" class="btn btn-outline-primary w-100" id="btn-guardar-inst">Guardar</button>
@@ -1139,7 +1140,7 @@ export async function initInstalaciones(container: HTMLElement) {
                     const canAdjust = canWrite && !locked && !m.producto?.tieneNumeroSerie;
                     return `
                     <tr>
-                      <td>${m.producto?.nombre || '—'}</td>
+                      <td>${escapeHtml(m.producto?.nombre || '—')}</td>
                       <td class="text-center">
                         ${canAdjust ? `
                           <input type="number" class="form-control form-control-sm text-center mx-auto mat-qty-input inst-detalle__qty"
@@ -1147,10 +1148,10 @@ export async function initInstalaciones(container: HTMLElement) {
                         ` : m.cantidad}
                       </td>
                       <td class="text-center text-secondary">${ud}</td>
-                      <td class="small">${Array.isArray(m.series) && m.series.length ? m.series.join(', ') : '—'}</td>
+                      <td class="small">${escapeHtml(Array.isArray(m.series) && m.series.length ? m.series.join(', ') : '—')}</td>
                       <td class="text-end">
                         ${canWrite && !locked ? `
-                          <label class="visually-hidden" for="mat-precio-${m.id}">Precio de venta de ${m.producto?.nombre || 'material'}</label>
+                          <label class="visually-hidden" for="mat-precio-${m.id}">Precio de venta de ${escapeHtml(m.producto?.nombre || 'material')}</label>
                           <input type="number" id="mat-precio-${m.id}" class="form-control form-control-sm text-end mx-auto mat-price-input inst-detalle__price"
                             data-mid="${m.id}" data-prev="${parseFloat(m.precioUnitario) || 0}" min="0" step="0.01" value="${parseFloat(m.precioUnitario) || 0}" inputmode="decimal" title="Cambie el precio de venta y presione Enter">
                         ` : fmt.format(parseFloat(m.precioUnitario) || 0)}
@@ -1504,7 +1505,7 @@ export async function initInstalaciones(container: HTMLElement) {
         }
       });
     } catch (err) {
-      content.innerHTML = `<div class="p-4 text-danger">${errorMessage(err)}</div>`;
+      content.innerHTML = `<div class="p-4 text-danger">${escapeHtml(errorMessage(err))}</div>`;
     }
   }
 

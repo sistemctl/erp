@@ -28,6 +28,17 @@ export function costoPorMetro(costoTotal: unknown, longitud: unknown) {
   if (unit <= 0n) throw new Error('El costo por metro es inferior a un centavo.');
   return { metros, costoPorMetro: moneyText(unit), totalCalculado: moneyText(unit * divisor), diferenciaCentavos: Number(unit * divisor - total) };
 }
+/**
+ * Total de la línea en centavos. En compras por rollo es el costo real de los rollos
+ * (lo que dice la factura del proveedor); el precio por metro guardado está redondeado
+ * y precio × metros puede diferir unos centavos.
+ */
+export function totalLineaCompraCentavos(input: CompraUnidadInput, normalized: { cantidadPedida: number; precioUnitario: string }): bigint {
+  if (input.presentacion === 'rollo') {
+    return moneyCents(input.costoTotalRollo) * BigInt(inventoryQuantity(input.cantidadRollos ?? 1));
+  }
+  return moneyCents(normalized.precioUnitario) * BigInt(normalized.cantidadPedida);
+}
 export function normalizeCompraUnidad(input: CompraUnidadInput, unidad: string) {
   if (input.presentacion && !['unidad', 'rollo'].includes(input.presentacion)) throw new Error('Presentación de compra no válida.');
   if (input.presentacion === 'rollo') {

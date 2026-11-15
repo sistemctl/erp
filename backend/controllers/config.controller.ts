@@ -12,7 +12,7 @@ import { encryptBackup, decryptBackup, orderedBackupModels, validateBackup, getB
 import { initializeDocumentSequences } from '../utils/document-number';
 type Body = CreationAttributes<SedeModel> & CreationAttributes<UsuarioModel> & CreationAttributes<ConfiguracionModel> & { emailDestino?: string; backup?: unknown };
 type ConfigJson = Attributes<ConfiguracionModel>;
-type ConfigMeta = ConfigJson & { servidor: { puertoActivo: number; puertoConfigurado: number; urlActiva: string; urlLocal: string; urlPublica: string | null; urlConfigurada: string; requiereReinicio: boolean; tunelActivo: boolean }; facturasTallerActualizadas?: number; requiereReinicio?: boolean; mensajeReinicio?: string };
+type ConfigMeta = ConfigJson & { servidor: { puertoActivo: number; puertoConfigurado: number; urlActiva: string; urlLocal: string; urlPublica: string | null; urlConfigurada: string; requiereReinicio: boolean; tunelActivo: boolean }; requiereReinicio?: boolean; mensajeReinicio?: string };
 // Interfaz interna de Sequelize 6 utilizada por el respaldo existente para citar tablas.
 function quoteBackupTable(queryInterface: QueryInterface, table: TableName) {
   const generator = (queryInterface as QueryInterface & { queryGenerator: { quoteTable(table: TableName): string } }).queryGenerator;
@@ -67,8 +67,42 @@ import { normalizeLogoUrl } from '../utils/branding-url';
 import { getPublicOrigin } from '../utils/public-url';
 import emailService = require('../services/email.service');
 
+/**
+ * Una sede con documentos contables o legales (ventas, facturas, cajas, compras,
+ * nómina, reparaciones, instalaciones, devoluciones, garantías, trade-ins) no se
+ * borra: se desactiva. Borrarla eliminaría registros que deben conservarse.
+ */
+async function documentosDeSede(sedeId: string, transaction: Transaction) {
+  const { DevolucionVenta, ReclamoGarantia } = models;
+  const empleados = await Empleado.findAll({ where: { sedeId }, attributes: ['id'], transaction });
+  const [ventas, facturas, cajas, compras, reparaciones, instalaciones, devoluciones, garantias, tradeIns, nominas] = await Promise.all([
+    Venta.count({ where: { sedeId }, transaction }),
+    Factura.count({ where: { sedeId }, transaction }),
+    Caja.count({ where: { sedeId }, transaction }),
+    OrdenCompra.count({ where: { sedeId }, transaction }),
+    OrdenReparacion.count({ where: { sedeId }, transaction }),
+    OrdenInstalacion.count({ where: { sedeId }, transaction }),
+    DevolucionVenta.count({ where: { sedeId }, transaction }),
+    ReclamoGarantia.count({ where: { sedeId }, transaction }),
+    TradeIn.count({ where: { sedeId }, transaction }),
+    empleados.length ? Nomina.count({ where: { empleadoId: empleados.map((e) => e.id) }, transaction }) : Promise.resolve(0)
+  ]);
+  const detalle: [string, number][] = [
+    ['ventas', ventas], ['facturas', facturas], ['cajas', cajas], ['órdenes de compra', compras],
+    ['reparaciones', reparaciones], ['instalaciones', instalaciones], ['devoluciones', devoluciones],
+    ['garantías', garantias], ['trade-ins', tradeIns], ['nóminas', nominas]
+  ];
+  return detalle.filter(([, n]) => n > 0);
+}
+
 async function forceDeleteSede(sede: SedeModel, transaction: Transaction) {
   const sedeId = sede.id;
+  const documentos = await documentosDeSede(sedeId, transaction);
+  if (documentos.length) {
+    const err: HttpError = new Error(`No se puede eliminar definitivamente: la sede tiene ${documentos.map(([k, n]) => `${n} ${k}`).join(', ')}. Desactívela para conservar el historial.`);
+    err.status = 409;
+    throw err;
+  }
 
   await StockSede.destroy({ where: { sedeId }, transaction });
   await MovimientoInventario.destroy({ where: { sedeId }, transaction });
@@ -623,23 +657,9 @@ export const updateSistemaConfig: Handler<Body> = async (req, res, next) => {
       await config.update(payload);
     }
 
-    // Mantener las facturas de Taller alineadas con el interruptor, sin tocar
-    // ventas ni instalaciones. El total cobrado se conserva en ambos casos.
-    const cobrarIvaTaller = config.cobrarIvaTaller === true;
-    const tasaIvaTaller = Math.max(0, parseFloat(String(config.ivaDefecto ?? 19))) / 100;
-    const divisorIvaTaller = 1 + tasaIvaTaller;
-    const [facturasTallerActualizadas] = await Factura.update({
-      subtotal: cobrarIvaTaller && tasaIvaTaller > 0
-        ? sequelize.literal(`ROUND("total" / ${divisorIvaTaller}, 2)`)
-        : sequelize.col('total'),
-      iva: cobrarIvaTaller && tasaIvaTaller > 0
-        ? sequelize.literal(`ROUND("total" - ("total" / ${divisorIvaTaller}), 2)`)
-        : 0
-    }, {
-      where: {
-        ordenReparacionId: { [Op.ne]: null }
-      }
-    });
+    // El IVA de Taller se calcula al emitir cada factura (reparaciones.controller).
+    // No se recalculan facturas ya emitidas: cambiar la configuración no debe alterar
+    // documentos históricos.
 
     if (req.logAudit) {
       await req.logAudit({
@@ -652,7 +672,6 @@ export const updateSistemaConfig: Handler<Body> = async (req, res, next) => {
     }
 
     const response = attachServidorMeta(config, req);
-    response.facturasTallerActualizadas = facturasTallerActualizadas;
     if (requiereReinicio) {
       response.requiereReinicio = true;
       response.mensajeReinicio = `Reinicie el servidor para aplicar el puerto ${puertoNuevo}. Luego abra ${buildAppUrl(puertoNuevo || DEFAULT_PORT)}`;

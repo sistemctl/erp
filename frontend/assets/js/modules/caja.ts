@@ -16,6 +16,25 @@ import { bindQuickAction } from '../utils/quick-actions.js';
 import { erpHeader } from '../utils/module-shell.js';
 import { erpAction } from '../utils/action-buttons.js';
 import { printCierreTicket } from '../utils/cierre-ticket-print.js';
+import { downloadAuthenticatedFile, escapeHtml } from '../utils/html.js';
+
+function bindReporteZPdf(root: ParentNode) {
+  root.querySelectorAll<HTMLButtonElement>('.btn-z-pdf:not([data-bound])').forEach((btn) => {
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.cajaId;
+      if (!id) return;
+      btn.disabled = true;
+      try {
+        await downloadAuthenticatedFile(`/api/caja/${id}/reporte-z-pdf`, `reporte_z_caja_${id}.pdf`);
+      } catch (e) {
+        showToast('Error', errorMessage(e), 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+}
 
 export async function initCaja(container: HTMLElement) {
   const usuario = requireUsuario();
@@ -86,7 +105,7 @@ export async function initCaja(container: HTMLElement) {
                       <div class="col-md-4">
                         <label class="form-label mb-1">Sede de Caja a Monitorear</label>
                         <select id="select-caja-sede" class="form-select form-select-sm">
-                          ${sedes.map(s => `<option value="${s.id}" ${s.id === currentSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                          ${sedes.map(s => `<option value="${s.id}" ${s.id === currentSedeId ? 'selected' : ''}>${escapeHtml(s.nombre)}</option>`).join('')}
                         </select>
                       </div>
                     </div>
@@ -116,7 +135,7 @@ export async function initCaja(container: HTMLElement) {
                         <label class="form-label">Sede</label>
                         <select id="hist-caja-sede" class="form-select">
                           <option value="">-- Todas las Sedes --</option>
-                          ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                          ${sedes.map(s => `<option value="${s.id}">${escapeHtml(s.nombre)}</option>`).join('')}
                         </select>
                       </div>
                     ` : `<input type="hidden" id="hist-caja-sede" value="">`}
@@ -173,7 +192,7 @@ export async function initCaja(container: HTMLElement) {
                   <div class="col-md-3">
                     <label class="form-label">Sede</label>
                     <select id="analisis-gastos-sede" class="form-select">
-                      ${sedes.map(s => `<option value="${s.id}" ${s.id === currentSedeId ? 'selected' : ''}>${s.nombre}</option>`).join('')}
+                      ${sedes.map(s => `<option value="${s.id}" ${s.id === currentSedeId ? 'selected' : ''}>${escapeHtml(s.nombre)}</option>`).join('')}
                     </select>
                   </div>
                 ` : `<input type="hidden" id="analisis-gastos-sede" value="${currentSedeId}">`}
@@ -259,7 +278,7 @@ export async function initCaja(container: HTMLElement) {
                           <label class="form-label" for="mov-caja-sede">Sede</label>
                           <select id="mov-caja-sede" class="form-select">
                             <option value="">Todas las sedes</option>
-                            ${sedes.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+                            ${sedes.map(s => `<option value="${s.id}">${escapeHtml(s.nombre)}</option>`).join('')}
                           </select>
                         </div>
                       ` : `<input type="hidden" id="mov-caja-sede" value="">`}
@@ -523,9 +542,6 @@ export async function initCaja(container: HTMLElement) {
     input.focus();
   });
   requireElement('cierre-efectivo', HTMLInputElement).addEventListener('input', mostrarDiferenciaEfectivo);
-  const escapeHtml = (value: unknown) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
-  } as Record<string,string>)[char] || char);
 
   const METODOS_PAGO_CAJA: {key: 'totalVentasEfectivo'|'totalVentasNequi'|'totalVentasDaviplata'|'totalVentasTarjeta'|'totalVentasTransferencia'; label: string; icon: string; tone: string}[] = [
     { key: 'totalVentasEfectivo', label: 'Efectivo', icon: 'ti-cash', tone: 'green' },
@@ -628,7 +644,7 @@ export async function initCaja(container: HTMLElement) {
       const cats = await apiRequired<{id: string; nombre: string}[]>('/caja/categorias-egreso');
       const select = requireElement('egreso-categoria', HTMLSelectElement);
       if (select) {
-        select.innerHTML = cats.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+        select.innerHTML = cats.map(c => `<option value="${c.id}">${escapeHtml(c.nombre)}</option>`).join('');
       }
     } catch (e) {
       console.error(e);
@@ -809,7 +825,7 @@ export async function initCaja(container: HTMLElement) {
 
 
     } catch (err) {
-      body.innerHTML = `<div class="alert alert-danger">${errorMessage(err)}</div>`;
+      body.innerHTML = `<div class="alert alert-danger">${escapeHtml(errorMessage(err))}</div>`;
     }
   };
 
@@ -828,9 +844,9 @@ export async function initCaja(container: HTMLElement) {
       tbody.innerHTML = data.map(e => `
         <tr>
           <td>${new Date(e.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
-          <td>${e.usuario ? e.usuario.nombre : 'Cajero'}</td>
-          <td><span class="badge bg-secondary-lt">${e.categoria?.nombre}</span></td>
-          <td class="fw-semibold text-truncate" style="max-width: 250px;">${e.motivo}</td>
+          <td>${escapeHtml(e.usuario ? e.usuario.nombre : 'Cajero')}</td>
+          <td><span class="badge bg-secondary-lt">${escapeHtml(e.categoria?.nombre)}</span></td>
+          <td class="fw-semibold text-truncate" style="max-width: 250px;">${escapeHtml(e.motivo)}</td>
           <td class="fw-bold text-danger">${formatter.format(Number(e.monto))}</td>
           <td>${e.requirioPin ? '<span class="badge bg-red text-white">PIN Admin</span>' : '<span class="badge bg-green-lt">Autónomo</span>'}</td>
         </tr>
@@ -994,7 +1010,7 @@ export async function initCaja(container: HTMLElement) {
         <div class="modal-body">
           <div class="text-center mb-4">
             ${diffBadge}
-            <div class="text-secondary small mt-2">Sede: ${caja.sede?.nombre || 'General'} | Fecha: ${caja.fecha} | Cierre por: ${caja.usuarioCierre?.nombre || 'N/A'}</div>
+            <div class="text-secondary small mt-2">Sede: ${escapeHtml(caja.sede?.nombre || 'General')} | Fecha: ${escapeHtml(caja.fecha)} | Cierre por: ${escapeHtml(caja.usuarioCierre?.nombre || 'N/A')}</div>
           </div>
 
           ${buildDesglosePagosHtml(caja, {
@@ -1021,7 +1037,7 @@ export async function initCaja(container: HTMLElement) {
 
           ${caja.observaciones ? `
             <div class="alert alert-warning py-2 mb-0">
-              <strong>Observaciones de Cierre:</strong> ${caja.observaciones}
+              <strong>Observaciones de Cierre:</strong> ${escapeHtml(caja.observaciones)}
             </div>
           ` : ''}
         </div>
@@ -1035,13 +1051,14 @@ export async function initCaja(container: HTMLElement) {
             <button type="button" id="btn-z-ticket-print" class="btn btn-dark">
               <i class="ti ti-printer me-1"></i> Imprimir Ticket Térmico Z
             </button>
-            <a href="/api/caja/${caja.id}/reporte-z-pdf" target="_blank" class="btn btn-primary">
+            <button type="button" class="btn btn-primary btn-z-pdf" data-caja-id="${caja.id}">
               <i class="ti ti-file-pdf me-1"></i> Descargar PDF (Reporte Z)
-            </a>
+            </button>
           </div>
         </div>
       `;
 
+      bindReporteZPdf(document);
       document.getElementById('btn-z-ticket-print')?.addEventListener('click', () => {
         printCierreTicket(zData);
       });
@@ -1053,7 +1070,7 @@ export async function initCaja(container: HTMLElement) {
     } catch (err) {
       content.innerHTML = `
         <div class="modal-body py-4">
-          <div class="alert alert-danger mb-0">Error al cargar Informe Z: ${errorMessage(err)}</div>
+          <div class="alert alert-danger mb-0">Error al cargar Informe Z: ${escapeHtml(errorMessage(err))}</div>
         </div>
       `;
     }
@@ -1108,8 +1125,8 @@ export async function initCaja(container: HTMLElement) {
       return `
         <tr class="caja-historial-row ${isHighlight ? 'caja-historial-row-highlight' : ''}" data-id="${c.id}" role="button" tabindex="0">
           <td><strong>${c.fecha}</strong></td>
-          <td>${c.sede ? c.sede.nombre : 'N/A'}</td>
-          <td class="text-truncate" style="max-width: 120px;">${c.usuarioCierre ? c.usuarioCierre.nombre : (c.usuarioApertura ? c.usuarioApertura.nombre : 'N/A')}</td>
+          <td>${escapeHtml(c.sede ? c.sede.nombre : 'N/A')}</td>
+          <td class="text-truncate" style="max-width: 120px;">${escapeHtml(c.usuarioCierre ? c.usuarioCierre.nombre : (c.usuarioApertura ? c.usuarioApertura.nombre : 'N/A'))}</td>
           <td class="text-end text-nowrap small">${formatter.format(Number(c.totalVentasEfectivo))}</td>
           <td class="text-end text-nowrap small">${formatter.format(Number(c.totalVentasNequi))}</td>
           <td class="text-end text-nowrap small">${formatter.format(Number(c.totalVentasDaviplata))}</td>
@@ -1180,7 +1197,7 @@ export async function initCaja(container: HTMLElement) {
         openPastCajaDetalle(highlightId, historialCache);
       }
     } catch (err) {
-      tbodyHist.innerHTML = `<tr><td colspan="${HISTORIAL_COLS}" class="text-center py-4 text-danger">Error: ${errorMessage(err)}</td></tr>`;
+      tbodyHist.innerHTML = `<tr><td colspan="${HISTORIAL_COLS}" class="text-center py-4 text-danger">Error: ${escapeHtml(errorMessage(err))}</td></tr>`;
     }
   };
 
@@ -1402,11 +1419,11 @@ export async function initCaja(container: HTMLElement) {
         <div class="row g-3 mb-4">
           <div class="col-sm-6 col-md-3">
             <span class="text-secondary small">Sede</span>
-            <div class="fw-bold">${c.sede ? c.sede.nombre : 'N/A'}</div>
+            <div class="fw-bold">${escapeHtml(c.sede ? c.sede.nombre : 'N/A')}</div>
           </div>
           <div class="col-sm-6 col-md-3">
             <span class="text-secondary small">Cierre por</span>
-            <div class="fw-bold">${c.usuarioCierre ? c.usuarioCierre.nombre : 'N/A'}</div>
+            <div class="fw-bold">${escapeHtml(c.usuarioCierre ? c.usuarioCierre.nombre : 'N/A')}</div>
           </div>
           <div class="col-sm-6 col-md-3">
             <span class="text-secondary small">Hora de cierre</span>
@@ -1444,15 +1461,15 @@ export async function initCaja(container: HTMLElement) {
         ${c.observaciones ? `
           <div class="mt-3">
             <span class="text-secondary small">Observaciones del cierre</span>
-            <div class="bg-light rounded p-2 small mt-1">${c.observaciones}</div>
+            <div class="bg-light rounded p-2 small mt-1">${escapeHtml(c.observaciones)}</div>
           </div>
         ` : ''}
       </div>
       <div class="modal-footer d-flex justify-content-between">
         <div class="d-flex gap-2">
-          <a href="/api/caja/${c.id}/reporte-z-pdf" target="_blank" class="btn btn-outline-primary">
+          <button type="button" class="btn btn-outline-primary btn-z-pdf" data-caja-id="${c.id}">
             <i class="ti ti-file-pdf me-1"></i> Descargar Reporte Z (PDF)
-          </a>
+          </button>
           <button type="button" class="btn btn-outline-dark btn-print-past-ticket" data-id="${c.id}">
             <i class="ti ti-printer me-1"></i> Ticket Térmico
           </button>
@@ -1461,6 +1478,7 @@ export async function initCaja(container: HTMLElement) {
       </div>
     `;
 
+    bindReporteZPdf(content);
     content.querySelector('.btn-print-past-ticket')?.addEventListener('click', async () => {
       try {
         const zData = await apiRequired<ReporteZ>(`/caja/${c.id}/detalle-z`);
@@ -1533,7 +1551,7 @@ export async function initCaja(container: HTMLElement) {
             const pct = total > 0 ? ((c.total / total) * 100).toFixed(1) : 0;
             return `
               <tr>
-                <td class="fw-semibold">${c.nombre}</td>
+                <td class="fw-semibold">${escapeHtml(c.nombre)}</td>
                 <td class="text-center">${c.cantidad}</td>
                 <td class="text-end fw-bold text-danger">${formatter.format(Number(c.total))}</td>
                 <td class="text-end text-secondary">${pct}%</td>
@@ -1551,9 +1569,9 @@ export async function initCaja(container: HTMLElement) {
           : detalle.map(e => `
             <tr>
               <td class="text-nowrap">${new Date(e.fecha).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}</td>
-              <td><span class="badge bg-secondary-lt">${e.categoria}</span></td>
-              <td class="text-truncate" style="max-width:160px">${e.motivo}</td>
-              <td class="small">${e.usuario}</td>
+              <td><span class="badge bg-secondary-lt">${escapeHtml(e.categoria)}</span></td>
+              <td class="text-truncate" style="max-width:160px">${escapeHtml(e.motivo)}</td>
+              <td class="small">${escapeHtml(e.usuario)}</td>
               <td class="text-end fw-bold text-danger">${formatter.format(Number(e.monto))}</td>
             </tr>
           `).join('');

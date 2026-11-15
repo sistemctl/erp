@@ -1,6 +1,7 @@
 import type { FacturaDocumento, EmpresaDocumento } from '../types/documents.js';
 interface FacturaItem { codigo: string; descripcion: string; cantidad: number; precioUnitario: number | string; subtotal: number | string; }
 import { numeroALetras } from './numero-a-letras.js';
+import { escapeHtml } from './html.js';
 
 const facFormatter = new Intl.NumberFormat('es-CO', {
   minimumFractionDigits: 2,
@@ -138,8 +139,8 @@ export function renderFacturaDocumento(f: FacturaDocumento, config: EmpresaDocum
 
   const itemRows = items.map((item) => `
     <tr>
-      <td>${item.codigo}</td>
-      <td>${item.descripcion}</td>
+      <td>${escapeHtml(item.codigo)}</td>
+      <td>${escapeHtml(item.descripcion)}</td>
       <td class="text-center">UND</td>
       <td class="text-center">${item.cantidad}</td>
       <td class="text-end">${fmtFacMoney(item.precioUnitario)}</td>
@@ -154,12 +155,12 @@ export function renderFacturaDocumento(f: FacturaDocumento, config: EmpresaDocum
   const pagosHtml = f.venta?.pagos?.length
     ? f.venta.pagos.map((p) => {
         const metodo = (p.metodo || 'Pago').replace(/_/g, ' ');
-        return `<p class="mb-0 text-capitalize">${metodo}: ${fmtFacMoney(p.monto)}</p>`;
+        return `<p class="mb-0 text-capitalize">${escapeHtml(metodo)}: ${fmtFacMoney(p.monto)}</p>`;
       }).join('')
     : '';
 
   const logoHtml = config.logoUrl
-    ? `<img src="${config.logoUrl}" alt="${empresa}" class="cot-doc__logo">`
+    ? `<img src="${escapeHtml(config.logoUrl)}" alt="${escapeHtml(empresa)}" class="cot-doc__logo">`
     : '';
 
   return `
@@ -167,11 +168,11 @@ export function renderFacturaDocumento(f: FacturaDocumento, config: EmpresaDocum
       <header class="cot-doc__header">
         <div class="cot-doc__empresa">
           ${logoHtml}
-          <h1 class="cot-doc__empresa-nombre">${empresa.toUpperCase()}</h1>
-          <p>NIT: ${nit}</p>
-          <p>Dirección: ${direccion}</p>
-          <p>Ciudad: ${f.sede?.nombre || '—'} — COLOMBIA</p>
-          <p>Tel: ${telefono}</p>
+          <h1 class="cot-doc__empresa-nombre">${escapeHtml(empresa.toUpperCase())}</h1>
+          <p>NIT: ${escapeHtml(nit)}</p>
+          <p>Dirección: ${escapeHtml(direccion)}</p>
+          <p>Ciudad: ${escapeHtml(f.sede?.nombre || '—')} — COLOMBIA</p>
+          <p>Tel: ${escapeHtml(telefono)}</p>
           ${(parseFloat(f.iva) || 0) > 0 ? '<p class="cot-doc__legal-line">Responsable de IVA</p>' : ''}
         </div>
         <div class="cot-doc__qr" aria-hidden="true">
@@ -186,14 +187,14 @@ export function renderFacturaDocumento(f: FacturaDocumento, config: EmpresaDocum
               <rect x="52" y="36" width="6" height="6" fill="#111"/>
               <rect x="36" y="52" width="6" height="6" fill="#111"/>
             </svg>
-            <span>${f.numeroFactura}</span>
+            <span>${escapeHtml(f.numeroFactura)}</span>
           </div>
         </div>
         <div class="cot-doc__doc-id">
           <div class="cot-doc__doc-id-inner">
             <strong>FACTURA DE VENTA</strong>
-            <span>N° ${f.numeroFactura}</span>
-            <small>${(f.estado || '').toUpperCase()}</small>
+            <span>N° ${escapeHtml(f.numeroFactura)}</span>
+            <small>${escapeHtml((f.estado || '').toUpperCase())}</small>
           </div>
         </div>
       </header>
@@ -202,10 +203,10 @@ export function renderFacturaDocumento(f: FacturaDocumento, config: EmpresaDocum
         <div>
           <h2>Datos del cliente</h2>
           <dl>
-            <div><dt>Cliente</dt><dd>${cliente?.nombre || 'Cliente general'}</dd></div>
-            <div><dt>NIT / C.C.</dt><dd>${cliente?.documento || '—'}</dd></div>
-            <div><dt>Dirección</dt><dd>${cliente?.direccion || '—'}</dd></div>
-            <div><dt>Teléfono</dt><dd>${cliente?.telefono || '—'}</dd></div>
+            <div><dt>Cliente</dt><dd>${escapeHtml(cliente?.nombre || 'Cliente general')}</dd></div>
+            <div><dt>NIT / C.C.</dt><dd>${escapeHtml(cliente?.documento || '—')}</dd></div>
+            <div><dt>Dirección</dt><dd>${escapeHtml(cliente?.direccion || '—')}</dd></div>
+            <div><dt>Teléfono</dt><dd>${escapeHtml(cliente?.telefono || '—')}</dd></div>
           </dl>
         </div>
         <div>
@@ -213,8 +214,8 @@ export function renderFacturaDocumento(f: FacturaDocumento, config: EmpresaDocum
           <dl>
             <div><dt>Fecha factura</dt><dd>${fmtFacDate(f.createdAt)}</dd></div>
             <div><dt>Fecha vencimiento</dt><dd>${fmtFacDate(f.fechaVencimiento)}</dd></div>
-            <div><dt>Vendedor</dt><dd>${vendedor}</dd></div>
-            <div><dt>Sede</dt><dd>${f.sede?.nombre || '—'}</dd></div>
+            <div><dt>Vendedor</dt><dd>${escapeHtml(vendedor)}</dd></div>
+            <div><dt>Sede</dt><dd>${escapeHtml(f.sede?.nombre || '—')}</dd></div>
           </dl>
         </div>
       </section>

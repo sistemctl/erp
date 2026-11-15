@@ -24,6 +24,11 @@ import { resolveQuerySede, resolveActionSede } from '../utils/sede';
 
 const DEFAULT_DIAS_GARANTIA = 90;
 
+/** Coincidencia exacta sin distinguir mayúsculas: escapa % y _ para que no actúen como comodines. */
+function likeExacto(value: string) {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
 export const lookupSerie: Handler<Body> = async (req, res, next) => {
   try {
     const serie = String(req.query.serie || '').trim();
@@ -32,7 +37,7 @@ export const lookupSerie: Handler<Body> = async (req, res, next) => {
     }
 
     const registro = await NumeroSerie.findOne({
-      where: { serie: { [Op.iLike]: serie } },
+      where: { serie: { [Op.iLike]: likeExacto(serie) } },
       include: [
         { model: Producto, as: 'producto', attributes: ['id', 'nombre', 'codigoBarras'] },
         { model: Cliente, as: 'cliente', attributes: ['id', 'nombre', 'documento', 'telefono'] },
@@ -71,7 +76,7 @@ export const lookupSerie: Handler<Body> = async (req, res, next) => {
     }
 
     const ordenRep = await OrdenReparacion.findOne({
-      where: { imei: { [Op.iLike]: serie } },
+      where: { imei: { [Op.iLike]: likeExacto(serie) } },
       order: [['createdAt', 'DESC']],
       attributes: ['id', 'numeroOrden', 'diasGarantia', 'estado', 'createdAt']
     });
@@ -163,12 +168,12 @@ export const crear: Handler<Body> = async (req, res, next) => {
     }
 
     const registro = await NumeroSerie.findOne({
-      where: { serie: { [Op.iLike]: String(serie).trim() } },
+      where: { serie: { [Op.iLike]: likeExacto(String(serie).trim()) } },
       transaction
     });
 
     const ordenRep = await OrdenReparacion.findOne({
-      where: { imei: { [Op.iLike]: String(serie).trim() } },
+      where: { imei: { [Op.iLike]: likeExacto(String(serie).trim()) } },
       order: [['createdAt', 'DESC']],
       transaction
     });

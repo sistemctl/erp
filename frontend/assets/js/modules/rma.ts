@@ -7,6 +7,7 @@ import { apiFetch } from '../api.js';
 import { requireUsuario } from '../auth.js';
 import { showToast } from '../utils/toast.js';
 import { erpHeader } from '../utils/module-shell.js';
+import { escapeHtml } from '../utils/html.js';
 
 const ESTADOS = [
   { value: 'abierto', label: 'Abierto' },
@@ -49,9 +50,9 @@ export async function initRma(container: HTMLElement) {
     body.innerHTML = reclamos.map((r) => `
       <tr>
         <td><strong>${r.numero}</strong></td>
-        <td><code>${r.serie}</code></td>
-        <td>${r.producto?.nombre || '—'}</td>
-        <td>${r.cliente?.nombre || '—'}</td>
+        <td><code>${escapeHtml(r.serie)}</code></td>
+        <td>${escapeHtml(r.producto?.nombre || '—')}</td>
+        <td>${escapeHtml(r.cliente?.nombre || '—')}</td>
         <td>
           <span class="badge ${r.dentroDeGarantia ? 'bg-green-lt' : 'bg-orange-lt'}">
             ${r.dentroDeGarantia ? 'En garantía' : 'Fuera'}
@@ -162,8 +163,8 @@ export async function initRma(container: HTMLElement) {
       if (!lookup) throw new Error("No se encontró la serie.");
       box.innerHTML = `
         <div class="alert ${lookup.dentroDeGarantia ? 'alert-success' : 'alert-warning'} mb-0">
-          <div><strong>${lookup.producto?.nombre || 'Producto'}</strong> — estado serie: ${lookup.estadoSerie}</div>
-          <div>Cliente: ${lookup.cliente?.nombre || '—'}</div>
+          <div><strong>${escapeHtml(lookup.producto?.nombre || 'Producto')}</strong> — estado serie: ${escapeHtml(lookup.estadoSerie)}</div>
+          <div>Cliente: ${escapeHtml(lookup.cliente?.nombre || '—')}</div>
           <div>Venta: ${fmtDate(lookup.fechaVenta)} · Garantía ${lookup.diasGarantia} días (vence ${fmtDate(lookup.fechaVenceGarantia)})</div>
           <div class="mt-1">${lookup.dentroDeGarantia ? 'Dentro de garantía' : 'Fuera de garantía (puede registrarse igual)'}</div>
         </div>
