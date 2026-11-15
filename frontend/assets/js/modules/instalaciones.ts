@@ -1270,9 +1270,9 @@ export async function initInstalaciones(container: HTMLElement) {
         if (newScroll) newScroll.scrollTop = scrollTop;
       }
 
-      const matScan = requireElement('mat-scan', HTMLInputElement);
-      const matSeries = requireElement('mat-series', HTMLInputElement);
-      const matCantidad = requireElement('mat-cantidad', HTMLInputElement);
+      // "Agregar material" solo existe si se puede editar y la orden no está cerrada.
+      const matScan = document.querySelector<HTMLInputElement>('#mat-scan');
+      const matSeries = document.querySelector<HTMLInputElement>('#mat-series');
 
       async function aplicarProductoEscaneado(codigoRaw: string) {
         const codigo = String(codigoRaw || '').trim();
@@ -1568,8 +1568,8 @@ export async function initInstalaciones(container: HTMLElement) {
   }
   instalacionesKeydownHandler = (e) => {
     if (e.key !== 'F2') return;
-    const modal = requireElement('modal-detalle-instalacion', HTMLDivElement);
-    const scan = requireElement('mat-scan', HTMLInputElement);
+    const modal = document.getElementById('modal-detalle-instalacion');
+    const scan = document.querySelector<HTMLInputElement>('#mat-scan');
     if (!modal?.classList.contains('show') || !scan) return;
     e.preventDefault();
     scan.focus();
