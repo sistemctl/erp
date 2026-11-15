@@ -8,7 +8,7 @@
   --canvas: #f4f7fb;
   --ink: #0b1220;
   --ink-secondary: #64748b;
-  --ink-muted: #94a3b8;
+  --ink-muted: #667085; /* AA: 4,97:1 sobre blanco */
   --accent-color: #2563eb;
   --accent-hover: #1d4ed8;
   --accent-dark: #3b82f6;
@@ -3387,7 +3387,7 @@ body.btn-style-square .btn:not(.btn-icon) {
 }
 
 .inv-module .erp-header__sub {
-  font-family: var(--inv-mono);
+  font-family: inherit; font-variant-numeric: tabular-nums;
   font-size: 0.6875rem;
   letter-spacing: 0.01em;
   color: var(--erp-muted);
@@ -3620,7 +3620,7 @@ body.btn-style-square .btn:not(.btn-icon) {
 }
 
 .inv-cat-toolbar__meta {
-  font-family: var(--inv-mono, ui-monospace, monospace);
+  font-family: inherit; font-variant-numeric: tabular-nums;
   font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
   color: var(--cat-muted);
@@ -3751,7 +3751,7 @@ body.btn-style-square .btn:not(.btn-icon) {
   height: 1.55rem;
   padding: 0 0.4rem;
   border-radius: 0.4rem;
-  font-family: var(--inv-mono, ui-monospace, monospace);
+  font-family: inherit; font-variant-numeric: tabular-nums;
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -3869,7 +3869,7 @@ body.btn-style-square .btn:not(.btn-icon) {
 }
 
 .inv-result-count {
-  font-family: var(--inv-mono);
+  font-family: inherit; font-variant-numeric: tabular-nums;
   font-size: 0.68rem;
   color: var(--erp-muted);
   white-space: nowrap;
@@ -3902,7 +3902,7 @@ body.btn-style-square .btn:not(.btn-icon) {
 .erp-module .erp-filter-card .inv-scan-input .form-control,
 .inv-scan-input .form-control {
   padding-left: 2.15rem !important;
-  font-family: var(--inv-mono);
+  font-family: inherit; font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
 }
 
@@ -3996,7 +3996,7 @@ body.btn-style-square .btn:not(.btn-icon) {
 }
 
 .inv-money {
-  font-family: var(--inv-mono);
+  font-family: inherit; font-variant-numeric: tabular-nums;
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
   color: var(--erp-muted);
@@ -4009,7 +4009,7 @@ body.btn-style-square .btn:not(.btn-icon) {
 }
 
 .inv-qty {
-  font-family: var(--inv-mono);
+  font-family: inherit; font-variant-numeric: tabular-nums;
   font-size: 0.8125rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
@@ -5957,7 +5957,7 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   justify-content: space-between;
   gap: 0.75rem;
   padding-top: 0;
-  font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, Consolas, monospace;
+  font-family: inherit; font-variant-numeric: tabular-nums;
 }
 
 .dash-pulse__receipt-id {
@@ -6067,7 +6067,7 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   font-weight: 700;
   letter-spacing: -0.05em;
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, Consolas, monospace;
+  font-family: inherit; font-variant-numeric: tabular-nums;
   line-height: 1;
   margin: 0.3rem 0 0.2rem;
   color: var(--dash-pulse-ink);
@@ -6146,7 +6146,7 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   font-size: 0.9375rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, Consolas, monospace;
+  font-family: inherit; font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
   color: var(--dash-pulse-ink);
 }
@@ -6432,7 +6432,7 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   font-weight: 650;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, Consolas, monospace;
+  font-family: inherit; font-variant-numeric: tabular-nums;
   color: var(--dash-ink);
   line-height: 1.2;
   text-align: right;
@@ -7213,7 +7213,7 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   font-weight: 800;
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, Consolas, monospace;
+  font-family: inherit; font-variant-numeric: tabular-nums;
   color: var(--dash-ink, var(--erp-ink));
 }
 
@@ -7488,7 +7488,7 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   color: var(--dash-negative);
   margin: 0.2rem 0;
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, Consolas, monospace;
+  font-family: inherit; font-variant-numeric: tabular-nums;
 }
 
 .dash-origen-card {
@@ -7515,7 +7515,7 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   font-weight: 700;
   color: var(--dash-ink);
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, Consolas, monospace;
+  font-family: inherit; font-variant-numeric: tabular-nums;
   margin-top: 0.1rem;
 }
 
@@ -7578,7 +7578,7 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
 }
 
 .compras-header__eyebrow {
-  font-family: ui-monospace, monospace;
+  font-family: inherit; font-variant-numeric: tabular-nums;
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -8914,7 +8914,7 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   align-items: center;
   gap: 0.35rem;
   padding: 0.2rem 0.55rem;
-  font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+  font-family: inherit; font-variant-numeric: tabular-nums;
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--prod-ink);

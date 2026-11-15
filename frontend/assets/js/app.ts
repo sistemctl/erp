@@ -947,7 +947,11 @@ function setupThemeToggler() {
     window.history.replaceState(null, '', newPath);
   }
 
-  const currentTheme = localStorage.getItem('theme') || 'light';
+  // Sin elección guardada se sigue la preferencia del sistema operativo.
+  const stored = localStorage.getItem('theme');
+  const currentTheme = stored === 'dark' || stored === 'light'
+    ? stored
+    : (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   document.body.setAttribute('data-bs-theme', currentTheme);
 
   document.querySelectorAll('.erp-theme-btn[data-theme]').forEach((el) => {

@@ -337,3 +337,16 @@
 @media screen and (max-width: 359.98px) {
   .inv-module-tabs .nav-link .ti { display: none; }
 }
+
+/* Pulido 2026-11: chips y píldoras compactos en una fila desplazable (no heredan los 44px de los botones). */
+@media screen and (max-width: 991.98px) {
+  body #app .erp-module :is(.inv-chip, .pos-cat-pill, .pos-session-chip) { min-height: 36px; padding: 6px 12px; font-size: 13px; }
+  body #app .erp-module .inv-chips,
+  body #app .erp-module #pos-categories-container {
+    display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch; padding-bottom: 2px;
+  }
+  body #app .erp-module .inv-chips::-webkit-scrollbar,
+  body #app .erp-module #pos-categories-container::-webkit-scrollbar { display: none; }
+  body #app .erp-module :is(.inv-chip, .pos-cat-pill) { flex: 0 0 auto; white-space: nowrap; }
+}
