@@ -1843,7 +1843,7 @@ export async function initInventario(container: HTMLElement) {
       }
 
       const imgHtml = prod.imagenUrl 
-        ? `<img src="${prod.imagenUrl}" class="inv-thumb" alt="" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'24\\' height=\\'24\\' fill=\\'none\\' stroke=\\'%23ccc\\' stroke-width=\\'2\\'><rect width=\\'20\\' height=\\'20\\' x=\\'2\\' y=\\'2\\' rx=\\'2\\'/><circle cx=\\'9\\' cy=\\'9\\' r=\\'2\\'/><path d=\\'m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\\'/></svg>';">` 
+        ? `<img src="${escapeHtml(prod.imagenUrl)}" class="inv-thumb" loading="lazy" decoding="async" alt="" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'24\\' height=\\'24\\' fill=\\'none\\' stroke=\\'%23ccc\\' stroke-width=\\'2\\'><rect width=\\'20\\' height=\\'20\\' x=\\'2\\' y=\\'2\\' rx=\\'2\\'/><circle cx=\\'9\\' cy=\\'9\\' r=\\'2\\'/><path d=\\'m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\\'/></svg>';">` 
         : `<span class="inv-thumb inv-thumb--letter">${prod.nombre.charAt(0).toUpperCase()}</span>`;
 
       const codigoInterno = isInternalBarcode(prod.codigoBarras)

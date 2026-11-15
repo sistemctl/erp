@@ -672,7 +672,7 @@ export async function initPos(container: HTMLElement) {
               ? (item.producto.componentes || []).map((row) => `${row.cantidad}× ${row.nombre || row.producto?.nombre || 'Producto'}`).join(' · ')
               : '';
             const imgHtml = item.producto.imagenUrl 
-              ? `<img src="${escapeHtml(item.producto.imagenUrl)}" class="pos-product-card-img" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'24\\' height=\\'24\\' fill=\\'none\\' stroke=\\'%23ccc\\' stroke-width=\\'2\\'><rect width=\\'20\\' height=\\'20\\' x=\\'2\\' y=\\'2\\' rx=\\'2\\'/><circle cx=\\'9\\' cy=\\'9\\' r=\\'2\\'/><path d=\\'m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\\'/></svg>';">`
+              ? `<img src="${escapeHtml(item.producto.imagenUrl)}" class="pos-product-card-img" loading="lazy" decoding="async" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'24\\' height=\\'24\\' fill=\\'none\\' stroke=\\'%23ccc\\' stroke-width=\\'2\\'><rect width=\\'20\\' height=\\'20\\' x=\\'2\\' y=\\'2\\' rx=\\'2\\'/><circle cx=\\'9\\' cy=\\'9\\' r=\\'2\\'/><path d=\\'m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\\'/></svg>';">`
               : ''; // Sin imagen: tarjeta compacta (sin la caja gris con la inicial)
 
             return `
@@ -876,7 +876,7 @@ export async function initPos(container: HTMLElement) {
     cartContainer.innerHTML = cart.map((item, idx) => {
       const initial = item.nombre.charAt(0).toUpperCase();
       const mediaHtml = item.imagenUrl
-        ? `<img src="${escapeHtml(item.imagenUrl)}" class="pos-cart-line__img" alt="" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
+        ? `<img src="${escapeHtml(item.imagenUrl)}" class="pos-cart-line__img" loading="lazy" decoding="async" alt="" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
            <span class="pos-cart-line__fallback" hidden aria-hidden="true">${escapeHtml(initial)}</span>`
         : `<span class="pos-cart-line__fallback" aria-hidden="true">${escapeHtml(initial)}</span>`;
 
