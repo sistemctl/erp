@@ -2577,6 +2577,11 @@ export async function initInventario(container: HTMLElement) {
       if (codigoRaw) {
         data.codigoBarras = codigoRaw;
       }
+      // Un costo por metro mayor que la venta por metro suele ser el costo del rollo completo.
+      if (data.unidadMedida === 'm' && data.precioVenta > 0 && data.precioCosto > data.precioVenta) {
+        const seguir = await showConfirm('Revise el costo por metro', `El costo ($${data.precioCosto.toLocaleString('es-CO')}/m) es mayor que la venta ($${data.precioVenta.toLocaleString('es-CO')}/m). Si ese valor es lo que cuesta el rollo, cancele y use "Costo del rollo" para calcular el costo de 1 metro. ¿Guardar de todas formas?`);
+        if (!seguir) { document.getElementById('prod-roll-costo')?.focus(); return; }
+      }
       if (data.esCombo && data.componentes.length < 2) {
         showToast('Combo incompleto', 'Agrega al menos dos componentes antes de guardar.', 'warning');
         document.getElementById('prod-combo-producto')?.focus();
