@@ -1,7 +1,7 @@
 # ERP TechStore Colombia — Plan Full-Stack
 > Documento generado como guía de implementación para el equipo de desarrollo.
 > Contiene todos los módulos, funcionalidades, fases de desarrollo y detalles técnicos.
-> **Versión:** 3.0 — Dokploy, CORS en producción, módulo Instalaciones
+> **Versión:** 3.0 — Docker Compose, CORS en producción, módulo Instalaciones
 
 ---
 
@@ -884,9 +884,9 @@ npm install
 npm run dev             # http://localhost:3000 (sirve backend + frontend)
 ```
 
-### Producción (Dokploy / Docker)
+### Producción (Docker)
 
-Ver [`README.md`](README.md) — sección **Instalación con Dokploy**.
+Ver [`README.md`](README.md) — sección **Instalación con Docker Compose**.
 
 | Variable | Ejemplo producción |
 |----------|-------------------|

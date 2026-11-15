@@ -68,8 +68,8 @@ Estado al 14-nov-2026. Rama `3.0`. **Ningún cambio tiene commit todavía** (~65
 - [ ] **Construir y probar la imagen Docker en el servidor.** Cambiaron el usuario del contenedor a `node` y el `ENTRYPOINT`. Aquí no se pudo probar.
 - [ ] **Revisar el log del primer arranque:**
   - Si dice "tiene números repetidos… no se creó el índice único", corregir esos números y reiniciar.
-  - **Antes de desplegar**, confirmar que `JWT_SECRET` en Dokploy tiene 32 caracteres o más y no es el valor de ejemplo: desde el 15-nov el servidor **no arranca** en producción si no. Si hay que cambiarlo, generar uno con `openssl rand -hex 32` (todos los usuarios tendrán que volver a iniciar sesión).
-  - `TRUST_PROXY` vacío está bien detrás de Traefik/Dokploy.
+  - **Antes de desplegar**, confirmar que `JWT_SECRET` en el `.env` del servidor tiene 32 caracteres o más y no es el valor de ejemplo: desde el 15-nov el servidor **no arranca** en producción si no. Si hay que cambiarlo, generar uno con `openssl rand -hex 32` (todos los usuarios tendrán que volver a iniciar sesión).
+  - `TRUST_PROXY` vacío está bien detrás de un proxy en red privada (Nginx local, Docker).
 
 ---
 

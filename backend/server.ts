@@ -49,7 +49,7 @@ require('dotenv').config({ path: ENV_PATH });
 const app = express();
 
 // Solo se confía en X-Forwarded-For si la conexión viene de un proxy en red privada
-// (Traefik/Dokploy, Nginx local). Un cliente que entra directo por el puerto publicado
+// (Nginx local, red de Docker). Un cliente que entra directo por el puerto publicado
 // no puede falsificar su IP para saltarse el límite de intentos de login.
 // TRUST_PROXY permite ajustarlo (p. ej. "1", "false" o una lista de IPs/subredes).
 const trustProxyEnv = (process.env.TRUST_PROXY || '').trim();
@@ -63,7 +63,7 @@ app.set('trust proxy', trustProxyEnv === ''
 // cualquiera podría falsificar sesiones de administrador.
 const jwtSecret = process.env.JWT_SECRET || '';
 if (process.env.NODE_ENV === 'production' && (jwtSecret.length < 32 || jwtSecret.startsWith('genera_una_clave'))) {
-  console.error('[Seguridad] JWT_SECRET falta, tiene menos de 32 caracteres o es el valor de ejemplo. El servidor NO arranca en producción con un secreto débil. Genere uno con `openssl rand -hex 32`, configúrelo en el Environment (Dokploy) y reinicie.');
+  console.error('[Seguridad] JWT_SECRET falta, tiene menos de 32 caracteres o es el valor de ejemplo. El servidor NO arranca en producción con un secreto débil. Genere uno con `openssl rand -hex 32`, configúrelo en el archivo .env y reinicie.');
   process.exit(1);
 }
 

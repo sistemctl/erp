@@ -7,13 +7,13 @@ Sistema ERP monolítico para tiendas de tecnología: ventas, inventario, reparac
 | Backend | Node.js 20+, Express 5, Sequelize; TypeScript estricto compilado a CommonJS |
 | Base de datos | PostgreSQL 16 |
 | Frontend | TypeScript estricto vanilla, compilado a ES modules para navegador; Tabler UI y Bootstrap 5 |
-| Infra opcional | Docker Compose, Dokploy, Cloudflare Tunnel, Nginx, systemd |
+| Infra opcional | Docker Compose, Cloudflare Tunnel, Nginx, systemd |
 
 El backend sirve la API REST (`/api/*`), archivos subidos (`/uploads`) y el frontend estático desde un solo proceso.
 
 Las fases 3 y 4 están completas: frontend y backend se escriben en TypeScript estricto, sin `allowJs`. Las siete pruebas JavaScript heredadas se copian por separado a la salida de pruebas. La fase 5 tiene preparada la compilación de producción y CI; el contenedor y el despliegue quedan pendientes de ejecución en un equipo con Docker. Consulta [comandos y estado](docs/migracion-typescript.md) y [despliegue y reversión](docs/despliegue-typescript.md). Instala dependencias de desarrollo para compilar; en producción ejecuta los artefactos de `dist`.
 
-**Producción:** despliegue con Dokploy/Docker en la rama `3.0` (configura tu dominio en Environment).
+**Producción:** despliegue con Docker Compose en la rama `3.0` (configura tu dominio en el `.env`).
 
 ---
 
@@ -22,7 +22,7 @@ Las fases 3 y 4 están completas: frontend y backend se escriben en TypeScript e
 1. [Requisitos](#requisitos)
 2. [Estructura del repositorio](#estructura-del-repositorio)
 3. [Variables de entorno](#variables-de-entorno)
-4. [Instalación con Dokploy](#instalación-con-dokploy)
+4. [Instalación con Docker Compose](#instalación-con-docker-compose)
 5. [Instalación en servidor Linux](#instalación-en-servidor-linux)
 6. [Datos de prueba (seeder)](#datos-de-prueba-seeder)
 7. [Migración desde Odoo](#migración-desde-odoo-odoo_db--erp_techstore)
@@ -34,12 +34,11 @@ Las fases 3 y 4 están completas: frontend y backend se escriben en TypeScript e
 
 ## Requisitos
 
-### Instalación con Dokploy
+### Instalación con Docker Compose
 
 | Herramienta | Versión mínima |
 |-------------|----------------|
-| [Dokploy](https://dokploy.com) en un VPS | reciente |
-| Docker Engine + Compose (gestionado por Dokploy) | 24+ / v2+ |
+| Docker Engine + Compose en un VPS | 24+ / v2+ |
 | Git | cualquier versión reciente |
 
 ### Instalación nativa en Linux
@@ -65,8 +64,8 @@ erp/
 │   └── seeders/          # Datos de prueba
 ├── frontend/             # SPA ES modules; compilación en frontend/dist
 ├── Dockerfile            # Imagen del ERP
-├── docker-compose.yml    # Dokploy (postgres + erp)
-└── .env.docker.example   # Variables para Environment de Dokploy
+├── docker-compose.yml    # Docker Compose (postgres + erp)
+└── .env.docker.example   # Plantilla del .env para Docker Compose
 ```
 
 ---
@@ -77,7 +76,7 @@ Copia la plantilla según el método de instalación:
 
 | Método | Archivo plantilla | Destino |
 |--------|-------------------|---------|
-| Dokploy | [`.env.docker.example`](.env.docker.example) | Environment del servicio Compose |
+| Docker Compose | [`.env.docker.example`](.env.docker.example) | `.env` junto a `docker-compose.yml` |
 | Linux / desarrollo | [`backend/.env.example`](backend/.env.example) | `backend/.env` |
 
 ### Variables obligatorias
@@ -114,29 +113,33 @@ Copia la plantilla según el método de instalación:
 
 ---
 
-## Instalación con Dokploy
+## Instalación con Docker Compose
 
-Despliegue en un VPS con [Dokploy](https://dokploy.com) usando [`docker-compose.yml`](docker-compose.yml).
+Despliegue en un VPS usando [`docker-compose.yml`](docker-compose.yml).
 
 | Capa | Puerto |
 |------|--------|
 | Contenedor `erp` | **3000** (`PORT=3000`) |
 | Host / IP del VPS | **8080** (mapeo `8080:3000`) |
-| Dokploy Domains | **3000** (proxy → contenedor) |
 
 PostgreSQL **no** publica el puerto 5432: solo está en la red `internal` del stack. Solo el contenedor `erp` puede conectarse.
 
-### 1. Crear el servicio Compose
+### 1. Obtener el código
 
-1. En Dokploy: **Project** → **Create Service** → **Compose**
-2. Compose Type: **Docker Compose** (no Stack; hace falta `build`)
-3. Provider: GitHub / Git → repo → rama
-4. **Compose Path:** `./docker-compose.yml`
-5. Guardar
+```bash
+git clone <repo> erp && cd erp
+git checkout 3.0
+```
+
+El volumen de PostgreSQL es externo; créalo una sola vez si no existe:
+
+```bash
+docker volume create startsystem_pgdata
+```
 
 ### 2. Variables de entorno
 
-En la pestaña **Environment**, pega el contenido de [`.env.docker.example`](.env.docker.example) y define al menos:
+Copia [`.env.docker.example`](.env.docker.example) como `.env` (junto a `docker-compose.yml`) y define al menos:
 
 ```env
 DB_PASS=tu_contraseña_segura
@@ -147,20 +150,19 @@ CORS_ORIGINS=https://erp.tudominio.com,http://IP_DEL_VPS:8080
 
 Usa tu dominio en `PUBLIC_BASE_URL` y añade la IP `:8080` en `CORS_ORIGINS` si también entras por IP. Si cambia la IP del VPS, actualiza el segundo origen.
 
-### 3. Dominio
+### 3. Dominio y HTTPS
 
-1. Pestaña **Domains** → Add Domain
-2. Servicio: **erp**
-3. Puerto: **3000**
-4. Host: `erp.tudominio.com` (o tu dominio)
-5. Activa HTTPS / certificado Let's Encrypt
-6. Apunta el DNS (A/CNAME) al servidor de Dokploy
+Pon delante un proxy con HTTPS que reenvíe a `http://127.0.0.1:8080`: Nginx + Certbot (ver la sección Linux) o Caddy. Apunta el DNS (A/CNAME) al servidor.
 
-**Alternativa con Cloudflare Tunnel** (sin Dokploy Domains): apunta el túnel a `http://127.0.0.1:8080` en el host (mapeo Docker) o a `http://host.docker.internal:8080` si `cloudflared` corre en Docker en Windows. Usa **HTTP**, no HTTPS, hacia el origen local.
+**Alternativa con Cloudflare Tunnel**: apunta el túnel a `http://127.0.0.1:8080` en el host (mapeo Docker) o a `http://host.docker.internal:8080` si `cloudflared` corre en Docker en Windows. Usa **HTTP**, no HTTPS, hacia el origen local.
 
 ### 4. Desplegar
 
-Pulsa **Deploy** y espera a que construya la imagen y arranque `postgres` + `erp`.
+```bash
+docker compose up -d --build
+```
+
+Espera a que construya la imagen y arranque `postgres` + `erp`. Para actualizar: `git pull` y el mismo comando.
 
 Comprueba salud:
 
@@ -180,7 +182,7 @@ Acceso directo por IP (mapeo host `8080` → contenedor `3000`):
 http://IP_DEL_VPS:8080
 ```
 
-Volúmenes persistentes: `pgdata` (PostgreSQL) y `erp_uploads` (archivos). Puedes respaldarlos desde **Volume Backups** en Dokploy.
+Volúmenes persistentes: `pgdata` (PostgreSQL) y `erp_uploads` (archivos). Respáldalos periódicamente (por ejemplo `pg_dump` vía el contenedor `postgres`).
 
 ### 5. Seed opcional
 
@@ -411,7 +413,7 @@ Por seguridad se niega a ejecutarse si `NODE_ENV=production` o si ya existen ven
 # Instalación nativa
 cd backend && node dist/seeders/seeder.js
 
-# Docker (Dokploy): el contenedor corre con NODE_ENV=production, requiere la bandera
+# Docker: el contenedor corre con NODE_ENV=production, requiere la bandera
 docker compose exec erp node dist/seeders/seeder.js --confirmar-borrado-total
 ```
 
@@ -478,8 +480,8 @@ docker compose exec erp node dist/scripts/migrate-odoo.js --execute
 
 ## Mantenimiento
 
-| Tarea | Docker (Dokploy) | Linux |
-|-------|------------------|-------|
+| Tarea | Docker | Linux |
+|-------|--------|-------|
 | Ver logs | `docker compose logs -f erp` | `journalctl -u erp -f` |
 | Reiniciar | `docker compose restart erp` | `sudo systemctl restart erp` |
 | Respaldo BD | `pg_dump` vía contenedor `postgres` | `pg_dump` local |
@@ -516,7 +518,7 @@ La integración crea y elimina una base PostgreSQL temporal; el usuario de base 
 
 ### Puerto 3000 ya en uso
 
-- Docker/Dokploy: el contenedor usa 3000; el host publica **8080**. Si 8080 está ocupado, cambia el mapeo en `docker-compose.yml`.
+- Docker: el contenedor usa 3000; el host publica **8080**. Si 8080 está ocupado, cambia el mapeo en `docker-compose.yml`.
 - Linux: cambia `PORT` en `backend/.env` y reinicia el servicio.
 
 ### Error CORS en el navegador

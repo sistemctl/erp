@@ -1,6 +1,6 @@
-# ERP TechStore — imagen de producción para Dokploy (backend + frontend estático).
+# ERP TechStore — imagen de producción (backend + frontend estático).
 # Puerto interno: 3000 (el compose publica 8080:3000).
-# PUBLIC_BASE_URL y CORS_ORIGINS se definen en Environment de Dokploy, no en el build.
+# PUBLIC_BASE_URL y CORS_ORIGINS se definen en el .env del compose, no en el build.
 FROM node:20-alpine AS build
 
 WORKDIR /app
