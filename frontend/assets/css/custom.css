@@ -7665,57 +7665,33 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
 
 .compras-stat-card__fuente { margin-top: 0.15rem; }
 
-.compras-origen-panel {
-  padding: 1rem 1.15rem;
-  background: color-mix(in srgb, var(--cp-cyan) 4%, var(--cp-surface));
-  border: 1px solid var(--cp-line);
-  border-radius: 10px;
+.compras-origen-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1rem;
+  padding: 0.65rem 1.15rem;
+  border-top: 1px solid var(--cp-line);
+  background: color-mix(in srgb, var(--cp-ink) 2%, var(--cp-surface));
+  font-size: 0.75rem;
 }
 
-.compras-origen-panel__title {
-  font-size: 0.8125rem;
+.compras-origen-foot__title {
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--cp-muted);
-  margin: 0 0 0.25rem;
-}
-
-.compras-origen-panel__hint {
-  font-size: 0.8125rem;
-  color: var(--cp-muted);
-  margin: 0 0 0.85rem;
-}
-
-.compras-origen-keys {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.5rem;
-}
-
-@media (min-width: 576px) {
-  .compras-origen-keys { grid-template-columns: repeat(2, 1fr); }
-}
-
-@media (min-width: 1200px) {
-  .compras-origen-keys { grid-template-columns: repeat(4, 1fr); }
 }
 
 .compras-origen-key {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-  padding: 0.55rem 0.65rem;
-  background: var(--cp-surface);
-  border: 1px solid var(--cp-line);
-  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: help;
 }
 
 .compras-origen-key__dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  margin-top: 0.35rem;
   flex-shrink: 0;
 }
 
@@ -7724,24 +7700,17 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
 .compras-origen-key--efectivo_externo .compras-origen-key__dot { background: var(--cp-ext); }
 .compras-origen-key--otro .compras-origen-key__dot { background: var(--cp-otro); }
 
-.compras-origen-key__text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  min-width: 0;
-}
-
 .compras-origen-key__label {
-  font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--cp-ink);
-  line-height: 1.25;
 }
 
 .compras-origen-key__desc {
-  font-size: 0.6875rem;
   color: var(--cp-muted);
-  line-height: 1.3;
+}
+
+@media (max-width: 991.98px) {
+  .compras-origen-key__desc { display: none; }
 }
 
 .compras-table-panel {
@@ -7772,6 +7741,48 @@ body:has(.page-body .pos-module) .page-wrapper > .navbar {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--cp-muted);
+}
+
+.compras-oc-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem 0.75rem;
+  padding: 0.75rem 1.15rem;
+  border-bottom: 1px solid var(--cp-line);
+}
+
+.compras-oc-filtros__field {
+  flex: 0 1 9.5rem;
+  min-width: 8rem;
+}
+
+.compras-oc-filtros__field--grow {
+  flex: 1 1 14rem;
+}
+
+.compras-oc-filtros__field--wide {
+  flex: 0 1 16rem;
+}
+
+.compras-oc-filtros__field:last-child {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.compras-oc-filtros .form-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--cp-muted);
+}
+
+@media (max-width: 575.98px) {
+  .compras-oc-filtros { padding: 0.75rem; }
+  .compras-oc-filtros__field,
+  .compras-oc-filtros__field--wide {
+    flex: 1 1 calc(50% - 0.75rem);
+  }
+  .compras-oc-filtros__field--grow { flex: 1 1 100%; }
 }
 
 .compras-table-scroll {

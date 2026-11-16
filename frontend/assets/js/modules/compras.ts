@@ -85,13 +85,11 @@ export async function initCompras(container: HTMLElement) {
 
   function renderOrigenLeyendaHtml() {
     return ORIGEN_LEYENDA.map((o) => `
-      <div class="compras-origen-key compras-origen-key--${o.key}">
+      <span class="compras-origen-key compras-origen-key--${o.key}" title="${o.desc}">
         <span class="compras-origen-key__dot" aria-hidden="true"></span>
-        <div class="compras-origen-key__text">
-          <span class="compras-origen-key__label">${FUENTE_FONDOS_LABELS[o.key]}</span>
-          <span class="compras-origen-key__desc">${o.desc}</span>
-        </div>
-      </div>
+        <span class="compras-origen-key__label">${FUENTE_FONDOS_LABELS[o.key]}</span>
+        <span class="compras-origen-key__desc">— ${o.desc}</span>
+      </span>
     `).join('');
   }
 
@@ -166,18 +164,48 @@ export async function initCompras(container: HTMLElement) {
               <div class="compras-oc-layout">
                 <div id="compras-oc-summary" class="compras-summary-grid"></div>
 
-                <aside class="compras-origen-panel d-print-none" aria-label="Leyenda de origen del dinero">
-                  <h3 class="compras-origen-panel__title">Origen del dinero en pagos</h3>
-                  <p class="compras-origen-panel__hint">Al abonar una orden, indique si el pago sale de caja o de la empresa.</p>
-                  <div class="compras-origen-keys">
-                    ${renderOrigenLeyendaHtml()}
-                  </div>
-                </aside>
-
                 <div class="compras-table-panel">
                   <div class="compras-table-panel__head">
                     <h3 class="compras-table-panel__title">Órdenes de compra</h3>
                     <span class="compras-table-panel__count" id="compras-oc-count"></span>
+                  </div>
+                  <div class="compras-oc-filtros d-print-none" role="search" aria-label="Filtrar órdenes de compra">
+                    <div class="compras-oc-filtros__field compras-oc-filtros__field--grow">
+                      <label class="form-label mb-1" for="oc-filtro-q">Buscar</label>
+                      <input type="search" id="oc-filtro-q" class="form-control form-control-sm" placeholder="No. de orden o proveedor" autocomplete="off">
+                    </div>
+                    <div class="compras-oc-filtros__field">
+                      <label class="form-label mb-1" for="oc-filtro-estado">Mercancía</label>
+                      <select id="oc-filtro-estado" class="form-select form-select-sm">
+                        <option value="">Todas</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="parcial">Parcial</option>
+                        <option value="recibida">Recibida</option>
+                        <option value="cancelada">Cancelada</option>
+                      </select>
+                    </div>
+                    <div class="compras-oc-filtros__field">
+                      <label class="form-label mb-1" for="oc-filtro-pago">Pago</label>
+                      <select id="oc-filtro-pago" class="form-select form-select-sm">
+                        <option value="">Todos</option>
+                        <option value="pendiente">Por pagar</option>
+                        <option value="abono_parcial">Abono parcial</option>
+                        <option value="pagado">Pagado</option>
+                      </select>
+                    </div>
+                    <div class="compras-oc-filtros__field">
+                      <label class="form-label mb-1" for="oc-filtro-desde">Desde</label>
+                      <input type="date" id="oc-filtro-desde" class="form-control form-control-sm">
+                    </div>
+                    <div class="compras-oc-filtros__field">
+                      <label class="form-label mb-1" for="oc-filtro-hasta">Hasta</label>
+                      <input type="date" id="oc-filtro-hasta" class="form-control form-control-sm">
+                    </div>
+                    <div class="compras-oc-filtros__field">
+                      <button type="button" id="oc-filtro-limpiar" class="btn btn-sm btn-outline-secondary">
+                        <i class="ti ti-filter-off me-1"></i> Limpiar
+                      </button>
+                    </div>
                   </div>
                   <div class="compras-table-scroll">
                     <table class="table compras-table mb-0">
@@ -195,6 +223,10 @@ export async function initCompras(container: HTMLElement) {
                       </thead>
                       <tbody id="compras-table-body"></tbody>
                     </table>
+                  </div>
+                  <div class="compras-origen-foot d-print-none" aria-label="Leyenda de origen del dinero">
+                    <span class="compras-origen-foot__title">Origen del pago:</span>
+                    ${renderOrigenLeyendaHtml()}
                   </div>
                 </div>
               </div>
@@ -342,12 +374,14 @@ export async function initCompras(container: HTMLElement) {
 
             <!-- TAB 3: CUENTAS POR PAGAR (CPP) -->
             <div class="tab-pane" id="tab-cuentas-pagar" role="tabpanel">
-              <div class="erp-list-workspace">
-              <div class="card erp-filter-card">
-                <div class="card-body py-2">
-                  <div class="row g-2 align-items-end">
-                    <div class="col-md-4">
-                      <label class="form-label mb-1">Antigüedad</label>
+              <div class="compras-table-panel">
+                <div class="compras-table-panel__head">
+                  <h3 class="compras-table-panel__title">Cuentas por pagar</h3>
+                  <span class="compras-table-panel__count" id="cpp-count"></span>
+                </div>
+                <div class="compras-oc-filtros d-print-none" role="search" aria-label="Filtrar cuentas por pagar">
+                    <div class="compras-oc-filtros__field compras-oc-filtros__field--wide">
+                      <label class="form-label mb-1" for="cpp-filtro-mora">Antigüedad</label>
                       <select id="cpp-filtro-mora" class="form-select form-select-sm">
                         <option value="">Todas las CPP</option>
                         <option value="al_dia">Al día</option>
@@ -357,12 +391,9 @@ export async function initCompras(container: HTMLElement) {
                         <option value="+90">Vencida +90 días</option>
                       </select>
                     </div>
-                  </div>
                 </div>
-              </div>
-              <div class="card erp-table-panel">
-                <div class="table-responsive">
-                <table class="table table-vcenter card-table table-hover mb-0">
+                <div class="compras-table-scroll">
+                <table class="table compras-table mb-0">
                   <thead>
                     <tr>
                       <th>Factura / OC No.</th>
@@ -380,7 +411,6 @@ export async function initCompras(container: HTMLElement) {
                   </tbody>
                 </table>
                 </div>
-              </div>
               </div>
             </div>
           </div>
@@ -608,7 +638,46 @@ export async function initCompras(container: HTMLElement) {
     return `<span class="compras-pill ${map[estadoPago] || 'compras-pill--muted'}">${labels[estadoPago] || estadoPago}</span>`;
   }
 
-  function renderComprasSummary() {
+  function ocFiltroValue(id: string) {
+    return document.querySelector<HTMLInputElement | HTMLSelectElement>(`#${id}`)?.value.trim() || '';
+  }
+
+  function fechaLocalIso(value: string) {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function hayFiltrosOc() {
+    return ['oc-filtro-q', 'oc-filtro-estado', 'oc-filtro-pago', 'oc-filtro-desde', 'oc-filtro-hasta'].some((id) => ocFiltroValue(id) !== '');
+  }
+
+  function getComprasFiltradas() {
+    const q = normalizeOcSearch(ocFiltroValue('oc-filtro-q'));
+    const estado = ocFiltroValue('oc-filtro-estado');
+    const pago = ocFiltroValue('oc-filtro-pago');
+    const desde = ocFiltroValue('oc-filtro-desde');
+    const hasta = ocFiltroValue('oc-filtro-hasta');
+    const tokens = q.split(/\s+/).filter(Boolean);
+
+    return compras.filter((c) => {
+      if (estado && c.estado !== estado) return false;
+      if (pago && c.estadoPago !== pago) return false;
+      if (desde || hasta) {
+        const fecha = fechaLocalIso(c.createdAt);
+        if (desde && fecha < desde) return false;
+        if (hasta && fecha > hasta) return false;
+      }
+      if (tokens.length) {
+        const shortId = c.id.split('-')[0];
+        const haystack = normalizeOcSearch(`oc-${shortId} ${shortId} ${c.proveedor?.nombre || ''} ${c.sede?.nombre || ''}`);
+        if (!tokens.every((t) => haystack.includes(t))) return false;
+      }
+      return true;
+    });
+  }
+
+  function renderComprasSummary(lista: typeof compras) {
     const summaryEl = requireElement('compras-oc-summary', HTMLDivElement);
     const countEl = requireElement('compras-oc-count', HTMLSpanElement);
     if (!summaryEl) return;
@@ -617,7 +686,7 @@ export async function initCompras(container: HTMLElement) {
     let totalPagado = 0;
     let pendientePago = 0;
 
-    compras.forEach((c) => {
+    lista.forEach((c) => {
       pendientePago += Number(c.saldoPendiente || 0);
       (c.pagos || []).forEach((p) => {
         const m = parseFloat(p.monto);
@@ -627,15 +696,18 @@ export async function initCompras(container: HTMLElement) {
     });
 
     if (countEl) {
-      countEl.textContent = String(`${compras.length} orden${compras.length === 1 ? '' : 'es'}`);
+      const plural = (n: number) => `${n} orden${n === 1 ? '' : 'es'}`;
+      countEl.textContent = lista.length === compras.length
+        ? plural(compras.length)
+        : `${lista.length} de ${plural(compras.length)}`;
     }
 
     const topFuente = Object.entries(porFuente).sort((a, b) => b[1] - a[1]).find(([, v]) => v > 0);
 
     summaryEl.innerHTML = `
       <div class="compras-stat-card">
-        <span class="compras-stat-card__label">Órdenes registradas</span>
-        <span class="compras-stat-card__value">${compras.length}</span>
+        <span class="compras-stat-card__label">${lista.length === compras.length ? 'Órdenes registradas' : 'Órdenes filtradas'}</span>
+        <span class="compras-stat-card__value">${lista.length}</span>
       </div>
       <div class="compras-stat-card compras-stat-card--accent">
         <span class="compras-stat-card__label">Total pagado a proveedores</span>
@@ -655,14 +727,18 @@ export async function initCompras(container: HTMLElement) {
   }
 
   function renderComprasTable() {
-    renderComprasSummary();
+    const lista = getComprasFiltradas();
+    renderComprasSummary(lista);
 
-    if (compras.length === 0) {
-      tbodyCompras.innerHTML = `<tr><td colspan="8" class="text-center py-5 compras-empty">No hay órdenes de compra registradas.</td></tr>`;
+    if (lista.length === 0) {
+      const msg = compras.length === 0 || !hayFiltrosOc()
+        ? 'No hay órdenes de compra registradas.'
+        : 'Ninguna orden coincide con los filtros.';
+      tbodyCompras.innerHTML = `<tr><td colspan="8" class="text-center py-5 compras-empty">${msg}</td></tr>`;
       return;
     }
 
-    tbodyCompras.innerHTML = compras.map(c => {
+    tbodyCompras.innerHTML = lista.map(c => {
       const shortId = c.id.split('-')[0].toUpperCase();
       const provNombre = c.proveedor ? c.proveedor.nombre : 'N/A';
 
@@ -734,8 +810,11 @@ export async function initCompras(container: HTMLElement) {
       });
     }
 
+    const cppCountEl = document.getElementById('cpp-count');
+    if (cppCountEl) cppCountEl.textContent = `${outstanding.length} cuenta${outstanding.length === 1 ? '' : 's'}`;
+
     if (outstanding.length === 0) {
-      tbodyCpp.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-secondary">No registra cuentas por pagar pendientes.</td></tr>`;
+      tbodyCpp.innerHTML = `<tr><td colspan="8" class="text-center py-5 compras-empty">${filtroMora ? 'Ninguna cuenta coincide con el filtro.' : 'No registra cuentas por pagar pendientes.'}</td></tr>`;
       return;
     }
 
@@ -780,6 +859,22 @@ export async function initCompras(container: HTMLElement) {
   renderCppTable();
 
   document.getElementById('cpp-filtro-mora')?.addEventListener('change', renderCppTable);
+
+  let ocFiltroTimer: ReturnType<typeof setTimeout> | undefined;
+  document.getElementById('oc-filtro-q')?.addEventListener('input', () => {
+    clearTimeout(ocFiltroTimer);
+    ocFiltroTimer = setTimeout(renderComprasTable, 150);
+  });
+  ['oc-filtro-estado', 'oc-filtro-pago', 'oc-filtro-desde', 'oc-filtro-hasta'].forEach((id) => {
+    document.getElementById(id)?.addEventListener('change', renderComprasTable);
+  });
+  document.getElementById('oc-filtro-limpiar')?.addEventListener('click', () => {
+    ['oc-filtro-q', 'oc-filtro-estado', 'oc-filtro-pago', 'oc-filtro-desde', 'oc-filtro-hasta'].forEach((id) => {
+      const el = document.querySelector<HTMLInputElement | HTMLSelectElement>(`#${id}`);
+      if (el) el.value = '';
+    });
+    renderComprasTable();
+  });
 
   const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
   if (hashParams.get('tab') === 'cpp') {
