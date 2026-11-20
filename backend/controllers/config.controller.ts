@@ -65,6 +65,7 @@ import {
 } from '../utils/server-config';
 import { normalizeLogoUrl } from '../utils/branding-url';
 import { getPublicOrigin } from '../utils/public-url';
+import { describirErrorSmtp } from '../utils/smtp-error';
 import emailService = require('../services/email.service');
 
 /**
@@ -701,7 +702,14 @@ export const probarSmtp: Handler<Body> = async (req, res, next) => {
       merged.smtpPass = config.smtpPass;
     }
 
-    await emailService.enviarCorreoPrueba(merged, emailDestino.trim());
+    try {
+      await emailService.enviarCorreoPrueba(merged, emailDestino.trim());
+    } catch (error) {
+      const mensaje = describirErrorSmtp(error, merged.smtpHost);
+      if (!mensaje) throw error;
+      console.warn('[SMTP] Prueba fallida:', (error as { code?: string }).code, (error as Error).message);
+      return res.status(422).json({ error: mensaje });
+    }
     return res.json({ message: `Correo de prueba enviado a ${emailDestino.trim()}.` });
   } catch (error) {
     next(error);
