@@ -173,7 +173,6 @@ export function renderFacturaDocumento(f: FacturaDocumento, config: EmpresaDocum
           <p>Dirección: ${escapeHtml(direccion)}</p>
           <p>Ciudad: ${escapeHtml(f.sede?.nombre || '—')} — COLOMBIA</p>
           <p>Tel: ${escapeHtml(telefono)}</p>
-          ${(parseFloat(f.iva) || 0) > 0 ? '<p class="cot-doc__legal-line">Responsable de IVA</p>' : ''}
         </div>
         <div class="cot-doc__qr" aria-hidden="true">
           <div class="cot-doc__qr-placeholder cot-doc__qr-placeholder--print">
@@ -192,7 +191,7 @@ export function renderFacturaDocumento(f: FacturaDocumento, config: EmpresaDocum
         </div>
         <div class="cot-doc__doc-id">
           <div class="cot-doc__doc-id-inner">
-            <strong>FACTURA DE VENTA</strong>
+            <strong>COMPROBANTE DE VENTA</strong>
             <span>N° ${escapeHtml(f.numeroFactura)}</span>
             <small>${escapeHtml((f.estado || '').toUpperCase())}</small>
           </div>
@@ -258,7 +257,7 @@ export function renderFacturaDocumento(f: FacturaDocumento, config: EmpresaDocum
       </footer>
 
       <p class="cot-doc__legal">
-        Esta factura se asimila en todos sus efectos legales a una letra de cambio según el artículo 774 del Código de Comercio.
+        Este documento es un comprobante de venta.
         Conserve este documento para garantías y trámites posteriores.
       </p>
 

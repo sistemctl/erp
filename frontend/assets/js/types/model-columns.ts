@@ -127,6 +127,7 @@ export interface ConfiguracionSistemaColumns {
   diasMoraRecordatorioCartera: number | null;
   templateEmailCarteraAsunto: string | null;
   templateEmailCarteraCuerpo: string | null;
+  textoPieTicket: string | null;
   createdAt: string; updatedAt: string;
 }
 

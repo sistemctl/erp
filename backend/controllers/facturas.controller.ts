@@ -101,7 +101,10 @@ export const getFacturaById: Handler<Body> = async (req, res, next) => {
             {
               model: ItemVenta,
               as: 'items',
-              include: [{ model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras', 'unidadMedida'] }]
+              include: [
+                { model: Producto, as: 'producto', attributes: ['nombre', 'codigoBarras', 'unidadMedida'] },
+                { model: NumeroSerie, as: 'numeroSerie', attributes: ['serie'] }
+              ]
             },
             { model: PagoVenta, as: 'pagos' },
             { model: Usuario, as: 'usuario', attributes: ['nombre'] }

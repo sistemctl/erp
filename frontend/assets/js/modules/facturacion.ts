@@ -12,6 +12,7 @@ import { erpHeader } from '../utils/module-shell.js';
 import { erpAction, erpActions } from '../utils/action-buttons.js';
 import { renderFacturaDocumento, printFacturaDocumento } from '../utils/factura-document.js';
 import { escapeHtml } from '../utils/html.js';
+import { reprintPosTicket } from '../utils/pos-ticket-reprint.js';
 
 export async function initFacturacion(container: HTMLElement) {
   const usuario = requireUsuario();
@@ -155,6 +156,7 @@ export async function initFacturacion(container: HTMLElement) {
           <td class="text-end erp-td-actions">
             ${erpActions(`
               ${erpAction('view', { className: 'btn-ver-factura', attrs: { 'data-id': f.id } })}
+              ${f.venta ? erpAction('ticket', { className: 'btn-ticket-factura', title: 'Reimprimir ticket POS', attrs: { 'data-id': f.id } }) : ''}
               ${erpAction('pdf', { className: 'btn-pdf-factura', attrs: { 'data-id': f.id } })}
               ${puedeEnviarEmail ? erpAction('mail', { className: 'btn-email-factura', attrs: { 'data-id': f.id, 'data-email': f.cliente?.email } }) : ''}
               ${isAdminOrGerente && f.estado !== 'anulada' ? erpAction('anular', { className: 'btn-anular-factura', attrs: { 'data-id': f.id } }) : ''}
@@ -173,6 +175,11 @@ export async function initFacturacion(container: HTMLElement) {
     document.querySelectorAll('.btn-pdf-factura').forEach(btn => {
       if (!(btn instanceof HTMLButtonElement)) return;
       btn.addEventListener('click', () => downloadPdf(btn.dataset.id));
+    });
+
+    document.querySelectorAll('.btn-ticket-factura').forEach(btn => {
+      if (!(btn instanceof HTMLButtonElement)) return;
+      btn.addEventListener('click', () => reprintPosTicket(btn.dataset.id));
     });
 
     document.querySelectorAll('.btn-email-factura').forEach(btn => {
@@ -234,15 +241,19 @@ export async function initFacturacion(container: HTMLElement) {
       if (!f) throw new Error("No se encontró la factura.");
       content.innerHTML = `
         <div class="modal-header d-print-none">
-          <h5 class="modal-title">Factura de venta <strong>${escapeHtml(f.numeroFactura)}</strong></h5>
+          <h5 class="modal-title">Comprobante de venta <strong>${escapeHtml(f.numeroFactura)}</strong></h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
         </div>
         <div class="modal-body cot-doc-modal-body">
           ${renderFacturaDocumento(f, config ?? {})}
         </div>
         <div class="modal-footer d-print-none">
+          ${f.venta ? `
+          <button type="button" class="btn btn-outline-dark" id="btn-ticket-pos-factura">
+            <i class="ti ti-receipt me-1"></i> Ticket POS
+          </button>` : ''}
           <button type="button" class="btn btn-outline-secondary" id="btn-imprimir-factura">
-            <i class="ti ti-printer me-1"></i> Imprimir
+            <i class="ti ti-printer me-1"></i> Imprimir carta
           </button>
           <button type="button" class="btn btn-primary" id="modal-download-pdf">
             <i class="ti ti-file-text me-1"></i> Descargar PDF
@@ -255,6 +266,7 @@ export async function initFacturacion(container: HTMLElement) {
         </div>
       `;
 
+      document.getElementById('btn-ticket-pos-factura')?.addEventListener('click', () => reprintPosTicket(f.id, config ?? undefined));
       document.getElementById('btn-imprimir-factura')?.addEventListener('click', () => printFacturaDocumento());
       document.getElementById('modal-download-pdf')?.addEventListener('click', () => downloadPdf(f.id, f.numeroFactura));
       document.getElementById('modal-email-factura')?.addEventListener('click', () => enviarFacturaEmail(f.id, f.cliente?.email));

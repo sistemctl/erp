@@ -144,6 +144,11 @@ export async function initConfig(container: HTMLElement) {
                   <small class="text-secondary d-block mt-1">Desactivado: las reparaciones se facturan como exentas. Activado: el total cobrado incluye el IVA configurado arriba.</small>
                 </div>
                 <div class="col-md-12 mt-3">
+                  <label class="form-label fw-bold" for="cfg-texto-pie-ticket">Texto al pie del ticket POS</label>
+                  <textarea id="cfg-texto-pie-ticket" class="form-control" rows="3" maxlength="600" placeholder="Ej: Garantía de 3 meses presentando este comprobante e IMEI.&#10;Cambios y devoluciones dentro de los 5 días siguientes."></textarea>
+                  <small class="text-secondary">Garantía, política de devoluciones u otro mensaje. Cada renglón sale como una línea del ticket.</small>
+                </div>
+                <div class="col-md-12 mt-3">
                   <label class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="cfg-caja-compartida" checked>
                     <span class="form-check-label fw-bold">Caja compartida por sede</span>
@@ -677,6 +682,7 @@ export async function initConfig(container: HTMLElement) {
       requireElement('cfg-dias-plazo-credito', HTMLInputElement).value = String(data.diasPlazoCredito ?? 30);
       requireElement('cfg-cobrar-iva', HTMLInputElement).checked = !!data.cobrarIvaPos;
       requireElement('cfg-cobrar-iva-taller', HTMLInputElement).checked = !!data.cobrarIvaTaller;
+      requireElement('cfg-texto-pie-ticket', HTMLTextAreaElement).value = String(data.textoPieTicket || '');
       requireElement('cfg-caja-compartida', HTMLInputElement).checked = data.cajaCompartidaSede !== false;
       mediosPago = normalizarMediosPago(data.mediosPago);
       renderMediosPago();
@@ -1034,6 +1040,7 @@ export async function initConfig(container: HTMLElement) {
       diasPlazoCredito: parseInt(requireElement('cfg-dias-plazo-credito', HTMLInputElement).value, 10) || 30,
       cobrarIvaPos: requireElement('cfg-cobrar-iva', HTMLInputElement).checked,
       cobrarIvaTaller: requireElement('cfg-cobrar-iva-taller', HTMLInputElement).checked,
+      textoPieTicket: requireElement('cfg-texto-pie-ticket', HTMLTextAreaElement).value.trim() || null,
       cajaCompartidaSede: requireElement('cfg-caja-compartida', HTMLInputElement).checked,
       mediosPago: mediosPago.map(({ id, nombre, activo }) => ({ id, nombre, activo })),
       nominaFrecuenciaDefault: requireElement('cfg-nomina-frecuencia', HTMLSelectElement).value,

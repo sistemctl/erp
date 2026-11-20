@@ -1,4 +1,4 @@
-import type { PosReceiptData, DevolucionReceiptData } from '../types/documents.js';
+import type { PosReceiptData, DevolucionReceiptData, ReceiptItem } from '../types/documents.js';
 const METODO_LABELS: Record<string, string> = {
   efectivo: 'Efectivo',
   nequi: 'Nequi',
@@ -26,6 +26,41 @@ function fmtSiigoDate(d: Date | string = new Date()) {
   return `${y}/${m}/${day} ${h}:${min}`;
 }
 
+function lineDetail(item: ReceiptItem) {
+  const unit = parseFloat(String(item.precioUnitario ?? ''));
+  const precio = Number.isFinite(unit) ? unit : (Number(item.subtotal) || 0) / (Number(item.cantidad) || 1);
+  const pct = parseFloat(String(item.descuentoPct ?? 0)) || 0;
+  const base = parseFloat(String(item.precioBase ?? ''));
+  const descuento = pct > 0
+    ? ` <span class="pos-receipt__disc">(-${escapeHtml(Math.round(pct * 100) / 100)}%${Number.isFinite(base) && base > precio ? ` de ${fmtAmount(base)}` : ''})</span>`
+    : '';
+  return `<br><span class="pos-receipt__unit">${escapeHtml(item.cantidad)} x ${fmtAmount(precio)}${descuento}</span>`;
+}
+
+function pieTicketHtml(texto: string | null | undefined) {
+  const lineas = String(texto || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  if (!lineas.length) return '';
+  return `<div class="pos-receipt__nota">${lineas.map((l) => `<p>${escapeHtml(l)}</p>`).join('')}</div>`;
+}
+
+/** Dibuja los códigos de barras (JsBarcode) de los tickets dentro del contenedor. */
+export function renderReceiptBarcodes(container: ParentNode | null) {
+  const renderBarcode = window.JsBarcode;
+  if (!renderBarcode || !container) return;
+  container.querySelectorAll<SVGSVGElement>('svg.pos-receipt__barcode[data-barcode]').forEach((svg) => {
+    const value = svg.getAttribute('data-barcode');
+    if (!value) return;
+    try {
+      renderBarcode(svg, value, {
+        format: 'CODE128', width: 1.6, height: 42, displayValue: false,
+        margin: 0, background: '#ffffff', lineColor: '#000000'
+      });
+    } catch (_) {
+      svg.remove();
+    }
+  });
+}
+
 function fieldLine(label: string, value: unknown) {
   return `<p class="pos-receipt__line"><span>${escapeHtml(label)} :</span> ${escapeHtml(value || '—')}</p>`;
 }
@@ -51,9 +86,11 @@ export function renderPosReceipt({
   cobrarIva = true,
   pagos = [],
   cambio: cambioConfirmado,
-  esCredito = false
+  esCredito = false,
+  esCopia = false
 }: PosReceiptData) {
-  const empresa = escapeHtml((empresaConfig.empresa || 'TechStore Colombia').toUpperCase());
+  const nombreEmpresa = empresaConfig.empresa || empresaConfig.nombreEmpresa || '';
+  const empresa = escapeHtml(nombreEmpresa.toUpperCase());
   const nit = escapeHtml(empresaConfig.nit || '');
   const direccion = escapeHtml(empresaConfig.direccion || sedeDireccion || '');
   const telefono = escapeHtml(empresaConfig.telefono || '');
@@ -67,7 +104,7 @@ export function renderPosReceipt({
   const itemRows = items.map((item) => `
     <tr>
       <td class="pos-receipt__ct">${escapeHtml(item.cantidad)}</td>
-      <td class="pos-receipt__desc">${escapeHtml(item.nombre)}${item.imei ? `<br><span class="pos-receipt__imei">IMEI: ${escapeHtml(item.imei)}</span>` : ''}</td>
+      <td class="pos-receipt__desc">${escapeHtml(item.nombre)}${lineDetail(item)}${item.imei ? `<br><span class="pos-receipt__imei">IMEI: ${escapeHtml(item.imei)}</span>` : ''}</td>
       <td class="pos-receipt__val">${fmtAmount(item.subtotal)}</td>
     </tr>
   `).join('');
@@ -87,21 +124,22 @@ export function renderPosReceipt({
         <span>${fmtAmount(total)}</span>
       </div>`;
 
+  const totalArticulos = items.reduce((acc, item) => acc + (Number(item.cantidad) || 0), 0);
   const subtotalNeto = Math.max(0, parseFloat(String(subtotal)) - parseFloat(String(descuentoTotal || 0)));
 
   return `
     <article class="pos-receipt" id="pos-print-receipt">
       <header class="pos-receipt__head">
-        <p class="pos-receipt__empresa">${empresa}</p>
-        ${nit ? `<p>${nit}</p>` : ''}
+        ${empresa ? `<p class="pos-receipt__empresa">${empresa}</p>` : ''}
+        ${nit ? `<p>NIT: ${nit}</p>` : ''}
         ${direccion ? `<p>${direccion}</p>` : ''}
         <p>${ciudad} - ${telLine}</p>
-        <p class="pos-receipt__legal-line">Responsable de IVA</p>
       </header>
 
       <hr class="pos-receipt__rule pos-receipt__rule--thick">
 
-      <p class="pos-receipt__title">Factura de venta : ${escapeHtml(numeroFactura)}</p>
+      <p class="pos-receipt__title">Comprobante de venta : ${escapeHtml(numeroFactura)}</p>
+      ${esCopia ? '<p class="pos-receipt__copia">*** COPIA ***</p>' : ''}
 
       ${fieldLine('Fecha', fmtSiigoDate(fecha))}
       ${fieldLine('Cliente', cliente)}
@@ -126,6 +164,10 @@ export function renderPosReceipt({
 
       <hr class="pos-receipt__rule pos-receipt__rule--dash">
 
+      <div class="pos-receipt__subtotal">
+        <span>Total artículos</span>
+        <span>${escapeHtml(Math.round(totalArticulos * 100) / 100)}</span>
+      </div>
       <div class="pos-receipt__subtotal">
         <span>SUBTOTAL</span>
         <span>${fmtAmount(subtotalNeto)}</span>
@@ -164,9 +206,17 @@ export function renderPosReceipt({
 
       <hr class="pos-receipt__rule pos-receipt__rule--thick">
 
+      ${pieTicketHtml(empresaConfig.textoPieTicket)}
+
+      ${numeroFactura ? `
+      <div class="pos-receipt__barcode-wrap">
+        <svg class="pos-receipt__barcode" data-barcode="${escapeHtml(numeroFactura)}"></svg>
+        <p>${escapeHtml(numeroFactura)}</p>
+      </div>` : ''}
+
       <footer class="pos-receipt__foot">
-        <p>Elaborado por: ${escapeHtml(empresaConfig.empresa || 'TechStore Colombia')} / POS</p>
-        ${nit ? `<p>Nit: ${nit}</p>` : ''}
+        <p>¡Gracias por su compra!</p>
+        ${nombreEmpresa ? `<p>${escapeHtml(nombreEmpresa)} / POS</p>` : ''}
       </footer>
     </article>
   `;
@@ -188,12 +238,12 @@ export function renderDevolucionReceipt({
   metodoReembolso = 'efectivo',
   motivo = ''
 }: DevolucionReceiptData) {
-  const empresa = (empresaConfig.empresa || 'TechStore Colombia').toUpperCase();
-  const nit = empresaConfig.nit || '';
+  const empresa = escapeHtml((empresaConfig.empresa || empresaConfig.nombreEmpresa || '').toUpperCase());
+  const nit = escapeHtml(empresaConfig.nit || '');
   const itemRows = items.map((item) => `
     <tr>
-      <td class="pos-receipt__ct">${item.cantidad}</td>
-      <td class="pos-receipt__desc">${item.nombre || 'Producto'}</td>
+      <td class="pos-receipt__ct">${escapeHtml(item.cantidad)}</td>
+      <td class="pos-receipt__desc">${escapeHtml(item.nombre || 'Producto')}</td>
       <td class="pos-receipt__val">${fmtAmount(item.montoLinea)}</td>
     </tr>
   `).join('');
@@ -201,12 +251,12 @@ export function renderDevolucionReceipt({
   return `
     <article class="pos-receipt" id="pos-print-receipt">
       <header class="pos-receipt__head">
-        <p class="pos-receipt__empresa">${empresa}</p>
-        ${nit ? `<p>${nit}</p>` : ''}
-        <p>${sedeNombre || 'Colombia'}</p>
+        ${empresa ? `<p class="pos-receipt__empresa">${empresa}</p>` : ''}
+        ${nit ? `<p>NIT: ${nit}</p>` : ''}
+        <p>${escapeHtml(sedeNombre || 'Colombia')}</p>
       </header>
       <hr class="pos-receipt__rule pos-receipt__rule--thick">
-      <p class="pos-receipt__title">Devolución : ${numeroDevolucion}</p>
+      <p class="pos-receipt__title">Devolución : ${escapeHtml(numeroDevolucion)}</p>
       ${fieldLine('Fecha', fmtSiigoDate(fecha))}
       ${fieldLine('Venta origen', numeroVenta)}
       ${fieldLine('Cliente', clienteNombre || 'CONSUMIDOR FINAL')}
@@ -224,10 +274,10 @@ export function renderDevolucionReceipt({
         <span>${fmtAmount(total)}</span>
       </div>
       <div class="pos-receipt__pay-line">
-        <span>${METODO_LABELS[metodoReembolso] || metodoReembolso}</span>
+        <span>${escapeHtml(METODO_LABELS[metodoReembolso] || metodoReembolso)}</span>
         <span>${fmtAmount(total)}</span>
       </div>
-      ${motivo ? `<p class="pos-receipt__line" style="margin-top:8px"><span>Motivo :</span> ${motivo}</p>` : ''}
+      ${motivo ? `<p class="pos-receipt__line" style="margin-top:8px"><span>Motivo :</span> ${escapeHtml(motivo)}</p>` : ''}
       <hr class="pos-receipt__rule pos-receipt__rule--thick">
       <footer class="pos-receipt__foot">
         <p>Comprobante de devolución de cliente</p>

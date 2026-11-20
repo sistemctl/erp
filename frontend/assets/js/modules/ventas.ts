@@ -14,6 +14,7 @@ import { erpAction } from '../utils/action-buttons.js';
 import { showToast } from '../utils/toast.js';
 import { renderDevolucionReceipt } from '../utils/pos-receipt.js';
 import { escapeHtml } from '../utils/html.js';
+import { reprintPosTicket } from '../utils/pos-ticket-reprint.js';
 
 export async function initVentas(container: HTMLElement) {
   const usuario = requireUsuario();
@@ -394,6 +395,9 @@ export async function initVentas(container: HTMLElement) {
   }
 
   function bindDevolverButtons() {
+    tbodyVentas.querySelectorAll<HTMLButtonElement>('.btn-ticket-venta').forEach((btn) => {
+      btn.addEventListener('click', () => reprintPosTicket(btn.dataset.factura, empresaConfig));
+    });
     tbodyVentas.querySelectorAll<HTMLButtonElement>('.btn-devolver-venta').forEach((btn) => {
       btn.addEventListener('click', () => {
         const venta = ventas.find((x) => String(x.id) === String(btn.dataset.id));
@@ -423,8 +427,14 @@ export async function initVentas(container: HTMLElement) {
     tbodyVentas.innerHTML = data.map((v) => {
       const itemsStr = formatItemsCell(v);
       const pagosStr = v.pagos ? v.pagos.map((p) => p.metodo.toUpperCase()).join('/') : 'Efectivo';
-      const actions = puedeDevolverVenta(v)
+      const ticketBtn = v.factura?.id
+        ? erpAction('ticket', { className: 'btn-ticket-venta', title: 'Reimprimir ticket POS', attrs: { 'data-factura': v.factura.id } })
+        : '';
+      const devolverBtn = puedeDevolverVenta(v)
         ? erpAction('return', { className: 'btn-devolver-venta', attrs: { 'data-id': v.id } })
+        : '';
+      const actions = ticketBtn || devolverBtn
+        ? `<div class="erp-actions">${ticketBtn}${devolverBtn}</div>`
         : '<span class="text-secondary small">—</span>';
       const rowClass = v.estado === 'anulada'
         ? 'venta-row venta-row--anulada'

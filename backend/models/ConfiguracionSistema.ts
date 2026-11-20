@@ -48,10 +48,11 @@ interface ConfiguracionSistemaAttributes {
   diasMoraRecordatorioCartera: number | null;
   templateEmailCarteraAsunto: string | null;
   templateEmailCarteraCuerpo: string | null;
+  textoPieTicket: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
-type ConfiguracionSistemaCreation = Optional<ConfiguracionSistemaAttributes, 'id' | 'logoUrl' | 'nit' | 'direccion' | 'telefono' | 'descuentoMaximoPct' | 'egresoMaximoSinPin' | 'notificacionesActivas' | 'smsActivo' | 'whatsappActivo' | 'emailActivo' | 'emailFacturaAuto' | 'smtpHost' | 'smtpPort' | 'smtpSecure' | 'smtpUser' | 'smtpPass' | 'smtpFromEmail' | 'smtpFromName' | 'smtpIgnoreTlsErrors' | 'templateEmailFacturaAsunto' | 'templateEmailFacturaCuerpo' | 'twilioAccountSid' | 'twilioAuthToken' | 'twilioFromNumber' | 'ivaDefecto' | 'cobrarIvaPos' | 'cobrarIvaTaller' | 'mediosPago' | 'cajaCompartidaSede' | 'templateRecibido' | 'templateListo' | 'templateEntregado' | 'temaInterfaz' | 'nominaFrecuenciaDefault' | 'nominaDiaCorteQuincena' | 'nominaDiaPago1' | 'nominaDiaPago2' | 'puertoServidor' | 'diasPlazoCredito' | 'emailCarteraRecordatorio' | 'diasMoraRecordatorioCartera' | 'templateEmailCarteraAsunto' | 'templateEmailCarteraCuerpo' | 'createdAt' | 'updatedAt'>;
+type ConfiguracionSistemaCreation = Optional<ConfiguracionSistemaAttributes, 'id' | 'logoUrl' | 'nit' | 'direccion' | 'telefono' | 'descuentoMaximoPct' | 'egresoMaximoSinPin' | 'notificacionesActivas' | 'smsActivo' | 'whatsappActivo' | 'emailActivo' | 'emailFacturaAuto' | 'smtpHost' | 'smtpPort' | 'smtpSecure' | 'smtpUser' | 'smtpPass' | 'smtpFromEmail' | 'smtpFromName' | 'smtpIgnoreTlsErrors' | 'templateEmailFacturaAsunto' | 'templateEmailFacturaCuerpo' | 'twilioAccountSid' | 'twilioAuthToken' | 'twilioFromNumber' | 'ivaDefecto' | 'cobrarIvaPos' | 'cobrarIvaTaller' | 'mediosPago' | 'cajaCompartidaSede' | 'templateRecibido' | 'templateListo' | 'templateEntregado' | 'temaInterfaz' | 'nominaFrecuenciaDefault' | 'nominaDiaCorteQuincena' | 'nominaDiaPago1' | 'nominaDiaPago2' | 'puertoServidor' | 'diasPlazoCredito' | 'emailCarteraRecordatorio' | 'diasMoraRecordatorioCartera' | 'templateEmailCarteraAsunto' | 'templateEmailCarteraCuerpo' | 'textoPieTicket' | 'createdAt' | 'updatedAt'>;
 interface ConfiguracionSistema extends Model<ConfiguracionSistemaAttributes, ConfiguracionSistemaCreation>, ConfiguracionSistemaAttributes {
 
 }
@@ -248,6 +249,10 @@ const ConfiguracionSistema = sequelize.define<ConfiguracionSistema, Omit<Configu
   templateEmailCarteraCuerpo: {
     type: DataTypes.TEXT,
     defaultValue: 'Estimado/a {cliente},\n\nLe recordamos que tiene un saldo pendiente de {saldo} correspondiente a la factura {factura}, vencida hace {dias} días.\n\nPor favor comuníquese con nosotros para regularizar su pago.\n\n{empresa}'
+  },
+  textoPieTicket: {
+    type: DataTypes.TEXT,
+    allowNull: true
   }
 }, {
   tableName: 'ConfiguracionesSistema'

@@ -167,8 +167,7 @@ async function generarFacturaPDF(doc: PDFKit.PDFDocument, factura: Factura, conf
     `NIT: ${nit}`,
     `Dirección: ${direccion}`,
     `Ciudad: ${factura.sede?.nombre || '—'} — COLOMBIA`,
-    `Tel: ${telefono}`,
-    ...(iva > 0 ? ['Responsable de IVA'] : [])
+    `Tel: ${telefono}`
   ].forEach((line) => {
     doc.text(line, innerX, hy, { width: companyW });
     hy += 11;
@@ -184,7 +183,7 @@ async function generarFacturaPDF(doc: PDFKit.PDFDocument, factura: Factura, conf
   doc.fillColor(BLUE).rect(boxX, y, docW, headerH).fill();
   doc.restore();
   doc.font('Helvetica-Bold').fontSize(10).fillColor('#ffffff')
-    .text('FACTURA DE VENTA', boxX, y + 18, { width: docW, align: 'center' });
+    .text('COMPROBANTE DE VENTA', boxX, y + 18, { width: docW, align: 'center' });
   doc.fontSize(9).text(`N° ${factura.numeroFactura}`, boxX, y + 34, { width: docW, align: 'center' });
   doc.font('Helvetica').fontSize(7.5)
     .text((factura.estado || '').toUpperCase(), boxX, y + 52, { width: docW, align: 'center' });
@@ -307,7 +306,7 @@ async function generarFacturaPDF(doc: PDFKit.PDFDocument, factura: Factura, conf
   y = Math.max(totalY, letrasY + 42) + 14;
   doc.font('Helvetica').fontSize(6.5).fillColor(MUTED)
     .text(
-      'Esta factura se asimila en todos sus efectos legales a una letra de cambio según el artículo 774 del Código de Comercio. ' +
+      'Este documento es un comprobante de venta. ' +
       'Conserve este documento para garantías y trámites posteriores.',
       innerX, y, { width: innerW * 0.72, align: 'justify' }
     );

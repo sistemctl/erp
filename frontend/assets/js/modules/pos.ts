@@ -10,7 +10,7 @@ import { apiFetch } from '../api.js';
 import { requireUsuario } from '../auth.js';
 import { initBarcodeScanner, destroyBarcodeScanner } from '../utils/barcode.js';
 import { showToast } from '../utils/toast.js';
-import { renderPosReceipt } from '../utils/pos-receipt.js';
+import { renderPosReceipt, renderReceiptBarcodes } from '../utils/pos-receipt.js';
 import { formatStockUnidad, labelUnidadMedida } from '../utils/unidad-medida.js';
 import { nombreCortoCategoria } from '../utils/categoria-nombre.js';
 import { debounce } from '../utils/debounce.js';
@@ -1499,7 +1499,7 @@ export async function initPos(container: HTMLElement) {
       clienteDireccion: cliente?.direccion || '',
       numeroFactura: res.numeroFactura,
       fecha: new Date(),
-      items,
+      items: items.map((item) => ({ ...item, precioUnitario: item.precioModificado })),
       subtotal: body.subtotal,
       descuentoTotal: body.descuentoTotal,
       iva: body.iva,
@@ -1509,6 +1509,7 @@ export async function initPos(container: HTMLElement) {
       cambio: body.cambio,
       esCredito: body.esCredito
     });
+    renderReceiptBarcodes(area);
   }
 
   if (isAdmin) {

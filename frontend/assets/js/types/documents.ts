@@ -1,6 +1,7 @@
 export interface EmpresaDocumento {
   empresa?: string; nombreEmpresa?: string; nit?: string; direccion?: string; telefono?: string;
   email?: string; logoUrl?: string | null; ciudad?: string; ivaDefecto?: number | string;
+  textoPieTicket?: string | null;
 }
 export interface DocumentoSede { nombre: string; direccion?: string | null; telefono?: string | null; }
 export interface DocumentoCliente { nombre: string; documento?: string | null; direccion?: string | null; telefono?: string | null; }
@@ -15,7 +16,8 @@ export interface FacturaDocumento {
   createdAt: string; fechaVencimiento?: string | null; iva: string; subtotal: string; total: string;
   venta?: {
     usuario?: { nombre: string } | null; pagos?: { metodo: string; monto: string }[];
-    items?: { producto?: DocumentoProducto | null; cantidad: number; precioModificado: string; subtotal: string }[];
+    descuentoTotal?: string | number; esCredito?: boolean | 0 | 1; createdAt?: string;
+    items?: { producto?: DocumentoProducto | null; cantidad: number; precioBase?: string; precioModificado: string; descuentoPct?: string | number; subtotal: string; numeroSerie?: { serie: string } | null }[];
   } | null;
   ordenReparacion?: {
     tipoEquipo: string; marca: string; modelo: string; costoManoObra: string;
@@ -27,13 +29,16 @@ export interface FacturaDocumento {
     materiales?: { producto?: DocumentoProducto | null; cantidad: number; precioUnitario: string }[];
   } | null;
 }
-export interface ReceiptItem { cantidad: number; nombre: string; subtotal: number; imei?: string | null; }
+export interface ReceiptItem {
+  cantidad: number; nombre: string; subtotal: number; imei?: string | null;
+  precioUnitario?: number | string; precioBase?: number | string; descuentoPct?: number | string;
+}
 export interface PosReceiptData {
   empresaConfig?: EmpresaDocumento; sedeNombre?: string; sedeDireccion?: string; cajeroNombre?: string;
   clienteNombre?: string; clienteDocumento?: string; clienteDireccion?: string; numeroFactura?: string;
   fecha?: Date | string; items?: readonly ReceiptItem[]; subtotal?: number; descuentoTotal?: number;
   iva?: number; total?: number; cobrarIva?: boolean; pagos?: readonly { metodo: string; monto: number | string }[];
-  cambio?: number; esCredito?: boolean;
+  cambio?: number; esCredito?: boolean; esCopia?: boolean;
 }
 export interface DevolucionReceiptData {
   empresaConfig?: EmpresaDocumento; sedeNombre?: string; cajeroNombre?: string; clienteNombre?: string;
