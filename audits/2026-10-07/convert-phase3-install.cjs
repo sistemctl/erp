@@ -1,0 +1,21 @@
+const {convert}=require('./ts-conversion-tools.cjs'); const dom=require('./ts-dom-conversion.cjs');
+convert('modules/instalaciones',s=>{
+s=dom(s); s=`import { apiRequired } from '../utils/api-required.js';
+import type { ClienteDTO, ProductoDTO, SedeDTO } from '../../../../shared/contracts.js';
+import type { InstalacionServicio, TecnicoServicio, CobroInstalacion } from '../types/service.js';
+type ProductoInst = ProductoDTO & {autoDetectedImei?: string};
+`+s;
+for(const [n,t] of [['ordenes','InstalacionServicio'],['tecnicos','TecnicoServicio'],['clientes','ClienteDTO'],['productos','ProductoInst'],['sedes','SedeDTO'],['pickerMatches','ProductoInst']]) s=s.replace('let '+n+' = []','let '+n+': '+t+'[] = []');
+for(const [url,t] of [['/instalaciones','InstalacionServicio[]'],['/config/usuarios-operativos?rol=tecnico','TecnicoServicio[]'],['/clientes','ClienteDTO[]'],['/productos','ProductoInst[]'],['/config/sedes','SedeDTO[]']]) s=s.replaceAll(`apiFetch('${url}')`,`apiRequired<${t}>('${url}')`);
+s=s.replace('const orden = await apiFetch(', 'const orden = await apiRequired<InstalacionServicio>(').replace('const creada = await apiFetch(', 'const creada = await apiRequired<InstalacionServicio>(').replace('const found = await apiFetch(', 'const found = await apiRequired<ProductoInst>(').replace('const result = await apiFetch(', 'const result = await apiRequired<{message: string}>(');
+s=s.replace('let instalacionesKeydownHandler = null','let instalacionesKeydownHandler: ((event: KeyboardEvent) => void) | null = null').replace('let cobroOrdenActual = null','let cobroOrdenActual: InstalacionServicio | null = null').replace('let modalSelectedProd = null','let modalSelectedProd: ProductoInst | null = null');
+for(const [n,param] of [['setCobroPaso','paso: string'],['openCobroInstalacion','orden: InstalacionServicio'],['cerrarInstalacionConCobro','payload: CobroInstalacion'],['escapeInstHtml','value: unknown'],['normalizeInstSearch','value: unknown'],['productoCategoriaNombre','prod: ProductoInst'],['productoCategoriaId','prod: ProductoInst'],['productoSearchHaystack','prod: ProductoInst'],['categoriaChipLabel','nombre: string'],['scoreProductoMatch','prod: ProductoInst, queryNorm: string, tokens: string[]'],['highlightInstMatch','text: string, query: string'],['highlightPickerItem','idx: number'],['renderProductoPickerRows','matches: ProductoInst[], query: string'],['chooseProductoFromPicker','prod: ProductoInst'],['aplicarProductoEscaneado','codigoRaw: string']]) s=s.replace(new RegExp('(function '+n+')\\([^)]*\\)'),'$1('+param+')');
+s=s.replace('function fillMaterialForm(prod, { cantidad = 1, autoImei = null } = {})', 'function fillMaterialForm(prod: ProductoInst, { cantidad = 1, autoImei = null }: {cantidad?: number; autoImei?: string | null} = {})');
+s=s.replace("function abrirDetalle(id,", "function abrirDetalle(id: string,");
+s=s.replace('const map = new Map()','const map = new Map<string,string>()').replace('let best = null','let best: {idx: number; len: number} | null = null');
+s=s.replace(/tokens.forEach\(\(token\) => \{([\s\S]*?)\n    \}\);/,(_,body)=>'for (const token of tokens) {'+body.replace('if (idx < 0) return;','if (idx < 0) continue;')+'\n    }');
+s=s.replace(/parseFloat\((orden\.(?:totalCobrado|valorServicio|costoMateriales))\)/g,'Number($1)').replaceAll('parseInt(m.cantidad, 10)','Math.trunc(m.cantidad)').replace('parseInt(cantidad, 10)','Math.trunc(cantidad)');
+s=s.replace("document.getElementById(id).value = 0", "requireElement(id, HTMLInputElement).value = '0'").replace('cantEl.value = 1',"cantEl.value = '1'");
+s=s.replace('ESTADO_LABEL = {','ESTADO_LABEL: Record<string,string> = {').replace('ESTADO_BADGE = {','ESTADO_BADGE: Record<string,string> = {');
+return s;
+});

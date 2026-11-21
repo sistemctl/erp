@@ -1,0 +1,16 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const file = path.resolve(__dirname,'../../frontend/assets/js/modules/pos.ts');
+let s = fs.readFileSync(file,'utf8');
+s=s.replace('cajaAbierta?.cierrePendiente', "(cajaAbierta?.estado !== 'sin_registro' && cajaAbierta?.cierrePendiente)").replace('!cajaAbierta?.id || cajaAbierta.estado', '!cajaAbierta || cajaAbierta.estado').replace('const pendiente = (cajaAbierta?.estado', 'const pendiente = (cajaAbierta?.estado').replace('cajaAbierta.fecha', 'cajaAbierta?.fecha').replace('cajaAbierta.usuarioApertura?.nombre', "(cajaAbierta && cajaAbierta.estado !== 'sin_registro' ? cajaAbierta.usuarioApertura?.nombre : null)").replace('encodeURIComponent(currentSedeId)', "encodeURIComponent(currentSedeId ?? '')");
+s=s.replace("container.querySelector('.pos-panel--sale')", "requireSelector('.pos-panel--sale', HTMLElement, container)").replace("paymentStep.querySelector('.alert.alert-secondary')", "requireSelector('.alert.alert-secondary', HTMLElement, paymentStep)").replace("paymentStep.querySelector('.modal-footer')", "requireSelector('.modal-footer', HTMLElement, paymentStep)").replaceAll("container.querySelector('.pos-panel--catalog')", "requireSelector('.pos-panel--catalog', HTMLElement, container)");
+const ids = [...s.matchAll(/document.getElementById\('([^']+)'\)(?!\?)/g)].map(m=>m[1]);
+for(const id of ids) s=s.replaceAll(`document.getElementById('${id}')`, `requireElement('${id}', HTMLElement)`);
+s=s.replaceAll("document.getElementById('checkout-cliente-busqueda')?.value", "document.querySelector<HTMLInputElement>('#checkout-cliente-busqueda')?.value").replaceAll("document.getElementById('pay-sistecredito')?.value", "document.querySelector<HTMLInputElement>('#pay-sistecredito')?.value");
+s=s.replaceAll('formatter.format(item.producto.precioVenta)', 'formatter.format(Number(item.producto.precioVenta))').replaceAll('formatter.format(ti.valoracion)', 'formatter.format(Number(ti.valoracion))');
+s=s.replace(/\.value = (idx|item\.descuentoPct|item\.precioModificado|totalVal|0);/g, '.value = String($1);');
+s=s.replace('let descList = [];','let descList: string[] = [];').replace('descList.push(c.dataset.desc);', "descList.push(c.dataset.desc ?? '');");
+s=s.replace('const method = button.closest(\'.pos-payment-method\');', "const method = button.closest('.pos-payment-method');\n      if (!(method instanceof HTMLElement)) return;").replace("method.querySelector('.pos-payment-amount')", "requireSelector('.pos-payment-amount', HTMLElement, method)").replace("method.querySelector('input')", "requireSelector('input', HTMLInputElement, method)");
+s=s.replace('parseFloat(eventField(e).value || 0)', "parseFloat(eventField(e).value || '0')").replace('parseFloat(input.value || 0)', "parseFloat(input.value || '0')").replace('metodo: input.dataset.metodo,', "metodo: input.dataset.metodo || '',");
+s=s.replace('renderPrintReceipt(res, { ...body, ...res },', 'renderPrintReceipt(res, { ...body, ...res, items: body.items },');
+fs.writeFileSync(file,s);

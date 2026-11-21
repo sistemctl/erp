@@ -1,0 +1,13 @@
+const fs=require('node:fs');const p='frontend/assets/js/modules/instalaciones.ts';let s=fs.readFileSync(p,'utf8');
+s=s.replace(/document.getElementById\('([^']+)'\)\?\.((?:value|checked))/g,(_,id,prop)=>`document.querySelector<HTMLInputElement>('#${id}')?.${prop}`);
+s=s.replace("document.getElementById('inst-pay-efectivo').value", "requireElement('inst-pay-efectivo', HTMLInputElement).value");
+s=s.replace('parseFloat(o.totalCobrado)', 'Number(o.totalCobrado)').replace('abrirDetalle(btn.dataset.id)', "abrirDetalle(btn.dataset.id || '')");
+s=s.replace('cantEl.value = 1', "cantEl.value = '1'").replace('bindProductoPickerOnce.done','pickerBound').replace('  function bindProductoPickerOnce() {','  let pickerBound = false;\n  function bindProductoPickerOnce() {');
+s=s.replace('p.id === prod.id','p.id === found.id');
+s=s.replace('const payload = { productoId, cantidad };','const payload: {productoId: string; cantidad: number; series?: string[]} = { productoId, cantidad };');
+s=s.replaceAll("querySelectorAll<HTMLElement>('.mat-qty-input')","querySelectorAll<HTMLInputElement>('.mat-qty-input')").replaceAll("querySelectorAll<HTMLElement>('.mat-price-input')","querySelectorAll<HTMLInputElement>('.mat-price-input')");
+s=s.replace('parseInt(input.dataset.prev, 10)', "parseInt(input.dataset.prev || '0', 10)").replace('parseFloat(input.dataset.prev)', "parseFloat(input.dataset.prev || '0')");
+s=s.replace('const btn = e.submitter;', 'const btn = e.submitter;\n    if (!(btn instanceof HTMLButtonElement)) return;');
+s=s.replace(/const payload = \{\s*clienteId:/,'const payload = { sedeId: undefined as string | undefined,\n        clienteId:');
+s=s.replace("parseInt(document.querySelector<HTMLInputElement>('#mat-cantidad')?.value, 10)","parseInt(document.querySelector<HTMLInputElement>('#mat-cantidad')?.value || '0', 10)");
+fs.writeFileSync(p,s);

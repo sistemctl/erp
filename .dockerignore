@@ -1,0 +1,24 @@
+# Dependencias y artefactos locales
+**/node_modules
+backend/dist
+frontend/dist
+**/.env
+**/.env.*
+!**/.env.example
+
+# Git y editor
+.git
+.gitignore
+.cursor
+.vscode
+*.md
+!README.md
+
+# Logs, tests y temporales
+**/*.log
+**/test-results
+**/.playwright
+
+# Uploads locales (se montan como volumen en producción)
+backend/uploads/*
+!backend/uploads/.gitkeep

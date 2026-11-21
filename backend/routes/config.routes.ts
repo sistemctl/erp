@@ -1,0 +1,32 @@
+import express = require('express');
+const router = express.Router();
+import configController = require('../controllers/config.controller');
+import authMiddleware = require('../middleware/auth.middleware');
+import rolesMiddleware = require('../middleware/roles.middleware');
+
+// Marca pública (login)
+router.get('/branding', configController.getBranding);
+
+// Rutas accesibles por usuarios autenticados
+router.get('/sedes', authMiddleware, configController.getSedes);
+router.get('/usuarios-operativos', authMiddleware, configController.getUsuariosOperativos);
+router.get('/sistema', authMiddleware, configController.getSistemaConfig);
+
+// Rutas restringidas a administradores
+router.post('/sedes', authMiddleware, rolesMiddleware(['superadmin']), configController.createSede);
+router.put('/sedes/:id', authMiddleware, rolesMiddleware(['superadmin']), configController.updateSede);
+router.delete('/sedes/:id', authMiddleware, rolesMiddleware(['superadmin']), configController.deleteSede);
+
+router.get('/usuarios', authMiddleware, rolesMiddleware(['superadmin']), configController.getUsuarios);
+router.post('/usuarios', authMiddleware, rolesMiddleware(['superadmin']), configController.createUsuario);
+router.put('/usuarios/:id', authMiddleware, rolesMiddleware(['superadmin']), configController.updateUsuario);
+router.delete('/usuarios/:id', authMiddleware, rolesMiddleware(['superadmin']), configController.deleteUsuario);
+
+router.put('/sistema', authMiddleware, rolesMiddleware(['superadmin']), configController.updateSistemaConfig);
+router.post('/sistema/probar-smtp', authMiddleware, rolesMiddleware(['superadmin']), configController.probarSmtp);
+
+router.get('/backup', authMiddleware, rolesMiddleware(['superadmin']), configController.exportarBackup);
+router.post('/backup', authMiddleware, rolesMiddleware(['superadmin']), configController.exportarBackup);
+router.post('/restore', authMiddleware, rolesMiddleware(['superadmin']), configController.importarBackup);
+
+export = router;

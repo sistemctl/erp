@@ -1,0 +1,951 @@
+import type { Handler } from '../types/controller';
+import { requireUser } from '../utils/request-user';
+import { transactionFinished } from '../utils/transaction-state';
+import type { Attributes, CreationAttributes, WhereOptions, WhereAttributeHash, IncludeOptions, Transaction } from 'sequelize';
+import type ProductModel = require('../models/Producto');
+import type SerieModel = require('../models/NumeroSerie');
+import type CategoriaModel = require('../models/Categoria');
+type Body = CreationAttributes<ProductModel> & { componentes?: unknown; ajusteStock?: number | string | null; stockEsperado?: number | string | null; sedeId?: string; reasignarA?: string };
+import models = require('../models');
+const { Producto, Categoria, Sede, StockSede, NumeroSerie, MovimientoInventario, ComboComponente, sequelize } = models;
+const { ItemOrdenCompra, ItemVenta, MaterialInstalacion, RepuestoOrden, OrdenCompra } = models;
+import { Op } from 'sequelize';
+import { generateInternalBarcode, normalizeCodigoBarras } from '../utils/internal-barcode';
+import { normalizeUnidadMedida } from '../utils/unidad-medida';
+import { importProductPrices, parseCsvRecord } from '../utils/producto-importacion';
+import { moneyCents, moneyText } from '../utils/compra-unidad';
+import { httpError } from '../utils/http-error';
+import { resolveActionSede } from '../utils/sede';
+import { validateComboComponents, replaceComboComponents, recalculateParentComboCosts, getComboAvailability } from '../utils/combo';
+import { contiene } from '../utils/like';
+
+const comboInclude: IncludeOptions = {
+  model: ComboComponente,
+  as: 'componentes',
+  separate: true,
+  include: [{
+    model: Producto,
+    as: 'producto',
+    attributes: ['id', 'nombre', 'codigoBarras', 'precioCosto', 'tieneNumeroSerie', 'unidadMedida', 'activo']
+  }]
+};
+
+// --- CRUD PRODUCTOS ---
+
+/** Cuenta registros que dependen de la unidad y el tipo de un producto (stock, compras, ventas, etc.). */
+async function productoTieneHistorial(id: string, transaction: Transaction) {
+  const references = await Promise.all([
+    StockSede.count({ where: { productoId: id, cantidad: { [Op.ne]: 0 } }, transaction }),
+    ItemOrdenCompra.count({ where: { productoId: id }, transaction }), ItemVenta.count({ where: { productoId: id }, transaction }),
+    MaterialInstalacion.count({ where: { productoId: id }, transaction }), RepuestoOrden.count({ where: { productoId: id }, transaction }),
+    MovimientoInventario.count({ where: { productoId: id }, transaction }), NumeroSerie.count({ where: { productoId: id }, transaction }),
+    ComboComponente.count({ where: { productoId: id }, transaction })
+  ]);
+  return references.some(count => count > 0);
+}
+
+export const getProductos: Handler<Body> = async (req, res, next) => {
+  try {
+    const { categoria, q } = req.query;
+    const where: WhereAttributeHash<Attributes<ProductModel>> & { [Op.or]?: WhereOptions<Attributes<ProductModel>>[] } = { activo: true };
+
+    if (categoria) {
+      where.categoriaId = categoria;
+    }
+
+    if (q) {
+      where[Op.or] = [
+        { nombre: { [Op.iLike]: contiene(q) } },
+        { codigoBarras: { [Op.iLike]: contiene(q) } }
+      ];
+    }
+
+    const productos = await Producto.findAll({
+      where,
+      include: [
+        { model: Categoria, as: 'categoria', attributes: ['nombre'] },
+        comboInclude
+      ],
+      order: [['nombre', 'ASC']]
+    });
+
+    return res.json(productos);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createProducto: Handler<Body> = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
+  try {
+    const {
+      nombre,
+      codigoBarras,
+      descripcion,
+      precioVenta: rawPrecioVenta,
+      precioCosto: rawPrecioCosto,
+      tieneIVA,
+      stockMinimo,
+      tieneNumeroSerie,
+      esReacondicionado,
+      esServicio,
+      esCombo,
+      componentes,
+      unidadMedida,
+      categoriaId,
+      imagenUrl
+    } = req.body;
+    const combo = !!esCombo;
+    const unidad = combo ? 'und' : normalizeUnidadMedida(unidadMedida);
+    let precioCosto: string, precioVenta: string;
+    try { precioCosto = moneyText(moneyCents(rawPrecioCosto === undefined ? 0 : rawPrecioCosto)); precioVenta = moneyText(moneyCents(rawPrecioVenta === undefined ? 0 : rawPrecioVenta)); }
+    catch (error) { throw httpError(400, error instanceof Error ? error.message : 'Precios inválidos.'); }
+    const comboData = combo
+      ? await validateComboComponents({ componentes, transaction })
+      : null;
+
+    let codigoFinal = normalizeCodigoBarras(codigoBarras);
+    if (!codigoFinal) {
+      codigoFinal = await generateInternalBarcode(transaction);
+    }
+
+    // Verificar código duplicado (incluyendo inactivos)
+    const existe = await Producto.findOne({ where: { codigoBarras: codigoFinal }, transaction });
+    if (existe) {
+      if (existe.activo) {
+        await transaction.rollback();
+        return res.status(400).json({ error: 'El código de barras ya está asignado a otro producto activo.' });
+      } else {
+        // Un producto eliminado con historial conserva su unidad y tipo: cambiarlos al
+        // reactivarlo reinterpretaría stock, compras y ventas antiguas.
+        const nuevoTieneSerie = (esServicio || combo) ? false : !!tieneNumeroSerie;
+        const cambiaEstructura = normalizeUnidadMedida(existe.unidadMedida) !== unidad
+          || !!existe.tieneNumeroSerie !== nuevoTieneSerie
+          || !!existe.esServicio !== (combo ? false : !!esServicio)
+          || !!existe.esCombo !== combo;
+        if (cambiaEstructura && await productoTieneHistorial(existe.id, transaction)) {
+          await transaction.rollback();
+          return res.status(409).json({
+            error: `Ya existe un producto eliminado con este código ("${existe.nombre}") que tiene historial con otra unidad o tipo. Use otro código de barras o reactívelo con la misma unidad (${normalizeUnidadMedida(existe.unidadMedida)}) y tipo.`
+          });
+        }
+        // Restaurarlo y actualizarlo con la nueva información
+        await existe.update({
+          nombre,
+          descripcion,
+          precioVenta,
+          precioCosto: comboData ? comboData.precioCosto : precioCosto,
+          tieneIVA,
+          stockMinimo,
+          tieneNumeroSerie: (esServicio || combo) ? false : !!tieneNumeroSerie,
+          esReacondicionado,
+          esServicio: combo ? false : !!esServicio,
+          esCombo: combo,
+          unidadMedida: unidad,
+          categoriaId,
+          imagenUrl,
+          activo: true
+        }, { transaction });
+
+        if (combo && comboData) {
+          await replaceComboComponents(existe.id, comboData.normalized, transaction);
+        } else {
+          await ComboComponente.destroy({ where: { comboId: existe.id }, transaction });
+        }
+
+        // Garantizar que tiene sus registros de StockSede inicializados
+        const sedes = await Sede.findAll();
+        for (const sede of sedes) {
+          const stockReg = await StockSede.findOne({ where: { productoId: existe.id, sedeId: sede.id }, transaction, lock: transaction.LOCK.UPDATE });
+          if (!stockReg) {
+            await StockSede.create({
+              productoId: existe.id,
+              sedeId: sede.id,
+              cantidad: 0
+            }, { transaction });
+          }
+        }
+
+        await transaction.commit();
+
+        if (req.logAudit) {
+          await req.logAudit({
+            accion: 'CREATE',
+            modulo: 'Productos',
+            registroId: existe.id,
+            valorNuevo: existe.toJSON()
+          });
+        }
+
+        return res.status(201).json(existe);
+      }
+    }
+
+    const producto = await Producto.create({
+      nombre,
+      codigoBarras: codigoFinal,
+      descripcion,
+      precioVenta,
+      precioCosto: comboData ? comboData.precioCosto : precioCosto,
+      tieneIVA,
+      stockMinimo,
+      tieneNumeroSerie: (esServicio || combo) ? false : !!tieneNumeroSerie,
+      esReacondicionado,
+      esServicio: combo ? false : !!esServicio,
+      esCombo: combo,
+      unidadMedida: unidad,
+      categoriaId,
+      imagenUrl
+    }, { transaction });
+
+    if (combo && comboData) {
+      await replaceComboComponents(producto.id, comboData.normalized, transaction);
+    }
+
+    // Inicializar el StockSede en 0 para todas las sedes de forma predeterminada
+    const sedes = await Sede.findAll();
+    for (const sede of sedes) {
+      await StockSede.create({
+        productoId: producto.id,
+        sedeId: sede.id,
+        cantidad: 0
+      }, { transaction });
+    }
+
+    await transaction.commit();
+
+    if (req.logAudit) {
+      await req.logAudit({
+        accion: 'CREATE',
+        modulo: 'Productos',
+        registroId: producto.id,
+        valorNuevo: producto.toJSON()
+      });
+    }
+
+    return res.status(201).json(producto);
+  } catch (error) {
+    if (!transactionFinished(transaction)) await transaction.rollback();
+    next(error);
+  } finally {
+    if (!transactionFinished(transaction)) await transaction.rollback();
+  }
+};
+
+export const updateProducto: Handler<Body> = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
+  try {
+    const { id } = req.params;
+    const producto = await Producto.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+
+    if (!producto) {
+      await transaction.rollback();
+      return res.status(404).json({ error: 'Producto no encontrado.' });
+    }
+
+    const { codigoBarras } = req.body;
+    if (codigoBarras && codigoBarras !== producto.codigoBarras) {
+      const existe = await Producto.findOne({ where: { codigoBarras }, transaction });
+      if (existe) {
+        await transaction.rollback();
+        return res.status(400).json({ error: 'El código de barras ya está asignado a otro producto (activo o inactivo).' });
+      }
+    }
+
+    const { ajusteStock, stockEsperado, sedeId, componentes, ...productData } = req.body;
+    const combo = productData.esCombo !== undefined ? !!productData.esCombo : !!producto.esCombo;
+    const comboData = combo
+      ? await validateComboComponents({ comboId: id, componentes, transaction })
+      : null;
+
+    const usadoComoComponente = await ComboComponente.findOne({ where: { productoId: id }, transaction });
+    if (usadoComoComponente && (combo || productData.esServicio)) {
+      await transaction.rollback();
+      return res.status(400).json({ error: 'Este producto forma parte de un combo activo y debe seguir siendo un producto físico.' });
+    }
+
+    if (combo && !producto.esCombo) {
+      const stockExistente = await StockSede.sum('cantidad', { where: { productoId: id }, transaction });
+      const serialesExistentes = await NumeroSerie.count({ where: { productoId: id }, transaction });
+      if ((Number(stockExistente) || 0) > 0 || serialesExistentes > 0) {
+        await transaction.rollback();
+        return res.status(400).json({ error: 'Para convertir un producto existente en combo, primero debe dejar su stock y seriales en cero.' });
+      }
+    }
+
+    if (combo && comboData) {
+      productData.esCombo = true;
+      productData.esServicio = false;
+      productData.tieneNumeroSerie = false;
+      productData.unidadMedida = 'und';
+      productData.stockMinimo = 0;
+      productData.precioCosto = comboData.precioCosto;
+    } else if (productData.esServicio) {
+      productData.esCombo = false;
+      productData.esServicio = true;
+      productData.tieneNumeroSerie = false;
+    } else if (productData.esServicio === false || String(productData.esServicio) === 'false') {
+      productData.esServicio = false;
+      productData.esCombo = false;
+    }
+
+    if (productData.unidadMedida !== undefined) {
+      productData.unidadMedida = normalizeUnidadMedida(productData.unidadMedida);
+      if (productData.unidadMedida !== normalizeUnidadMedida(producto.unidadMedida)) {
+        if (usadoComoComponente || await productoTieneHistorial(id, transaction)) throw httpError(400, 'No cambie la unidad de un producto con existencias o historial: no se conoce la longitud real de los registros antiguos. Cree un producto con la unidad correcta.');
+      }
+    }
+    try {
+      if (productData.precioCosto !== undefined) productData.precioCosto = moneyText(moneyCents(productData.precioCosto));
+      if (productData.precioVenta !== undefined) productData.precioVenta = moneyText(moneyCents(productData.precioVenta));
+    } catch (error) { throw httpError(400, error instanceof Error ? error.message : 'Precios inválidos.'); }
+
+    const rolesAjusteStock = ['admin', 'superadmin'];
+    if (!combo && rolesAjusteStock.includes(requireUser(req).rol) && sedeId && ajusteStock !== undefined && ajusteStock !== null) {
+      const stockNuevo = Number(ajusteStock);
+      if (!Number.isSafeInteger(stockNuevo) || stockNuevo < 0 || stockNuevo > 2147483647) {
+        await transaction.rollback();
+        return res.status(400).json({ error: 'La cantidad de existencias debe ser un número mayor o igual a 0.' });
+      }
+
+      await StockSede.findOrCreate({
+        where: { productoId: id, sedeId },
+        defaults: { productoId: id, sedeId, cantidad: 0 },
+        transaction
+      });
+      const stockSede = await StockSede.findOne({
+        where: { productoId: id, sedeId },
+        transaction,
+        lock: transaction.LOCK.UPDATE
+      });
+      if (!stockSede) throw httpError(409, 'No se pudo leer el stock de la sede.');
+
+      const cantidadAnterior = parseInt(String(stockSede.cantidad), 10);
+      // Si el formulario indica el stock que vio el usuario y ya no coincide (hubo ventas,
+      // compras o traslados mientras editaba), se rechaza para no pisar movimientos reales.
+      if (stockEsperado !== undefined && stockEsperado !== null && stockEsperado !== ''
+        && Number(stockEsperado) !== cantidadAnterior) {
+        await transaction.rollback();
+        return res.status(409).json({
+          error: `El stock cambió mientras editaba (antes ${Number(stockEsperado)}, ahora ${cantidadAnterior}). Recargue el producto y vuelva a ajustar.`,
+          stockActual: cantidadAnterior
+        });
+      }
+      if (cantidadAnterior !== stockNuevo) {
+        await stockSede.update({ cantidad: stockNuevo }, { transaction });
+
+        await MovimientoInventario.create({
+          productoId: id,
+          sedeId,
+          tipo: stockNuevo > cantidadAnterior ? 'entrada' : 'salida',
+          cantidad: Math.abs(stockNuevo - cantidadAnterior),
+          motivo: `Ajuste manual de inventario por ${requireUser(req).rol}`,
+          usuarioId: requireUser(req).userId
+        }, { transaction });
+      }
+    }
+
+    const valorAnterior = producto.toJSON();
+    await producto.update(productData, { transaction });
+    if (combo && comboData) {
+      await replaceComboComponents(id, comboData.normalized, transaction);
+    } else {
+      await ComboComponente.destroy({ where: { comboId: id }, transaction });
+      await recalculateParentComboCosts(id, transaction);
+    }
+    await transaction.commit();
+
+    if (req.logAudit) {
+      await req.logAudit({
+        accion: 'UPDATE',
+        modulo: 'Productos',
+        registroId: producto.id,
+        valorAnterior,
+        valorNuevo: producto.toJSON()
+      });
+    }
+
+    return res.json(producto);
+  } catch (error) {
+    if (!transactionFinished(transaction)) await transaction.rollback();
+    next(error);
+  } finally {
+    if (!transactionFinished(transaction)) await transaction.rollback();
+  }
+};
+
+export const deleteProducto: Handler<Body> = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
+  try {
+    const { id } = req.params;
+    const producto = await Producto.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+
+    if (!producto) {
+      await transaction.rollback();
+      return res.status(404).json({ error: 'Producto no encontrado.' });
+    }
+
+    // El producto puede ser COMPONENTE de un combo (no ser él mismo un combo): si se
+    // eliminara, el combo quedaría incompleto. Se indica cuál y cómo resolverlo.
+    const usosEnCombo = await ComboComponente.findAll({
+      where: { productoId: id },
+      include: [{ model: Producto, as: 'combo', where: { activo: true }, attributes: ['id', 'nombre'] }],
+      transaction
+    });
+    if (usosEnCombo.length) {
+      await transaction.rollback();
+      const combos = usosEnCombo.map(uso => ({ id: uso.combo?.id, nombre: uso.combo?.nombre || 'combo' }));
+      const nombres = combos.map(c => `"${c.nombre}"`).join(', ');
+      return res.status(409).json({
+        error: `"${producto.nombre}" es uno de los componentes del combo ${nombres}. Quítelo de ese combo (o elimine el combo) y luego podrá eliminarlo.`,
+        code: 'PRODUCTO_EN_COMBO',
+        combos
+      });
+    }
+
+    // Un producto con seriales en stock o compras por recibir no puede desaparecer del
+    // inventario. Si solo tiene existencias, un admin puede confirmar darlas de baja:
+    // cada sede queda en 0 y la salida se registra en el kardex.
+    const stocksADarDeBaja: InstanceType<typeof StockSede>[] = [];
+    if (!producto.esCombo && !producto.esServicio) {
+      const seriesEnStock = await NumeroSerie.count({ where: { productoId: id, estado: 'en_stock' }, transaction });
+      if (seriesEnStock > 0) {
+        await transaction.rollback();
+        return res.status(409).json({ error: `No se puede eliminar: tiene ${seriesEnStock} serial(es)/IMEI en stock. Véndalos, devuélvalos al proveedor o elimínelos desde la gestión de seriales.` });
+      }
+      const stocks = await StockSede.findAll({
+        where: { productoId: id, cantidad: { [Op.ne]: 0 } },
+        include: [{ model: Sede, as: 'sede', attributes: ['nombre'] }],
+        transaction,
+        lock: { level: transaction.LOCK.UPDATE, of: StockSede }
+      });
+      const stockTotal = stocks.reduce((total, stock) => total + (parseInt(String(stock.cantidad), 10) || 0), 0);
+      if (stocks.length) {
+        const darDeBaja = ['1', 'true'].includes(String(req.query.darDeBaja || ''));
+        const puedeDarDeBaja = ['admin', 'superadmin'].includes(requireUser(req).rol);
+        if (!darDeBaja || !puedeDarDeBaja) {
+          await transaction.rollback();
+          const sedes = stocks.map(stock => ({ sede: stock.sede?.nombre || 'Sede', cantidad: parseInt(String(stock.cantidad), 10) || 0 }));
+          return res.status(409).json({
+            error: puedeDarDeBaja
+              ? `"${producto.nombre}" tiene ${stockTotal} unidad(es) en inventario.`
+              : `No se puede eliminar: el producto tiene ${stockTotal} unidad(es) en inventario. Pida a un administrador que lo elimine (dará de baja el stock) o ajuste el stock a 0.`,
+            code: puedeDarDeBaja ? 'PRODUCTO_CON_STOCK' : undefined,
+            stockTotal,
+            sedes
+          });
+        }
+        stocksADarDeBaja.push(...stocks);
+      }
+    }
+    const pendientes = await ItemOrdenCompra.count({
+      where: { productoId: id, cantidadRecibida: { [Op.lt]: sequelize.col('cantidadPedida') } },
+      include: [{ model: OrdenCompra, as: 'ordenCompra', where: { estado: { [Op.in]: ['pendiente', 'parcial'] } }, attributes: [] }],
+      transaction
+    });
+    if (pendientes > 0) {
+      await transaction.rollback();
+      return res.status(409).json({ error: 'No se puede eliminar: hay órdenes de compra pendientes de recibir con este producto.' });
+    }
+
+    const valorAnterior = producto.toJSON();
+
+    const stockDadoDeBaja: { sedeId: string; sede: string; cantidad: number }[] = [];
+    for (const stock of stocksADarDeBaja) {
+      const cantidadAnterior = parseInt(String(stock.cantidad), 10) || 0;
+      stockDadoDeBaja.push({ sedeId: stock.sedeId, sede: stock.sede?.nombre || 'Sede', cantidad: cantidadAnterior });
+      await stock.update({ cantidad: 0 }, { transaction });
+      await MovimientoInventario.create({
+        productoId: id,
+        sedeId: stock.sedeId,
+        tipo: cantidadAnterior > 0 ? 'salida' : 'entrada',
+        cantidad: Math.abs(cantidadAnterior),
+        motivo: `Baja de stock por eliminación del producto (${requireUser(req).rol})`,
+        usuarioId: requireUser(req).userId
+      }, { transaction });
+    }
+
+    // Eliminación lógica
+    await producto.update({ activo: false }, { transaction });
+    await transaction.commit();
+
+    if (req.logAudit) {
+      await req.logAudit({
+        accion: 'DELETE',
+        modulo: 'Productos',
+        registroId: id,
+        valorAnterior,
+        valorNuevo: stockDadoDeBaja.length ? { activo: false, stockDadoDeBaja } : { activo: false }
+      });
+    }
+
+    return res.json({ message: 'Producto eliminado exitosamente.', stockDadoDeBaja });
+  } catch (error) {
+    if (!transactionFinished(transaction)) await transaction.rollback();
+    next(error);
+  } finally {
+    if (!transactionFinished(transaction)) await transaction.rollback();
+  }
+};
+
+// --- BÚSQUEDA POR CÓDIGO DE BARRAS ---
+
+export const getProductoByBarcode: Handler<Body> = async (req, res, next) => {
+  try {
+    const { codigo } = req.params;
+    const { sedeId } = req.query; // Para incluir opcionalmente existencias en la sede del cajero
+
+    const include: IncludeOptions[] = [
+      { model: Categoria, as: 'categoria', attributes: ['nombre'] },
+      comboInclude
+    ];
+
+    if (sedeId) {
+      include.push({
+        model: StockSede,
+        as: 'stocks',
+        where: { sedeId },
+        required: false,
+        attributes: ['cantidad']
+      });
+    }
+
+    let producto = await Producto.findOne({
+      where: { codigoBarras: codigo, activo: true },
+      include
+    });
+
+    let autoDetectedImei = null;
+
+    if (!producto) {
+      // Buscar si el código corresponde a un número de serie / IMEI en stock
+      const querySedeId = sedeId || (requireUser(req) ? requireUser(req).sedeId : null);
+      const serieWhere: WhereOptions<Attributes<SerieModel>> = { serie: codigo, estado: 'en_stock' };
+      if (querySedeId) {
+        serieWhere.sedeId = querySedeId;
+      }
+      
+      const serieObj = await NumeroSerie.findOne({
+        where: serieWhere
+      });
+
+      if (serieObj) {
+        autoDetectedImei = serieObj.serie;
+        producto = await Producto.findOne({
+          where: { id: serieObj.productoId, activo: true },
+          include
+        });
+      }
+    }
+
+    if (!producto) {
+      return res.status(404).json({ error: 'Producto o Serial no encontrado en stock.' });
+    }
+
+    const responseData = producto.toJSON<Attributes<ProductModel> & { stocks?: { cantidad: number }[]; disponibilidadCombo?: number; autoDetectedImei?: string }>();
+    if (producto.esCombo && sedeId) {
+      const disponibilidad = await getComboAvailability(producto.id, sedeId);
+      responseData.disponibilidadCombo = disponibilidad.cantidad;
+      responseData.stocks = [{ cantidad: disponibilidad.cantidad }];
+    }
+    if (autoDetectedImei) {
+      responseData.autoDetectedImei = autoDetectedImei;
+    }
+
+    return res.json(responseData);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// --- IMPORTACIÓN MASIVA DESDE CSV ---
+
+export const importarCSV: Handler<Body> = async (req, res, next) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Por favor, suba un archivo CSV.' });
+  }
+
+  const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
+  try {
+    const csvData = req.file.buffer.toString('utf8');
+    const lines = csvData.split(/\r?\n/);
+    if (lines.length <= 1) {
+      return res.status(400).json({ error: 'El archivo CSV está vacío o no contiene filas.' });
+    }
+
+    // Cabecera: nombre,codigoBarras,descripcion,precioVenta,precioCosto,tieneIVA,stockMinimo,tieneNumeroSerie,esReacondicionado,categoriaNombre
+    const headers = parseCsvRecord(lines[0].replace(/^\uFEFF/, ''));
+    const sedes = await Sede.findAll();
+    const sedeDestinoId = await resolveActionSede(req.body.sedeId, requireUser(req), Sede, transaction);
+    if (!sedeDestinoId || !sedes.some(sede => sede.id === sedeDestinoId)) throw httpError(400, 'Seleccione una sede destino válida para importar las existencias.');
+    const productosCreados = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      // Soporte simple para comas dentro de comillas
+      let values: string[];
+      try { values = parseCsvRecord(line); } catch (error) { throw httpError(400, `Fila ${i + 1}: ${error instanceof Error ? error.message : 'CSV inválido.'}`); }
+
+      // Mapear campos
+      const row: Record<string, string | undefined> = {};
+      headers.forEach((header, idx) => {
+        row[header] = values[idx];
+      });
+
+      if (!row.nombre || !row.precioVenta || (!row.precioCosto && row.presentacionCosto !== 'rollo') || !row.categoriaNombre) {
+        continue; // Saltar filas incompletas
+      }
+
+      let codigoFila = normalizeCodigoBarras(row.codigoBarras);
+      if (!codigoFila) {
+        codigoFila = await generateInternalBarcode(transaction);
+      }
+
+      // Buscar o crear la categoría
+      // Dentro de la transacción (ve las categorías creadas en filas anteriores) y sin
+      // distinguir mayúsculas/espacios, para no crear "Cables" 50 veces.
+      const nombreCategoria = row.categoriaNombre.trim();
+      let categoria = await Categoria.findOne({
+        where: sequelize.where(sequelize.fn('lower', sequelize.fn('trim', sequelize.col('nombre'))), nombreCategoria.toLowerCase()),
+        transaction
+      });
+      if (!categoria) {
+        categoria = await Categoria.create({
+          nombre: nombreCategoria,
+          descripcion: 'Categoría auto-creada por importación masiva'
+        }, { transaction });
+      }
+
+      // Evitar duplicados de código de barras (tanto activos como inactivos)
+      const existe = await Producto.findOne({ where: { codigoBarras: codigoFila }, transaction });
+      if (existe) {
+        continue; // Saltar duplicados
+      }
+
+      const esServicioBool = row.esServicio === 'true' || row.esServicio === '1';
+      let prices: ReturnType<typeof importProductPrices>;
+      try { prices = importProductPrices(row); } catch (error) { throw httpError(400, `Fila ${i + 1}: ${error instanceof Error ? error.message : 'Precios inválidos.'}`); }
+
+      const producto = await Producto.create({
+        nombre: row.nombre,
+        codigoBarras: codigoFila,
+        descripcion: row.descripcion || '',
+        precioVenta: prices.precioVenta,
+        precioCosto: prices.precioCosto,
+        tieneIVA: row.tieneIVA === 'true' || row.tieneIVA === '1',
+        stockMinimo: parseInt(String(row.stockMinimo || 0)),
+        tieneNumeroSerie: esServicioBool ? false : (row.tieneNumeroSerie === 'true' || row.tieneNumeroSerie === '1'),
+        esReacondicionado: row.esReacondicionado === 'true' || row.esReacondicionado === '1',
+        esServicio: esServicioBool,
+        unidadMedida: prices.unidadMedida,
+        categoriaId: categoria.id,
+        imagenUrl: row.imagenUrl || null
+      }, { transaction });
+
+      // Inicializar Stock para todas las sedes (soportando stock / stockInicial del CSV)
+      const stockInicial = Number(row.stock || row.stockInicial || row.cantidadInicial || 0);
+      if (!Number.isSafeInteger(stockInicial) || stockInicial < 0 || stockInicial > 2147483647) throw httpError(400, `Fila ${i + 1}: el stock debe indicar metros o unidades completos, sin decimales.`);
+      for (const sede of sedes) {
+        await StockSede.create({
+          productoId: producto.id,
+          sedeId: sede.id,
+          cantidad: sede.id === sedeDestinoId ? stockInicial : 0
+        }, { transaction });
+      }
+      if (stockInicial > 0 && !esServicioBool) {
+        // El stock inicial queda trazado en el kardex como cualquier otra entrada.
+        await MovimientoInventario.create({
+          productoId: producto.id,
+          sedeId: sedeDestinoId,
+          tipo: 'entrada',
+          cantidad: stockInicial,
+          motivo: 'Stock inicial por importación CSV',
+          usuarioId: requireUser(req).userId
+        }, { transaction });
+      }
+
+      productosCreados.push(producto.nombre);
+    }
+
+    await transaction.commit();
+
+    if (req.logAudit && productosCreados.length > 0) {
+      await req.logAudit({
+        accion: 'CREATE',
+        modulo: 'Productos',
+        registroId: 'CSV_IMPORT',
+        valorNuevo: { count: productosCreados.length, items: productosCreados }
+      });
+    }
+
+    return res.json({
+      message: `Importación exitosa. Se crearon ${productosCreados.length} productos.`,
+      productos: productosCreados
+    });
+  } catch (error) {
+    if (!transactionFinished(transaction)) await transaction.rollback();
+    next(error);
+  } finally {
+    if (!transactionFinished(transaction)) await transaction.rollback();
+  }
+};
+
+// --- GENERAR CÓDIGO INTERNO (sin persistir) ---
+
+export const generarCodigoInterno: Handler<Body> = async (req, res, next) => {
+  try {
+    const codigoBarras = await generateInternalBarcode();
+    return res.json({ codigoBarras });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** Un código vacío o con espacios/minúsculas es una descripción, no algo que un lector pueda escanear. */
+export const codigoNoEscaneable = (codigo: unknown) => {
+  const texto = String(codigo ?? '').trim();
+  return !texto || /\s/.test(texto) || /[a-z]/.test(texto);
+};
+
+/**
+ * POST /productos/codigos-internos { productoIds }: asigna códigos internos 29… a los
+ * productos cuyo código no es escaneable. Todo en una transacción con bloqueo: los códigos
+ * se calculan como "mayor existente + 1" y en paralelo saldrían repetidos. El texto que
+ * había en el código se conserva al inicio de la descripción.
+ */
+export const asignarCodigosInternos: Handler<Body> = async (req, res, next) => {
+  const ids: unknown = (req.body as { productoIds?: unknown }).productoIds;
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 1000 || !ids.every((id) => typeof id === 'string' && UUID.test(id))) {
+    return res.status(400).json({ error: 'Indique entre 1 y 1000 productos válidos.' });
+  }
+  const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
+  try {
+    await sequelize.query('SELECT pg_advisory_xact_lock(20261116)', { transaction });
+    const productos = await Producto.findAll({
+      where: { id: { [Op.in]: [...new Set(ids as string[])] }, activo: true },
+      order: [['nombre', 'ASC']],
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
+    const cambios: { id: string; nombre: string; codigoAnterior: string; codigoBarras: string; precioVenta: string | number; valorAnterior: object }[] = [];
+    for (const producto of productos) {
+      if (!codigoNoEscaneable(producto.codigoBarras)) continue;
+      const valorAnterior = producto.toJSON();
+      const codigoAnterior = String(producto.codigoBarras ?? '').trim();
+      const codigoBarras = await generateInternalBarcode(transaction);
+      const descripcion = String(producto.descripcion ?? '').trim();
+      const nota = codigoAnterior ? `Ref. anterior: ${codigoAnterior}` : '';
+      await producto.update({
+        codigoBarras,
+        ...(nota && !descripcion.includes(nota) ? { descripcion: descripcion ? `${nota}\n${descripcion}` : nota } : {})
+      }, { transaction });
+      cambios.push({ id: producto.id, nombre: producto.nombre, codigoAnterior, codigoBarras, precioVenta: producto.precioVenta, valorAnterior });
+    }
+    await transaction.commit();
+    if (req.logAudit) {
+      for (const c of cambios) {
+        await req.logAudit({
+          accion: 'UPDATE', modulo: 'Productos', registroId: c.id,
+          valorAnterior: c.valorAnterior, valorNuevo: { codigoBarras: c.codigoBarras, motivo: 'Código interno asignado en bloque' }
+        });
+      }
+    }
+    return res.json({
+      asignados: cambios.map(({ valorAnterior: _omit, ...c }) => c),
+      omitidos: ids.length - cambios.length
+    });
+  } catch (error) {
+    if (!transactionFinished(transaction)) await transaction.rollback();
+    next(error);
+  } finally {
+    if (!transactionFinished(transaction)) await transaction.rollback();
+  }
+};
+
+// --- CATEGORÍAS ---
+
+export const getCategorias: Handler<Body> = async (req, res, next) => {
+  try {
+    const categorias = await Categoria.findAll({
+      attributes: {
+        include: [[sequelize.fn('COUNT', sequelize.col('productos.id')), 'productCount']]
+      },
+      include: [{ model: Producto, as: 'productos', attributes: [], required: false }],
+      group: ['Categoria.id'],
+      order: [['nombre', 'ASC']],
+      subQuery: false
+    });
+
+    return res.json(categorias.map((c) => {
+      const json = c.toJSON<Attributes<CategoriaModel> & { productCount: number | string }>();
+      json.productCount = parseInt(String(json.productCount), 10) || 0;
+      return json;
+    }));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createCategoria: Handler<Body> = async (req, res, next) => {
+  try {
+    const { nombre, descripcion } = req.body;
+    if (!nombre) {
+      return res.status(400).json({ error: 'El nombre de la categoría es obligatorio.' });
+    }
+
+    const nombreTrim = String(nombre).trim();
+    if (!nombreTrim) {
+      return res.status(400).json({ error: 'El nombre de la categoría es obligatorio.' });
+    }
+
+    const existe = await Categoria.findOne({ where: { nombre: nombreTrim } });
+    if (existe) {
+      return res.status(400).json({ error: 'Ya existe una categoría con ese nombre.' });
+    }
+
+    const categoria = await Categoria.create({
+      nombre: nombreTrim,
+      descripcion: descripcion || ''
+    });
+
+    if (req.logAudit) {
+      await req.logAudit({
+        accion: 'CREATE',
+        modulo: 'Productos',
+        registroId: categoria.id,
+        valorNuevo: categoria.toJSON()
+      });
+    }
+
+    return res.status(201).json({ ...categoria.toJSON(), productCount: 0 });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateCategoria: Handler<Body> = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { nombre, descripcion } = req.body;
+
+    const categoria = await Categoria.findByPk(id);
+    if (!categoria) {
+      return res.status(404).json({ error: 'La categoría no existe.' });
+    }
+
+    const valorAnterior = categoria.toJSON();
+    const patch: Partial<Attributes<CategoriaModel>> = {};
+
+    if (nombre !== undefined) {
+      const nombreTrim = String(nombre).trim();
+      if (!nombreTrim) {
+        return res.status(400).json({ error: 'El nombre de la categoría no puede quedar vacío.' });
+      }
+      const existe = await Categoria.findOne({
+        where: { nombre: nombreTrim, id: { [Op.ne]: id } }
+      });
+      if (existe) {
+        return res.status(400).json({ error: 'Ya existe una categoría con ese nombre.' });
+      }
+      patch.nombre = nombreTrim;
+    }
+
+    if (descripcion !== undefined) {
+      patch.descripcion = descripcion == null ? '' : String(descripcion);
+    }
+
+    if (!Object.keys(patch).length) {
+      return res.status(400).json({ error: 'No hay cambios para guardar.' });
+    }
+
+    await categoria.update(patch);
+    const productCount = await Producto.count({ where: { categoriaId: id } });
+
+    if (req.logAudit) {
+      await req.logAudit({
+        accion: 'UPDATE',
+        modulo: 'Productos',
+        registroId: id,
+        valorAnterior,
+        valorNuevo: categoria.toJSON()
+      });
+    }
+
+    return res.json({ ...categoria.toJSON(), productCount });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteCategoria: Handler<Body> = async (req, res, next) => {
+  const transaction = await sequelize.transaction();
+  req.auditTransaction = transaction;
+  try {
+    const { id } = req.params;
+    const reasignarA = req.body?.reasignarA || req.query?.reasignarA || null;
+
+    const categoria = await Categoria.findByPk(id, { transaction });
+    if (!categoria) {
+      await transaction.rollback();
+      return res.status(404).json({ error: 'La categoría no existe.' });
+    }
+
+    const productosAsociados = await Producto.count({ where: { categoriaId: id }, transaction });
+    if (productosAsociados > 0) {
+      if (!reasignarA) {
+        await transaction.rollback();
+        return res.status(400).json({
+          error: `Hay ${productosAsociados} producto(s) en esta categoría. Reasigna a otra categoría para poder eliminarla.`,
+          productCount: productosAsociados,
+          requiereReasignar: true
+        });
+      }
+      if (String(reasignarA) === String(id)) {
+        await transaction.rollback();
+        return res.status(400).json({ error: 'La categoría destino debe ser distinta.' });
+      }
+      const destino = await Categoria.findByPk(reasignarA, { transaction });
+      if (!destino) {
+        await transaction.rollback();
+        return res.status(400).json({ error: 'La categoría destino no existe.' });
+      }
+      await Producto.update(
+        { categoriaId: reasignarA },
+        { where: { categoriaId: id }, transaction }
+      );
+    }
+
+    const valorAnterior = categoria.toJSON();
+    await categoria.destroy({ transaction });
+    await transaction.commit();
+
+    if (req.logAudit) {
+      await req.logAudit({
+        accion: 'DELETE',
+        modulo: 'Productos',
+        registroId: id,
+        valorAnterior
+      });
+    }
+
+    return res.json({
+      message: productosAsociados > 0
+        ? `Categoría eliminada. ${productosAsociados} producto(s) reasignado(s).`
+        : 'Categoría eliminada correctamente.',
+      reasignados: productosAsociados
+    });
+  } catch (error) {
+    if (!transactionFinished(transaction)) await transaction.rollback();
+    next(error);
+  } finally {
+    if (!transactionFinished(transaction)) await transaction.rollback();
+  }
+};

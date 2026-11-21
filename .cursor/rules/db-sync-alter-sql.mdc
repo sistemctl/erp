@@ -1,0 +1,23 @@
+---
+description: En producción DB_SYNC_ALTER=false — al cambiar modelos Sequelize entregar SQL ALTER manual
+alwaysApply: true
+---
+
+# Schema DB en producción (sin alter automático)
+
+En producción `DB_SYNC_ALTER` está **desactivada** (`false`). Sequelize hace `sync()` **sin** `{ alter: true }`, así que **no** actualiza sola la estructura de la base.
+
+## Obligatorio al tocar modelos
+
+Cada vez que modifiques un modelo Sequelize (columna nueva, tipo, ENUM, índice, FK, tabla nueva):
+
+1. **Avisar** explícitamente al usuario que producción necesita migración manual.
+2. Entregar el **SQL exacto** listo para correr (PostgreSQL): `ALTER TABLE`, `ALTER TYPE`, `CREATE INDEX`, etc.
+3. Preferir `ADD COLUMN IF NOT EXISTS` / `IF NOT EXISTS` cuando sea seguro.
+4. No asumir que desplegar código alcanza; la DB se actualiza **antes** o en el mismo release, a mano.
+
+## No hacer
+
+- No decir “con el deploy ya queda” si solo cambió el modelo.
+- No activar `DB_SYNC_ALTER=true` en prod salvo que el usuario lo pida conscientemente (y una sola vez).
+- No omitir el SQL “porque en local con alter funciona”.

@@ -1,0 +1,23 @@
+const {convert}=require('./ts-conversion-tools.cjs');const dom=require('./ts-dom-conversion.cjs');
+convert('modules/caja',s=>{
+s=dom(s);s=`import { apiRequired } from '../utils/api-required.js';
+import type { SedeDTO } from '../../../../shared/contracts.js';
+import type { ConfigSistema } from '../types/config.js';
+import type { MedioPago } from '../types/finance.js';
+import type { GastoDashboard } from '../types/dashboard.js';
+import type { CajaDetalle, CajaEstado, ReporteZ, EgresoCaja, MovimientoCaja, MovimientosCaja } from '../types/cash.js';
+`+s;
+s=s.replace('let activeCaja = null','let activeCaja: CajaDetalle | null = null').replace('let sedes = []','let sedes: SedeDTO[] = []').replace('let mediosPagoConfigurados = []','let mediosPagoConfigurados: MedioPago[] = []').replace('let historialCache = []','let historialCache: CajaDetalle[] = []').replace('let movimientosCajaCache = []','let movimientosCajaCache: MovimientoCaja[] = []').replace('let cajaGastosChart = null','let cajaGastosChart: InstanceType<typeof Chart> | null = null');
+for(const [url,t] of [['/config/sedes','SedeDTO[]'],['/config/sistema','ConfigSistema'],['/caja/categorias-egreso','{id: string; nombre: string}[]']]) s=s.replace(`apiFetch('${url}')`,`apiRequired<${t}>('${url}')`);
+for(const [url,t] of [['/caja/reporte','CajaEstado'],['/caja/egresos','EgresoCaja[]'],['/caja/historial','CajaDetalle[]'],['/caja/movimientos','MovimientosCaja'],['/dashboard/gastos-por-categoria','GastoDashboard']]) s=s.replace('apiFetch(`'+url,'apiRequired<'+t+'>(`'+url);
+s=s.replaceAll('const zData = await apiFetch(', 'const zData = await apiRequired<ReporteZ>(').replace('const res = await apiFetch(', 'const res = await apiRequired<{caja?: CajaDetalle}>(');
+s=s.replace("!data?.id || data.estado === 'cerrada' || data.estado === 'sin_registro'", "!data || data.estado === 'sin_registro' || data.estado === 'cerrada'");
+s=s.replace('const escapeHtml = (value)','const escapeHtml = (value: unknown)').replace("})[char]", "} as Record<string,string>)[char] || char");
+s=s.replace('const METODOS_PAGO_CAJA = [', "const METODOS_PAGO_CAJA: {key: 'totalVentasEfectivo'|'totalVentasNequi'|'totalVentasDaviplata'|'totalVentasTarjeta'|'totalVentasTransferencia'; label: string; icon: string; tone: string}[] = [");
+s=s.replaceAll('(cajaData) =>','(cajaData: CajaDetalle) =>').replace('(cajaData, opts = {}) =>',"(cajaData: CajaDetalle, opts: {title?: string; totalLabel?: string; showNote?: boolean; embedded?: boolean} = {}) =>");
+s=s.replace('syncEgresoPinPorMonto = (val)','syncEgresoPinPorMonto = (val: number)').replace('mostrarModalReporteZ = async (cajaId)','mostrarModalReporteZ = async (cajaId: string)').replace('renderHistorialRows = (historyData, highlightId = null)','renderHistorialRows = (historyData: CajaDetalle[], highlightId: string | null = null)').replace('loadHistorialCajas = async (highlightId = null)','loadHistorialCajas = async (highlightId: string | null = null)').replace('abrirHistorialConCaja = async (cajaId, fecha)','abrirHistorialConCaja = async (cajaId: string, fecha: string)').replace('formatMovimientoFecha = (fecha)','formatMovimientoFecha = (fecha: string)').replace('renderMovimientosCaja = (data)','renderMovimientosCaja = (data: MovimientosCaja)').replace('openDetalleMovimientoCaja = (id)','openDetalleMovimientoCaja = (id: string | undefined)').replace('openPastCajaDetalle(id, historyList)','openPastCajaDetalle(id: string | undefined, historyList: CajaDetalle[])');
+s=s.replaceAll("querySelectorAll<HTMLElement>('.cierre-medio-extra')","querySelectorAll<HTMLInputElement>('.cierre-medio-extra')");
+s=s.replace(/parseFloat\((cajaData\.[^\n]*?|cajaData\[medio.key\]|data\.[a-zA-Z]+|caja\.[a-zA-Z]+|activeCaja\??\.[a-zA-Z]+|c\.(?:diferencia|totalEgresos|montoApertura))\)/g,'Number($1)');
+s=s.replace('label: (ctx) =>', 'label: (ctx: {label: string; parsed: number}) =>');
+return s;
+});
