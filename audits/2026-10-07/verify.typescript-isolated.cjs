@@ -39,6 +39,9 @@ async function run() {
     if (containerImage) {
       // CI Linux: mismo servidor de PostgreSQL temporal, sin volúmenes de producción.
       uploads = fs.mkdtempSync(path.join(os.tmpdir(), 'erp-ts-container-'));
+      // mkdtemp crea 0700 y docker-entrypoint.sh hace chown al usuario "node" del contenedor:
+      // sin abrir los permisos, el runner ya no podría escribir ni borrar en esta carpeta temporal.
+      fs.chmodSync(uploads, 0o777);
       const variables = ['NODE_ENV', 'PORT', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASS', 'DB_SYNC_ALTER', 'JWT_SECRET'];
       server = spawn('docker', ['run', '--rm', '--name', containerName, '--network', 'host',
         ...variables.flatMap(name => ['--env', name]), '--mount', `type=bind,source=${uploads},target=/app/backend/uploads`, containerImage],
