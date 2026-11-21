@@ -13,6 +13,8 @@ import { Op } from 'sequelize';
 import PDFDocument = require('pdfkit');
 import { resolveQuerySede, resolveActionSede } from '../utils/sede';
 import { generarCotizacionPDF as renderCotizacionPDF } from '../utils/cotizacion-pdf';
+import { filtroFechaBogota } from '../utils/rango-bogota';
+import { contiene } from '../utils/like';
 
 // --- GET ALL COTIZACIONES ---
 export const getCotizaciones: Handler<Body> = async (req, res, next) => {
@@ -33,14 +35,13 @@ export const getCotizaciones: Handler<Body> = async (req, res, next) => {
       where.clienteId = cliente;
     }
 
-    if (desde && hasta) {
-      where.createdAt = { [Op.between]: [new Date(desde), new Date(hasta)] };
-    }
+    const rangoFechas = filtroFechaBogota(desde, hasta);
+    if (rangoFechas) where.createdAt = rangoFechas;
 
     if (buscar) {
       where[Op.or] = [
-        { numeroCotizacion: { [Op.iLike]: `%${buscar}%` } },
-        { '$cliente.nombre$': { [Op.iLike]: `%${buscar}%` } }
+        { numeroCotizacion: { [Op.iLike]: contiene(buscar) } },
+        { '$cliente.nombre$': { [Op.iLike]: contiene(buscar) } }
       ];
     }
 

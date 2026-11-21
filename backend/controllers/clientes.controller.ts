@@ -7,6 +7,7 @@ import models = require('../models');
 const { Cliente, Sede } = models;
 import { Op } from 'sequelize';
 import { resolveActionSede } from '../utils/sede';
+import { contiene } from '../utils/like';
 
 export const getClientes: Handler<Body> = async (req, res, next) => {
   try {
@@ -14,9 +15,9 @@ export const getClientes: Handler<Body> = async (req, res, next) => {
     const where: WhereAttributeHash<Attributes<ClienteModel>> & { [Op.or]?: WhereOptions<Attributes<ClienteModel>>[] } = {};
     if (q) {
       where[Op.or] = [
-        { nombre: { [Op.iLike]: `%${q}%` } },
-        { documento: { [Op.iLike]: `%${q}%` } },
-        { telefono: { [Op.iLike]: `%${q}%` } }
+        { nombre: { [Op.iLike]: contiene(q) } },
+        { documento: { [Op.iLike]: contiene(q) } },
+        { telefono: { [Op.iLike]: contiene(q) } }
       ];
     }
     const clientes = await Cliente.findAll({

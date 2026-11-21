@@ -17,6 +17,7 @@ import { moneyCents, moneyText } from '../utils/compra-unidad';
 import { httpError } from '../utils/http-error';
 import { resolveActionSede } from '../utils/sede';
 import { validateComboComponents, replaceComboComponents, recalculateParentComboCosts, getComboAvailability } from '../utils/combo';
+import { contiene } from '../utils/like';
 
 const comboInclude: IncludeOptions = {
   model: ComboComponente,
@@ -54,8 +55,8 @@ export const getProductos: Handler<Body> = async (req, res, next) => {
 
     if (q) {
       where[Op.or] = [
-        { nombre: { [Op.iLike]: `%${q}%` } },
-        { codigoBarras: { [Op.iLike]: `%${q}%` } }
+        { nombre: { [Op.iLike]: contiene(q) } },
+        { codigoBarras: { [Op.iLike]: contiene(q) } }
       ];
     }
 

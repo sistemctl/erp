@@ -48,6 +48,8 @@ import { nextDocumentNumber } from '../utils/document-number';
 import { assertSedeAccess } from '../utils/sede';
 import { httpError } from '../utils/http-error';
 import { verificarPinAdmin } from '../utils/admin-pin';
+import { filtroFechaBogota } from '../utils/rango-bogota';
+import { contiene } from '../utils/like';
 
 const METODOS_CAJA: Record<string, keyof Pick<CajaModel, "totalVentasEfectivo" | "totalVentasNequi" | "totalVentasDaviplata" | "totalVentasTarjeta" | "totalVentasTransferencia">> = {
   efectivo: 'totalVentasEfectivo',
@@ -631,9 +633,8 @@ export const getComisiones: Handler<Body> = async (req, res, next) => {
     const scopedSedeId = resolveQuerySede(req.query.sedeId || req.query.sede, requireUser(req));
     if (scopedSedeId) where.sedeId = scopedSedeId;
 
-    if (desde && hasta) {
-      where.createdAt = { [Op.between]: [new Date(desde), new Date(hasta)] };
-    }
+    const rangoFechas = filtroFechaBogota(desde, hasta);
+    if (rangoFechas) where.createdAt = rangoFechas;
 
     if (usuario) {
       where.usuarioId = usuario;
@@ -687,14 +688,13 @@ export const getVentas: Handler<Body> = async (req, res, next) => {
       where.usuarioId = usuario;
     }
 
-    if (desde && hasta) {
-      where.createdAt = { [Op.between]: [new Date(desde), new Date(hasta)] };
-    }
+    const rangoFechas = filtroFechaBogota(desde, hasta);
+    if (rangoFechas) where.createdAt = rangoFechas;
 
     if (buscar) {
       where[Op.or] = [
-        { numeroVenta: { [Op.iLike]: `%${buscar}%` } },
-        { '$cliente.nombre$': { [Op.iLike]: `%${buscar}%` } }
+        { numeroVenta: { [Op.iLike]: contiene(buscar) } },
+        { '$cliente.nombre$': { [Op.iLike]: contiene(buscar) } }
       ];
     }
 

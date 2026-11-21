@@ -37,6 +37,8 @@ import { resolveQuerySede } from '../utils/sede';
 import { revertirCobrosFactura } from '../utils/caja-cobros';
 import { generarFacturaPDF } from '../utils/factura-pdf';
 import emailService = require('../services/email.service');
+import { filtroFechaBogota } from '../utils/rango-bogota';
+import { contiene } from '../utils/like';
 
 // --- GET ALL FACTURAS ---
 export const getFacturas: Handler<Body> = async (req, res, next) => {
@@ -57,14 +59,13 @@ export const getFacturas: Handler<Body> = async (req, res, next) => {
       where.clienteId = cliente;
     }
 
-    if (desde && hasta) {
-      where.createdAt = { [Op.between]: [new Date(desde), new Date(hasta)] };
-    }
+    const rangoFechas = filtroFechaBogota(desde, hasta);
+    if (rangoFechas) where.createdAt = rangoFechas;
 
     if (buscar) {
       where[Op.or] = [
-        { numeroFactura: { [Op.iLike]: `%${buscar}%` } },
-        { '$cliente.nombre$': { [Op.iLike]: `%${buscar}%` } }
+        { numeroFactura: { [Op.iLike]: contiene(buscar) } },
+        { '$cliente.nombre$': { [Op.iLike]: contiene(buscar) } }
       ];
     }
 

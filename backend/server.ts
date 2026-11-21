@@ -23,13 +23,13 @@ import notificacionesRoutes = require('./routes/notificaciones.routes');
 import auditlogRoutes = require('./routes/auditlog.routes');
 import geminiRoutes = require('./routes/gemini.routes');
 import analyticsRoutes = require('./routes/analytics.routes');
-import crypto = require('crypto');
 import { startScheduler } from './jobs/scheduler';
 import { migrateAuditSchema } from './migrations/audit-2026-10';
 import { migrateCajaFacturasSchema } from './migrations/caja-facturas-2026-10';
 import { migrateStockSedeUnico } from './migrations/stock-sede-unico-2026-11';
 import { migrateColumnasModelo } from './migrations/columnas-modelo-2026-11';
 import { migrateIndicesUnicos } from './migrations/indices-unicos-2026-11';
+import { migrateColumnasLegado } from './migrations/columnas-legado-2026-11';
 import express = require('express');
 import cors = require('cors');
 import helmet from 'helmet';
@@ -37,7 +37,7 @@ import path = require('path');
 import runtimePaths = require('./utils/runtime-paths');
 const { FRONTEND_ROOT, UPLOADS_ROOT, ENV_PATH } = runtimePaths;
 import models = require('./models');
-const { sequelize, ConfiguracionSistema, OrdenReparacion } = models;
+const { sequelize, ConfiguracionSistema } = models;
 import auditLogMiddleware = require('./middleware/auditLog.middleware');
 import errorHandler = require('./middleware/errorHandler');
 import { resolveStartupPort, buildAppUrl } from './utils/server-config';
@@ -187,48 +187,10 @@ const startServer = async () => {
     await migrateStockSedeUnico(sequelize);
     await migrateColumnasModelo(sequelize);
     await migrateIndicesUnicos(sequelize);
+    await migrateColumnasLegado(sequelize);
     console.log(allowAlter
       ? 'Base de datos sincronizada (con alter).'
       : 'Base de datos sincronizada (producción, sin alter).');
-
-    try {
-      await sequelize.query(`
-        ALTER TABLE "OrdenesReparacion"
-        ADD COLUMN IF NOT EXISTS "tokenPublico" UUID;
-      `);
-      await sequelize.query(`
-        UPDATE "OrdenesReparacion"
-        SET "tokenPublico" = gen_random_uuid()
-        WHERE "tokenPublico" IS NULL;
-      `).catch(async () => {
-        
-        
-        const rows = await OrdenReparacion.findAll({ attributes: ['id', 'tokenPublico'] });
-        for (const row of rows) {
-          if (!row.tokenPublico) {
-            await OrdenReparacion.update(
-              { tokenPublico: crypto.randomUUID() },
-              { where: { id: row.id } }
-            );
-          }
-        }
-      });
-      await sequelize.query(`
-        CREATE UNIQUE INDEX IF NOT EXISTS ordenes_reparacion_token_publico_idx
-        ON "OrdenesReparacion" ("tokenPublico");
-      `).catch(() => {});
-    } catch (tokenErr) {
-      console.warn('No se pudo asegurar tokenPublico:', (tokenErr instanceof Error ? tokenErr.message : String(tokenErr)));
-    }
-
-    try {
-      await sequelize.query(`
-        ALTER TABLE "Productos"
-        ADD COLUMN IF NOT EXISTS "unidadMedida" VARCHAR(8) NOT NULL DEFAULT 'und';
-      `);
-    } catch (uomErr) {
-      console.warn('No se pudo asegurar unidadMedida en Productos:', (uomErr instanceof Error ? uomErr.message : String(uomErr)));
-    }
 
     try {
       await bootstrapConsumidorFinal();

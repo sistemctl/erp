@@ -14,6 +14,7 @@ import { randomUUID } from 'crypto';
 import { Op } from 'sequelize';
 import { resolveQuerySede } from '../utils/sede';
 import { getComboAvailability } from '../utils/combo';
+import { filtroFechaBogota } from '../utils/rango-bogota';
 
 export const getStockSede: Handler<Body> = async (req, res, next) => {
   try {
@@ -66,14 +67,12 @@ export const getMovimientos: Handler<Body> = async (req, res, next) => {
       return res.status(400).json({ error: 'Tipo de movimiento no válido.' });
     }
 
-    const createdAt: { [Op.gte]?: Date; [Op.lte]?: Date } = {};
-    if (desde) createdAt[Op.gte] = new Date(`${desde}T00:00:00`);
-    if (hasta) createdAt[Op.lte] = new Date(`${hasta}T23:59:59.999`);
+    const createdAt = filtroFechaBogota(desde, hasta) ?? {};
     const where = {
       ...(resolvedSedeId ? { sedeId: resolvedSedeId } : {}),
       ...(productoId ? { productoId } : {}),
       ...(tipo ? { tipo: tipo as Attributes<MovimientoModel>['tipo'] } : {}),
-      ...(Object.keys(createdAt).length ? { createdAt } : {})
+      ...(Reflect.ownKeys(createdAt).length ? { createdAt } : {})
     };
 
     const { count, rows } = await MovimientoInventario.findAndCountAll({

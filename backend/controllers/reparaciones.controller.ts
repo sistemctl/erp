@@ -39,6 +39,8 @@ import { calcularFechaVencimientoCredito, getDiasPlazoCredito } from '../utils/c
 import { findCajaAbierta } from '../utils/caja-abierta';
 import { pagosServicio } from '../utils/caja-cobros';
 import { httpError } from '../utils/http-error';
+import { filtroFechaBogota } from '../utils/rango-bogota';
+import { contiene } from '../utils/like';
 
 async function assertRepuestosEditables(orden: OrdenModel, transaction: Transaction) {
   if (['entregado', 'cancelado'].includes(orden.estado)) {
@@ -93,18 +95,14 @@ export const getOrdenes: Handler<Body> = async (req, res, next) => {
     
     if (buscar) {
       where[Op.or] = [
-        { numeroOrden: { [Op.iLike]: `%${buscar}%` } },
-        { imei: { [Op.iLike]: `%${buscar}%` } },
-        { '$cliente.nombre$': { [Op.iLike]: `%${buscar}%` } }
+        { numeroOrden: { [Op.iLike]: contiene(buscar) } },
+        { imei: { [Op.iLike]: contiene(buscar) } },
+        { '$cliente.nombre$': { [Op.iLike]: contiene(buscar) } }
       ];
     }
 
-    if (desde || hasta) {
-      const dates: { [Op.gte]?: Date; [Op.lte]?: Date } = {};
-      where.createdAt = dates;
-      if (desde) dates[Op.gte] = new Date(desde + 'T00:00:00');
-      if (hasta) dates[Op.lte] = new Date(hasta + 'T23:59:59');
-    }
+    const rangoFechas = filtroFechaBogota(desde, hasta);
+    if (rangoFechas) where.createdAt = rangoFechas;
 
     const ordenes = await OrdenReparacion.findAll({
       where,
@@ -933,9 +931,8 @@ export const getRentabilidadReport: Handler<Body> = async (req, res, next) => {
     }
 
     // Filtrar por fechas
-    if (desde && hasta) {
-      where.createdAt = { [Op.between]: [new Date(desde), new Date(hasta)] };
-    }
+    const rangoFechas = filtroFechaBogota(desde, hasta);
+    if (rangoFechas) where.createdAt = rangoFechas;
 
     const rentabilidades = await RentabilidadReparacion.findAll({
       include: [

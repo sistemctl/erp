@@ -6,6 +6,8 @@ import type AuditModel = require('../models/AuditLog');
 type Body = Record<string, never>;
 const { AuditLog, Usuario, Sede } = models;
 import { Op } from 'sequelize';
+import { filtroFechaBogota } from '../utils/rango-bogota';
+import { contiene } from '../utils/like';
 
 export const getAuditLogs: Handler<Body> = async (req, res, next) => {
   try {
@@ -21,16 +23,8 @@ export const getAuditLogs: Handler<Body> = async (req, res, next) => {
     }
 
     // Filtro por fecha (desde - hasta)
-    if (desde || hasta) {
-      const dates: { [Op.gte]?: Date; [Op.lte]?: Date } = {};
-      where.createdAt = dates;
-      if (desde) {
-        dates[Op.gte] = new Date(desde + 'T00:00:00');
-      }
-      if (hasta) {
-        dates[Op.lte] = new Date(hasta + 'T23:59:59.999');
-      }
-    }
+    const rangoFechas = filtroFechaBogota(desde, hasta);
+    if (rangoFechas) where.createdAt = rangoFechas;
 
     // Búsqueda de usuario (por ID o nombre del usuario asociado)
     const userInclude: IncludeOptions = {
@@ -46,8 +40,8 @@ export const getAuditLogs: Handler<Body> = async (req, res, next) => {
       } else {
         userInclude.where = {
           [Op.or]: [
-            { nombre: { [Op.iLike]: `%${usuario}%` } },
-            { email: { [Op.iLike]: `%${usuario}%` } }
+            { nombre: { [Op.iLike]: contiene(usuario) } },
+            { email: { [Op.iLike]: contiene(usuario) } }
           ]
         };
       }

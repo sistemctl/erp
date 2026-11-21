@@ -14,6 +14,7 @@ import { findCajaAbierta, isCajaCompartidaSede } from '../utils/caja-abierta';
 import { generarCierrePDF } from '../utils/cierre-pdf';
 import { cajaHistorica } from '../utils/caja-cobros';
 import cajaFecha = require('../utils/caja-fecha');
+import { filtroFechaBogota } from '../utils/rango-bogota';
 const { fechaOperativa, cierrePendiente } = cajaFecha;
 
 function getLocalDateStr(date = new Date()) {
@@ -435,9 +436,7 @@ export const getMovimientosFinancieros: Handler<Body> = async (req, res, next) =
       return res.status(400).json({ error: 'Tipo de movimiento no válido.' });
     }
 
-    const createdAt: { [Op.gte]?: Date; [Op.lte]?: Date } = {};
-    if (desde) createdAt[Op.gte] = new Date(`${desde}T00:00:00`);
-    if (hasta) createdAt[Op.lte] = new Date(`${hasta}T23:59:59.999`);
+    const createdAt = filtroFechaBogota(desde, hasta) ?? {};
     const filtrarFecha = Reflect.ownKeys(createdAt).length > 0;
     const whereFecha = filtrarFecha ? { createdAt } : {};
     const enRango = (fecha: Date | null) => {

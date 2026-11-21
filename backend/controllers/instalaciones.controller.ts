@@ -29,6 +29,8 @@ import { resolveQuerySede, resolveActionSede } from '../utils/sede';
 import { findCajaAbierta } from '../utils/caja-abierta';
 import { pagosServicio } from '../utils/caja-cobros';
 import { calcularFechaVencimientoCredito, getDiasPlazoCredito } from '../utils/credito';
+import { filtroFechaBogota } from '../utils/rango-bogota';
+import { contiene } from '../utils/like';
 
 const includeDetalle: IncludeOptions[] = [
   { model: Cliente, as: 'cliente', attributes: ['id', 'nombre', 'telefono', 'documento', 'email'] },
@@ -128,22 +130,14 @@ export const getOrdenes: Handler<Body> = async (req, res, next) => {
     if (tecnico) where.tecnicoId = tecnico;
     if (querySedeId) where.sedeId = querySedeId;
 
-    if (desde || hasta) {
-      const dates: { [Op.gte]?: Date; [Op.lte]?: Date } = {};
-      where.createdAt = dates;
-      if (desde) dates[Op.gte] = new Date(desde);
-      if (hasta) {
-        const fin = new Date(hasta);
-        fin.setHours(23, 59, 59, 999);
-        dates[Op.lte] = fin;
-      }
-    }
+    const rangoFechas = filtroFechaBogota(desde, hasta);
+    if (rangoFechas) where.createdAt = rangoFechas;
 
     if (buscar) {
       where[Op.or] = [
-        { numeroOrden: { [Op.iLike]: `%${buscar}%` } },
-        { sitio: { [Op.iLike]: `%${buscar}%` } },
-        { '$cliente.nombre$': { [Op.iLike]: `%${buscar}%` } }
+        { numeroOrden: { [Op.iLike]: contiene(buscar) } },
+        { sitio: { [Op.iLike]: contiene(buscar) } },
+        { '$cliente.nombre$': { [Op.iLike]: contiene(buscar) } }
       ];
     }
 
